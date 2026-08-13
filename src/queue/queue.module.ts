@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import type { EnvVars } from '../common/config/env.validation';
+import { isLocalRedis } from '../common/redis.util';
 import {
   DEFAULT_JOB_OPTIONS,
   QUEUE_AGENT_TURN,
@@ -19,15 +20,18 @@ import {
     BullModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService<EnvVars, true>) => ({
-        connection: {
-          url: config.get('REDIS_URL'),
-          // Railway usa red interna IPv6; ioredis resuelve IPv4 por defecto.
-          // `family: 0` permite ambos (solo en prod, para no tocar dev local).
-          ...(config.get('NODE_ENV') === 'production' ? { family: 0 } : {}),
-        },
-        defaultJobOptions: DEFAULT_JOB_OPTIONS,
-      }),
+      useFactory: (config: ConfigService<EnvVars, true>) => {
+        const url = config.get('REDIS_URL');
+        return {
+          connection: {
+            url,
+            // Railway usa red interna IPv6; ioredis resuelve IPv4 por defecto.
+            // `family: 0` permite ambos; se omite solo en localhost (dev).
+            ...(isLocalRedis(url) ? {} : { family: 0 }),
+          },
+          defaultJobOptions: DEFAULT_JOB_OPTIONS,
+        };
+      },
     }),
     BullModule.registerQueue({ name: QUEUE_LEAD_INGESTION }),
     BullModule.registerQueue({ name: QUEUE_AGENT_TURN }),

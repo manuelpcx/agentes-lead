@@ -7,6 +7,7 @@ import {
 } from '@nestjs/terminus';
 import Redis from 'ioredis';
 import type { EnvVars } from '../common/config/env.validation';
+import { isLocalRedis } from '../common/redis.util';
 
 /** Verifica conectividad con Redis con un `PING`. */
 @Injectable()
@@ -18,12 +19,13 @@ export class RedisHealthIndicator
 
   constructor(config: ConfigService<EnvVars, true>) {
     super();
-    this.client = new Redis(config.get('REDIS_URL'), {
+    const url = config.get('REDIS_URL');
+    this.client = new Redis(url, {
       lazyConnect: true,
-      maxRetriesPerRequest: 1,
+      maxRetriesPerRequest: 2,
       // Railway usa red interna IPv6; ioredis resuelve IPv4 por defecto.
-      // `family: 0` permite ambos (solo en prod, para no tocar dev local).
-      ...(config.get('NODE_ENV') === 'production' ? { family: 0 } : {}),
+      // `family: 0` permite ambos; se omite solo en localhost (dev).
+      ...(isLocalRedis(url) ? {} : { family: 0 }),
     });
   }
 
