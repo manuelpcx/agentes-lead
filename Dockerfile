@@ -1,7 +1,8 @@
 # Imagen del backend NestJS + Prisma para Railway.
 # Un solo stage (robustez sobre tamaño): instala, genera el cliente Prisma,
 # compila y, al arrancar, aplica migraciones antes de servir.
-FROM node:20-bookworm-slim
+# Node 22: pnpm 11.5.1 (packageManager) requiere Node >=22.13.
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
