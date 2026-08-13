@@ -50,10 +50,12 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = config.get('PORT', { infer: true });
-  await app.listen(port);
+  // Bind a 0.0.0.0: Railway (y otros PaaS) enrutan el tráfico público por IPv4;
+  // el default de Node (`::`) puede no aceptarlo → "Application failed to respond".
+  await app.listen(port, '0.0.0.0');
 
   const logger = app.get(Logger);
-  logger.log(`API escuchando en http://localhost:${port}`);
+  logger.log(`API escuchando en 0.0.0.0:${port}`);
 }
 
 void bootstrap();
