@@ -21,6 +21,9 @@ export class RedisHealthIndicator
     this.client = new Redis(config.get('REDIS_URL'), {
       lazyConnect: true,
       maxRetriesPerRequest: 1,
+      // Railway usa red interna IPv6; ioredis resuelve IPv4 por defecto.
+      // `family: 0` permite ambos (solo en prod, para no tocar dev local).
+      ...(config.get('NODE_ENV') === 'production' ? { family: 0 } : {}),
     });
   }
 

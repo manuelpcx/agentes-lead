@@ -20,7 +20,12 @@ import {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvVars, true>) => ({
-        connection: { url: config.get('REDIS_URL') },
+        connection: {
+          url: config.get('REDIS_URL'),
+          // Railway usa red interna IPv6; ioredis resuelve IPv4 por defecto.
+          // `family: 0` permite ambos (solo en prod, para no tocar dev local).
+          ...(config.get('NODE_ENV') === 'production' ? { family: 0 } : {}),
+        },
         defaultJobOptions: DEFAULT_JOB_OPTIONS,
       }),
     }),
