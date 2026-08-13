@@ -29,9 +29,9 @@ export class RedisHealthIndicator
 
   async check(key: string): Promise<HealthIndicatorResult> {
     try {
-      if (this.client.status !== 'ready') {
-        await this.client.connect();
-      }
+      // Con `lazyConnect`, ioredis abre la conexión sola en el primer comando.
+      // No llamamos `connect()` a mano (lanzaba "already connecting/connected"
+      // cuando la conexión ya estaba en curso).
       const pong = await this.client.ping();
       return this.getStatus(key, pong === 'PONG');
     } catch (error) {
