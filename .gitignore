@@ -1,0 +1,35 @@
+# Dependencias
+/node_modules
+/frontend/node_modules
+
+# Build
+/dist
+/frontend/dist
+*.tsbuildinfo
+
+# Archivos subidos (no versionar)
+/uploads
+
+# Vercel
+.vercel
+
+# Entorno
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs
+
+# Cobertura de tests
+/coverage
+
+# Editor / SO
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Prisma (cliente generado)
+/prisma/generated

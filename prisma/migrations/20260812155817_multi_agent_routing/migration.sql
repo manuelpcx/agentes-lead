@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Agent" ADD COLUMN     "isDefault" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "leadStates" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN     "priority" INTEGER NOT NULL DEFAULT 0;

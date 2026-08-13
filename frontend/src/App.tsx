@@ -1,0 +1,43 @@
+import { Navigate, Route, Routes } from 'react-router-dom';
+import { useAuth } from './store/auth';
+import { LoginPage } from './pages/LoginPage';
+import { RegisterPage } from './pages/RegisterPage';
+import { InboxPage } from './pages/InboxPage';
+import { LeadDetailPage } from './pages/LeadDetailPage';
+import { KnowledgePage } from './pages/KnowledgePage';
+import { ApprovalPage } from './pages/ApprovalPage';
+import { PromptsPage } from './pages/PromptsPage';
+import { MetricsPage } from './pages/MetricsPage';
+import { AgentsPage } from './pages/AgentsPage';
+import { CompanyConfigPage } from './pages/CompanyConfigPage';
+import { AppLayout } from './components/AppLayout';
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const token = useAuth((s) => s.token);
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+  return <AppLayout>{children}</AppLayout>;
+}
+
+function page(node: React.ReactNode) {
+  return <RequireAuth>{node}</RequireAuth>;
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/" element={page(<InboxPage />)} />
+      <Route path="/leads/:id" element={page(<LeadDetailPage />)} />
+      <Route path="/knowledge" element={page(<KnowledgePage />)} />
+      <Route path="/approval" element={page(<ApprovalPage />)} />
+      <Route path="/prompts" element={page(<PromptsPage />)} />
+      <Route path="/metrics" element={page(<MetricsPage />)} />
+      <Route path="/agents" element={page(<AgentsPage />)} />
+      <Route path="/config" element={page(<CompanyConfigPage />)} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}

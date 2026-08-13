@@ -1,0 +1,25 @@
+# Artefactos y cosas que no deben entrar a la imagen del backend.
+node_modules
+dist
+coverage
+*.log
+*.tsbuildinfo
+
+# El frontend se despliega aparte (Vercel); no va en la imagen del backend.
+frontend
+
+# Entorno y secretos: se inyectan como variables en Railway.
+.env
+.env.*
+
+# Git y editor.
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+
+# Docs / infra local.
+docs
+docker-compose.yml
+uploads

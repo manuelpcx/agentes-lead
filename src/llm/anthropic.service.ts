@@ -1,0 +1,86 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Anthropic from '@anthropic-ai/sdk';
+import type { EnvVars } from '../common/config/env.validation';
+
+/** Entrada de un turno del modelo: system + historial + herramientas. */
+export interface CreateMessageInput {
+  system: string;
+  messages: Anthropic.MessageParam[];
+  tools: Anthropic.Tool[];
+}
+
+/**
+ * Envoltura del SDK de Anthropic. Si no hay `ANTHROPIC_API_KEY`, el cliente
+ * queda nulo y `isConfigured()` devuelve false: el agente degrada a
+ * escalamiento en vez de romper. Se deja el thinking en adaptive (default en
+ * opus-5); NO se desactiva (desactivarlo tiene fallos conocidos de tool-calls).
+ */
+@Injectable()
+export class AnthropicService {
+  private readonly logger = new Logger(AnthropicService.name);
+  private readonly client: Anthropic | null;
+  private readonly model: string;
+  private readonly effort: EnvVars['ANTHROPIC_EFFORT'];
+  private readonly maxTokens: number;
+
+  constructor(config: ConfigService<EnvVars, true>) {
+    const apiKey = config.get('ANTHROPIC_API_KEY', { infer: true });
+    this.model = config.get('ANTHROPIC_MODEL', { infer: true });
+    this.effort = config.get('ANTHROPIC_EFFORT', { infer: true });
+    this.maxTokens = config.get('ANTHROPIC_MAX_TOKENS', { infer: true });
+    this.client = apiKey ? new Anthropic({ apiKey }) : null;
+
+    if (!this.client) {
+      this.logger.warn(
+        'ANTHROPIC_API_KEY ausente: el agente degradará a escalamiento humano',
+      );
+    }
+  }
+
+  /** true si hay credenciales para invocar el modelo. */
+  isConfigured(): boolean {
+    return this.client !== null;
+  }
+
+  /**
+   * Completa un prompt simple (sin herramientas) y devuelve el texto. Se usa
+   * en el análisis batch de Fase 6. Lanza si no hay cliente.
+   */
+  async complete(system: string, userText: string): Promise<string> {
+    if (!this.client) {
+      throw new Error(
+        'Anthropic no está configurado (falta ANTHROPIC_API_KEY)',
+      );
+    }
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: this.maxTokens,
+      output_config: { effort: 'low' },
+      system,
+      messages: [{ role: 'user', content: userText }],
+    });
+    return response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n')
+      .trim();
+  }
+
+  /** Ejecuta un turno del modelo con herramientas. Lanza si no hay cliente. */
+  async createMessage(input: CreateMessageInput): Promise<Anthropic.Message> {
+    if (!this.client) {
+      throw new Error(
+        'Anthropic no está configurado (falta ANTHROPIC_API_KEY)',
+      );
+    }
+    return this.client.messages.create({
+      model: this.model,
+      max_tokens: this.maxTokens,
+      output_config: { effort: this.effort },
+      system: input.system,
+      tools: input.tools,
+      messages: input.messages,
+    });
+  }
+}

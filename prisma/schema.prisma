@@ -1,0 +1,466 @@
+// Esquema Prisma — Fase 1 (cimientos).
+// Solo las 5 entidades de esta fase. pgvector queda habilitado desde ya
+// (aunque no se use hasta Fase 2) para no re-tocar la extensión después.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum AgentType {
+  VENTAS
+  SOPORTE
+  COBRANZA
+  AGENDAMIENTO
+  CUSTOM
+}
+
+enum LeadStatus {
+  NUEVO
+  CONTACTADO
+  EN_CONVERSACION
+  AGENDADO
+  CERRADO_GANADO
+  CERRADO_PERDIDO
+  ESCALADO_HUMANO
+}
+
+enum Channel {
+  whatsapp
+  email
+  call
+  system
+}
+
+enum Direction {
+  inbound
+  outbound
+}
+
+enum KnowledgeSourceType {
+  manual
+  archivo
+  faq
+}
+
+enum FactCategory {
+  PRECIO
+  SERVICIO
+  HORARIO
+  POLITICA
+  OTRO
+}
+
+/// Roles del panel dentro de una empresa.
+enum PanelRole {
+  OWNER
+  OPERADOR
+  SOLO_LECTURA
+}
+
+/// Estado de una cita agendada.
+enum AppointmentStatus {
+  PROGRAMADA
+  CONFIRMADA
+  CANCELADA
+  COMPLETADA
+}
+
+/// Estado de un vacío de conocimiento en la cola de aprobación.
+enum KnowledgeGapStatus {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
+// ─────────────────────────── Modelos ───────────────────────────
+
+/// Raíz del multi-tenancy. Toda entidad de negocio cuelga de aquí.
+model Company {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String
+  rut            String
+  timezone       String   @default("America/Santiago")
+  businessHours  Json     @default("{}")
+  channelsConfig Json     @default("{}")
+  /// Secreto para verificar la firma HMAC del webhook. Cifrado en reposo (app-layer).
+  webhookSecret  String
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  agents             Agent[]
+  leads              Lead[]
+  interactions       Interaction[]
+  conversations      Conversation[]
+  knowledgeDocuments KnowledgeDocument[]
+  knowledgeChunks    KnowledgeChunk[]
+  structuredFacts    StructuredFact[]
+  promptVersions     PromptVersion[]
+  memberships        Membership[]
+  agentActions       AgentAction[]
+  auditLogs          AuditLog[]
+  appointments       Appointment[]
+  knowledgeGaps      KnowledgeGap[]
+  examples           ExampleLibrary[]
+  metrics            AgentMetric[]
+
+  @@index([isActive])
+}
+
+/// Agente especializado dentro de una empresa. Existe desde Fase 1, pero el
+/// enrutamiento/traspaso entre agentes NO se implementa hasta Fase 8.
+model Agent {
+  id             String    @id @default(uuid()) @db.Uuid
+  companyId      String    @db.Uuid
+  name           String
+  type           AgentType @default(VENTAS)
+  description    String?
+  /// Identificadores de herramientas habilitadas para este agente.
+  enabledTools   String[]  @default([])
+  /// Qué documentos y categorías de StructuredFact puede consultar (Fase 2+).
+  knowledgeScope Json      @default("{}")
+  /// Enrutamiento por canal: canales que este agente atiende ([] = cualquiera).
+  channels       String[]  @default([])
+  /// Enrutamiento por estado del lead: estados que maneja ([] = cualquiera).
+  /// Se guardan como texto para no acoplar el routing al enum LeadStatus.
+  leadStates     String[]  @default([])
+  /// Desempate cuando varios agentes son candidatos (mayor gana). Fase 8.
+  priority       Int       @default(0)
+  /// Agente por defecto/fallback de la empresa: recibe lo no clasificado.
+  isDefault      Boolean   @default(false)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leads          Lead[]
+  interactions   Interaction[]
+  conversations  Conversation[]
+  promptVersions PromptVersion[]
+
+  @@index([companyId, isActive])
+}
+
+/// Lead capturado. `externalId` da idempotencia por empresa.
+model Lead {
+  id         String @id @default(uuid()) @db.Uuid
+  companyId  String @db.Uuid
+  /// Agente actualmente a cargo del lead.
+  agentId    String @db.Uuid
+  externalId String
+
+  name  String?
+  /// Teléfono en formato E.164 (contexto Chile +56).
+  phone String?
+  email String?
+
+  source   String?
+  campaign String?
+  metadata Json    @default("{}")
+
+  status LeadStatus @default(NUEVO)
+
+  nextActionAt    DateTime?
+  nextActionType  String?
+  contactAttempts Int       @default(0)
+  lastContactedAt DateTime?
+
+  preferredChannel Channel?
+  timezone         String?
+
+  /// Si es true, el agente no actúa sobre este lead (control humano).
+  isPausedForHuman Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent         Agent          @relation(fields: [agentId], references: [id])
+  interactions  Interaction[]
+  conversations Conversation[]
+  agentActions  AgentAction[]
+  appointments  Appointment[]
+
+  @@unique([companyId, externalId])
+  @@index([nextActionAt])
+  @@index([companyId, status])
+  @@index([agentId, status])
+}
+
+/// Cada mensaje / evento sobre un lead. `agentId` es null si lo envió un humano.
+model Interaction {
+  id             String    @id @default(uuid()) @db.Uuid
+  companyId      String    @db.Uuid
+  agentId        String?   @db.Uuid
+  leadId         String    @db.Uuid
+  conversationId String?   @db.Uuid
+  channel        Channel
+  direction      Direction
+  content        String
+  metadata       Json      @default("{}")
+  occurredAt     DateTime  @default(now())
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent        Agent?        @relation(fields: [agentId], references: [id])
+  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+
+  @@index([companyId, leadId])
+  @@index([leadId, occurredAt])
+}
+
+/// Agrupa interacciones de una misma sesión. `analyzedAt` queda null hasta
+/// que el batch de mejora continua (Fase 6) la procese.
+model Conversation {
+  id         String    @id @default(uuid()) @db.Uuid
+  companyId  String    @db.Uuid
+  agentId    String    @db.Uuid
+  leadId     String    @db.Uuid
+  channel    Channel
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  outcome    String?
+  analyzedAt DateTime?
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent        Agent         @relation(fields: [agentId], references: [id])
+  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  interactions Interaction[]
+
+  @@index([companyId, leadId])
+  @@index([analyzedAt])
+}
+
+// ─────────────────────── Base de conocimiento (Fase 2) ───────────────────────
+
+/// Documento fuente que se trocea e indexa para RAG.
+model KnowledgeDocument {
+  id         String              @id @default(uuid()) @db.Uuid
+  companyId  String              @db.Uuid
+  title      String
+  sourceType KnowledgeSourceType @default(manual)
+  rawContent String
+  /// Contador simple de versión; se incrementa en cada edición.
+  version    Int                 @default(1)
+  isActive   Boolean             @default(true)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  company Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chunks  KnowledgeChunk[]
+
+  @@index([companyId, isActive])
+}
+
+/// Fragmento de un documento con su embedding (pgvector). La columna `embedding`
+/// es `Unsupported`: se inserta y se consulta por SQL crudo (Prisma no maneja el
+/// tipo `vector`). El índice HNSW se crea en la migración.
+model KnowledgeChunk {
+  id         String                @id @default(uuid()) @db.Uuid
+  companyId  String                @db.Uuid
+  documentId String                @db.Uuid
+  content    String
+  embedding  Unsupported("vector(1024)")
+  chunkIndex Int
+  metadata   Json                  @default("{}")
+  createdAt  DateTime              @default(now())
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([documentId])
+}
+
+/// Usuario del panel (auth-plane, transversal a empresas).
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String
+  name         String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships Membership[]
+}
+
+/// Acceso de un usuario a una empresa, con su rol. Una cuenta puede tener
+/// varias membresías (acceso a varias empresas).
+model Membership {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @db.Uuid
+  companyId String    @db.Uuid
+  role      PanelRole @default(OPERADOR)
+  createdAt DateTime  @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+/// Registro de cada acción/herramienta que ejecutó el agente (para depurar y
+/// dar confianza en el panel): qué usó, con qué parámetros y qué devolvió.
+model AgentAction {
+  id             String   @id @default(uuid()) @db.Uuid
+  companyId      String   @db.Uuid
+  agentId        String   @db.Uuid
+  leadId         String   @db.Uuid
+  conversationId String?  @db.Uuid
+  tool           String
+  input          Json     @default("{}")
+  output         String
+  isError        Boolean  @default(false)
+  occurredAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId, occurredAt])
+}
+
+/// Log de auditoría de cambios sensibles hechos desde el panel.
+model AuditLog {
+  id            String   @id @default(uuid()) @db.Uuid
+  companyId     String   @db.Uuid
+  userId        String?  @db.Uuid
+  action        String
+  entity        String
+  entityId      String?
+  previousValue Json?
+  newValue      Json?
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+}
+
+/// Vacío de conocimiento detectado por el análisis (Fase 6). Se agrupa por
+/// pregunta y se cuenta la frecuencia; nada entra a la base sin aprobación.
+model KnowledgeGap {
+  id              String             @id @default(uuid()) @db.Uuid
+  companyId       String             @db.Uuid
+  conversationId  String?            @db.Uuid
+  question        String
+  suggestedAnswer String?
+  frequency       Int                @default(1)
+  status          KnowledgeGapStatus @default(PENDIENTE)
+  resolvedByUserId String?           @db.Uuid
+  resolvedAt      DateTime?
+  detectedAt      DateTime           @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status, frequency])
+}
+
+/// Biblioteca de ejemplos de buenas respuestas (Fase 6). Con embedding para
+/// recuperar los más similares e inyectarlos como few-shot en tiempo de ejecución.
+model ExampleLibrary {
+  id            String   @id @default(uuid()) @db.Uuid
+  companyId     String   @db.Uuid
+  situation     String
+  agentResponse String
+  outcome       String
+  embedding     Unsupported("vector(1024)")
+  isApproved    Boolean  @default(false)
+  usageCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, isApproved])
+}
+
+/// Métrica agregada por empresa/día (Fase 6).
+model AgentMetric {
+  id         String   @id @default(uuid()) @db.Uuid
+  companyId  String   @db.Uuid
+  agentId    String?  @db.Uuid
+  date       DateTime @db.Date
+  metricType String
+  value      Float
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, metricType, date])
+  @@index([companyId, date])
+}
+
+/// Cita agendada con un lead (Fase 5).
+model Appointment {
+  id             String            @id @default(uuid()) @db.Uuid
+  companyId      String            @db.Uuid
+  leadId         String            @db.Uuid
+  agentId        String?           @db.Uuid
+  title          String
+  startAt        DateTime
+  endAt          DateTime
+  location       String?
+  status         AppointmentStatus @default(PROGRAMADA)
+  notes          String?
+  /// Instante en que se envió el recordatorio previo (null si aún no).
+  reminderSentAt DateTime?
+  createdBy      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, startAt])
+  @@index([reminderSentAt, startAt])
+}
+
+/// System prompt versionado por agente. Solo una versión activa por agente.
+/// La gestión/aprobación de versiones se completa en Fase 6; en Fase 3 se
+/// siembra una versión activa por defecto al crear el agente.
+model PromptVersion {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    String   @db.Uuid
+  agentId      String   @db.Uuid
+  version      Int
+  content      String
+  changeReason String?
+  isActive     Boolean  @default(false)
+  createdBy    String?
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent   Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, agentId, isActive])
+}
+
+/// Datos vivos que NO van a RAG sino a consulta directa (precios, horarios,
+/// políticas...). Fuente de verdad; respeta vigencia por fecha.
+model StructuredFact {
+  id        String       @id @default(uuid()) @db.Uuid
+  companyId String       @db.Uuid
+  key       String
+  category  FactCategory
+  value     Json
+  validFrom DateTime     @default(now())
+  validUntil DateTime?
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, key, isActive])
+  @@index([companyId, category])
+}

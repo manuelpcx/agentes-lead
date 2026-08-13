@@ -1,0 +1,14 @@
+# Autoriza a estos paquetes a ejecutar sus build scripts (pnpm 10+ los bloquea
+# por defecto). Prisma los necesita para descargar sus engines.
+allowBuilds:
+  '@nestjs/core': true
+  '@prisma/client': true
+  '@prisma/engines': true
+  msgpackr-extract: true
+  prisma: true
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+  - '@nestjs/core'
+  - msgpackr-extract

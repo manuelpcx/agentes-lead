@@ -1,0 +1,5 @@
+# Frontend independiente del backend. Autoriza el build script de esbuild.
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild

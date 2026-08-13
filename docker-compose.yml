@@ -1,0 +1,40 @@
+# Infraestructura local para Fase 1: PostgreSQL con pgvector + Redis.
+# Levantar con:  docker compose up -d
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agentes-lead-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agentes
+      POSTGRES_PASSWORD: agentes
+      POSTGRES_DB: agentes_lead
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U agentes -d agentes_lead']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: agentes-lead-redis
+    restart: unless-stopped
+    ports:
+      # Host 6380 para no chocar con un Redis ya corriendo en 6379.
+      # El contenedor sigue usando 6379 internamente.
+      - '6380:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:
