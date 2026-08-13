@@ -7,12 +7,9 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import type { EnvVars } from './common/config/env.validation';
 
 async function bootstrap(): Promise<void> {
-  // Trazas crudas por console (no pasan por pino) para diagnóstico de arranque.
-  console.log('[boot] iniciando… PORT env =', process.env.PORT);
-
   const app = await NestFactory.create(AppModule, {
-    // bufferLogs:false para que cualquier error temprano se vea de inmediato.
-    bufferLogs: false,
+    // Buffer de logs hasta cablear pino; rawBody habilita la verificación HMAC.
+    bufferLogs: true,
     rawBody: true,
   });
 
@@ -51,16 +48,16 @@ async function bootstrap(): Promise<void> {
   app.enableShutdownHooks();
 
   const port = config.get('PORT', { infer: true });
-  // Bind a 0.0.0.0: Railway (y otros PaaS) enrutan el tráfico público por IPv4;
+  // Bind a 0.0.0.0: los PaaS (Railway) enrutan el tráfico público por IPv4;
   // el default de Node (`::`) puede no aceptarlo → "Application failed to respond".
   await app.listen(port, '0.0.0.0');
 
-  console.log(`[boot] API escuchando en 0.0.0.0:${port}`);
+  app.get(Logger).log(`API escuchando en 0.0.0.0:${port}`);
 }
 
-// Arranque con captura explícita: cualquier fallo de bootstrap se imprime crudo
-// (si no, con el promise sin manejar el error puede quedar oculto en el PaaS).
+// Captura explícita: si el arranque falla, se imprime crudo y sale con código 1
+// (sin esto, el error puede quedar oculto por el buffer de logs en el PaaS).
 bootstrap().catch((err) => {
-  console.error('[boot] FALLO AL ARRANCAR:', err);
+  console.error('Fallo al arrancar la aplicación:', err);
   process.exit(1);
 });
