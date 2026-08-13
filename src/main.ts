@@ -7,9 +7,12 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import type { EnvVars } from './common/config/env.validation';
 
 async function bootstrap(): Promise<void> {
+  // Trazas crudas por console (no pasan por pino) para diagnóstico de arranque.
+  console.log('[boot] iniciando… PORT env =', process.env.PORT);
+
   const app = await NestFactory.create(AppModule, {
-    // Buffer de logs hasta cablear pino; rawBody habilita la verificación HMAC.
-    bufferLogs: true,
+    // bufferLogs:false para que cualquier error temprano se vea de inmediato.
+    bufferLogs: false,
     rawBody: true,
   });
 
@@ -22,9 +25,7 @@ async function bootstrap(): Promise<void> {
   // los dominios permitidos en producción; sin él, refleja cualquiera (dev).
   const corsOrigin = config.get('CORS_ORIGIN', { infer: true });
   app.enableCors({
-    origin: corsOrigin
-      ? corsOrigin.split(',').map((o) => o.trim())
-      : true,
+    origin: corsOrigin ? corsOrigin.split(',').map((o) => o.trim()) : true,
     allowedHeaders: [
       'Content-Type',
       'Authorization',
@@ -54,8 +55,12 @@ async function bootstrap(): Promise<void> {
   // el default de Node (`::`) puede no aceptarlo → "Application failed to respond".
   await app.listen(port, '0.0.0.0');
 
-  const logger = app.get(Logger);
-  logger.log(`API escuchando en 0.0.0.0:${port}`);
+  console.log(`[boot] API escuchando en 0.0.0.0:${port}`);
 }
 
-void bootstrap();
+// Arranque con captura explícita: cualquier fallo de bootstrap se imprime crudo
+// (si no, con el promise sin manejar el error puede quedar oculto en el PaaS).
+bootstrap().catch((err) => {
+  console.error('[boot] FALLO AL ARRANCAR:', err);
+  process.exit(1);
+});
