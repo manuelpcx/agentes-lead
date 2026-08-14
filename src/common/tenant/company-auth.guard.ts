@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
+import { isUUID } from 'class-validator';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -42,6 +43,12 @@ export class CompanyAuthGuard implements CanActivate {
       throw new UnauthorizedException(
         `Faltan headers de autenticación (${HEADER_COMPANY}, ${HEADER_SIGNATURE})`,
       );
+    }
+
+    // Valida el formato antes de tocar la BD: un `X-Company-Id` malformado no es
+    // un UUID y haría fallar la query de Postgres (500). Se rechaza como 401.
+    if (!isUUID(companyId)) {
+      throw new UnauthorizedException('X-Company-Id inválido');
     }
 
     // Lookup por cliente crudo: Company no es una entidad tenant-scoped.
