@@ -50,12 +50,15 @@ const envSchema = z
     AGENT_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
 
     // ── WhatsApp (Fase 3) ──
-    // 'log' = registra los envíos (dev, sin credenciales). 'meta' = Cloud API.
-    WHATSAPP_PROVIDER: z.enum(['log', 'meta']).default('log'),
+    // 'log' = registra los envíos (dev). 'meta' = Cloud API. 'ycloud' = BSP YCloud.
+    WHATSAPP_PROVIDER: z.enum(['log', 'meta', 'ycloud']).default('log'),
     WHATSAPP_TOKEN: z.string().optional(),
     WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
     // Token de verificación del webhook de Meta (GET hub.verify_token).
     WHATSAPP_VERIFY_TOKEN: z.string().optional(),
+    // YCloud (proveedor alternativo). `YCLOUD_FROM` = número de negocio E.164.
+    YCLOUD_API_KEY: z.string().optional(),
+    YCLOUD_FROM: z.string().optional(),
 
     // ── Panel / Auth (Fase 7A) ──
     JWT_SECRET: z
@@ -118,6 +121,23 @@ const envSchema = z
         path: ['VAPI_API_KEY'],
         message: 'VAPI_API_KEY es obligatoria cuando VAPI_PROVIDER=vapi',
       });
+    }
+    // Si WhatsApp usa YCloud, se requieren API key y número de negocio.
+    if (env.WHATSAPP_PROVIDER === 'ycloud') {
+      if (!env.YCLOUD_API_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['YCLOUD_API_KEY'],
+          message: 'YCLOUD_API_KEY es obligatoria cuando WHATSAPP_PROVIDER=ycloud',
+        });
+      }
+      if (!env.YCLOUD_FROM) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['YCLOUD_FROM'],
+          message: 'YCLOUD_FROM es obligatorio cuando WHATSAPP_PROVIDER=ycloud',
+        });
+      }
     }
     // Si WhatsApp usa Meta Cloud API, se requieren token y phone number id.
     if (env.WHATSAPP_PROVIDER === 'meta') {

@@ -3,10 +3,13 @@ import { api } from '../api/client';
 import { Button, Card, Field, Input, PageHeader, Textarea } from '../components/ui';
 import type { CompanyConfig } from '../types';
 
-/** Lee el phoneNumberId de WhatsApp guardado en channelsConfig (si existe). */
-function readWhatsappId(cfg: Record<string, unknown> | undefined): string {
+/** Lee un campo string de channelsConfig.whatsapp (si existe). */
+function readWhatsappField(
+  cfg: Record<string, unknown> | undefined,
+  field: string,
+): string {
   const wa = (cfg?.whatsapp ?? {}) as Record<string, unknown>;
-  return typeof wa.phoneNumberId === 'string' ? wa.phoneNumberId : '';
+  return typeof wa[field] === 'string' ? (wa[field] as string) : '';
 }
 
 export function CompanyConfigPage() {
@@ -14,6 +17,7 @@ export function CompanyConfigPage() {
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('');
   const [businessHours, setBusinessHours] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [whatsappId, setWhatsappId] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -24,7 +28,8 @@ export function CompanyConfigPage() {
       setName(c.name);
       setTimezone(c.timezone);
       setBusinessHours(JSON.stringify(c.businessHours ?? {}, null, 2));
-      setWhatsappId(readWhatsappId(c.channelsConfig));
+      setWhatsappNumber(readWhatsappField(c.channelsConfig, 'phoneNumber'));
+      setWhatsappId(readWhatsappField(c.channelsConfig, 'phoneNumberId'));
     });
   }, []);
 
@@ -44,6 +49,7 @@ export function CompanyConfigPage() {
       whatsapp: {
         ...((company?.channelsConfig?.whatsapp as Record<string, unknown>) ??
           {}),
+        phoneNumber: whatsappNumber.trim() || undefined,
         phoneNumberId: whatsappId.trim() || undefined,
       },
     };
@@ -84,8 +90,20 @@ export function CompanyConfigPage() {
           </Field>
 
           <Field
-            label="WhatsApp Phone Number ID"
-            hint="El ID del número de Meta (WhatsApp → API Setup). Mapea los mensajes entrantes a esta empresa."
+            label="WhatsApp número de negocio (E.164)"
+            hint="Tu número de WhatsApp (ej. +56911111111). Lo usa YCloud para enrutar los mensajes entrantes a esta empresa."
+          >
+            <Input
+              value={whatsappNumber}
+              onChange={(e) => setWhatsappNumber(e.target.value)}
+              placeholder="+56911111111"
+              className="font-mono text-xs"
+            />
+          </Field>
+
+          <Field
+            label="WhatsApp Phone Number ID (solo Meta directo)"
+            hint="Solo si usas Meta Cloud API directo. Con YCloud, deja este campo vacío."
           >
             <Input
               value={whatsappId}

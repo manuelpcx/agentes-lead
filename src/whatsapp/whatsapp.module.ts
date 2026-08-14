@@ -15,6 +15,7 @@ import {
 } from './providers/whatsapp-provider.interface';
 import { LogWhatsappProvider } from './providers/log.provider';
 import { MetaCloudWhatsappProvider } from './providers/meta-cloud.provider';
+import { YCloudWhatsappProvider } from './providers/ycloud.provider';
 
 /**
  * Canal WhatsApp: envío (proveedor `log` o `meta`), entrada (webhook Meta +
@@ -33,12 +34,18 @@ import { MetaCloudWhatsappProvider } from './providers/meta-cloud.provider';
       provide: WHATSAPP_PROVIDER,
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvVars, true>): WhatsappProvider => {
-        if (config.get('WHATSAPP_PROVIDER', { infer: true }) === 'meta') {
+        const provider = config.get('WHATSAPP_PROVIDER', { infer: true });
+        if (provider === 'meta') {
           const token = config.get('WHATSAPP_TOKEN', { infer: true }) as string;
           const phoneId = config.get('WHATSAPP_PHONE_NUMBER_ID', {
             infer: true,
           }) as string;
           return new MetaCloudWhatsappProvider(token, phoneId);
+        }
+        if (provider === 'ycloud') {
+          const apiKey = config.get('YCLOUD_API_KEY', { infer: true }) as string;
+          const from = config.get('YCLOUD_FROM', { infer: true }) as string;
+          return new YCloudWhatsappProvider(apiKey, from);
         }
         return new LogWhatsappProvider();
       },

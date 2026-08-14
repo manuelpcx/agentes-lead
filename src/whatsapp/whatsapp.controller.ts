@@ -93,6 +93,49 @@ export class WhatsappController {
     return { received: true };
   }
 
+  /**
+   * Webhook de mensajes entrantes de YCloud (BSP). Responde 200 de inmediato;
+   * resuelve la empresa por el número de negocio (`to`) mapeado en
+   * `channelsConfig.whatsapp.phoneNumber` y despierta al agente.
+   * Doc: https://docs.ycloud.com/reference/whatsapp-inbound-message-webhook-examples
+   *
+   * NOTA: la verificación de firma del webhook de YCloud queda pendiente para
+   * producción (igual que en el webhook de Meta).
+   */
+  @Post('ycloud/webhook')
+  @HttpCode(HttpStatus.OK)
+  async ycloudWebhook(@Body() body: unknown): Promise<{ received: true }> {
+    if (this.pickString(body, 'type') !== 'whatsapp.inbound_message.received') {
+      return { received: true }; // otros eventos (status, etc.): ignorar
+    }
+    const msg = this.pick(body, 'whatsappInboundMessage');
+    if (this.pickString(msg, 'type') !== 'text') {
+      return { received: true }; // por ahora solo texto
+    }
+    const rawFrom = this.pickString(msg, 'from');
+    const to = this.pickString(msg, 'to');
+    const text = this.pickString(this.pick(msg, 'text'), 'body');
+    if (!rawFrom || !to || !text) {
+      return { received: true };
+    }
+    const from = rawFrom.startsWith('+') ? rawFrom : `+${rawFrom}`;
+
+    const company = await this.prisma.raw.company.findFirst({
+      where: {
+        isActive: true,
+        channelsConfig: { path: ['whatsapp', 'phoneNumber'], equals: to },
+      },
+      select: { id: true },
+    });
+    if (company) {
+      await TenantContext.run(
+        { companyId: company.id, correlationId: randomUUID() },
+        () => this.inbound.handleIncoming(from, text),
+      );
+    }
+    return { received: true };
+  }
+
   /** Extrae mensajes de texto del payload de Meta de forma segura. */
   private parseMetaPayload(body: unknown): ParsedInbound[] {
     const out: ParsedInbound[] = [];
