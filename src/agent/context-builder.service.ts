@@ -122,7 +122,11 @@ export class ContextBuilder {
   /**
    * Construye el historial reciente como mensajes user/assistant. Entrantes del
    * cliente → user; salientes del agente → assistant. Las interacciones de
-   * canal `system` no van al modelo. Garantiza que empiece por un turno `user`.
+   * canal `system` no van al modelo. Garantiza que empiece y termine en un
+   * turno `user`: la API de Anthropic exige que el último mensaje sea `user`,
+   * y un turno saliente final sin respuesta del cliente (p. ej. el aviso fijo
+   * que deja `derivarAAgente` antes de encolar al agente receptor) rompería
+   * esa condición si no se recortara.
    */
   async buildMessages(leadId: string): Promise<Anthropic.MessageParam[]> {
     const interactions = await this.prisma.db.interaction.findMany({
@@ -137,9 +141,14 @@ export class ContextBuilder {
       content: i.content,
     }));
 
-    // El historial debe comenzar por un turno del usuario.
     while (messages.length > 0 && messages[0].role === 'assistant') {
       messages.shift();
+    }
+    while (
+      messages.length > 0 &&
+      messages[messages.length - 1].role === 'assistant'
+    ) {
+      messages.pop();
     }
     return messages;
   }
