@@ -19,13 +19,24 @@ const ALWAYS_OPEN = {
   },
 };
 
-const LEAD = {
+const LEAD: {
+  id: string;
+  status: string;
+  isPausedForHuman: boolean;
+  contactAttempts: number;
+  timezone: string | null;
+  source: string | null;
+  email: string | null;
+  phone: string | null;
+} = {
   id: 'lead-1',
   status: 'NUEVO',
   isPausedForHuman: false,
   contactAttempts: 0,
   timezone: null,
   source: 'landing',
+  email: 'lead@x.cl',
+  phone: '+56911111111',
 };
 
 function buildHarness(
@@ -130,6 +141,24 @@ describe('FollowUpService.processFollowUp', () => {
     await run(() => h.service.processFollowUp('lead-1'));
     expect(h.agent.runFollowUp).toHaveBeenCalledTimes(1);
     expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
+    // Intento 2 en la escalera por defecto (email,whatsapp,...) → WhatsApp.
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).toContain('WHATSAPP');
+  });
+
+  it('primer contacto: escalera empieza por correo', async () => {
+    const h = buildHarness({ contactAttempts: 0 });
+    await run(() => h.service.processFollowUp('lead-1'));
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).toContain('CORREO');
+    expect(instruction).toContain('enviarCorreo');
+  });
+
+  it('lead sin teléfono ni correo: cierra como inalcanzable', async () => {
+    const h = buildHarness({ email: null, phone: null });
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.closeAsLost).toHaveBeenCalledWith('lead-1');
   });
 
   it('si el agente escala, no reprograma como seguimiento', async () => {

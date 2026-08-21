@@ -73,6 +73,11 @@ const envSchema = z
       .transform((v) => v === 'true'),
     FOLLOWUP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     FOLLOWUP_BASE_DELAY_HOURS: z.coerce.number().int().positive().default(24),
+    // Escalera de canales del seguimiento (coma-separado): email|whatsapp|call.
+    // El índice es el intento; cicla si hay más intentos que canales.
+    FOLLOWUP_CHANNEL_LADDER: z
+      .string()
+      .default('email,whatsapp,whatsapp,email'),
 
     // ── Correo (Fase 5) ──
     // 'log' = registra el correo en consola (dev). 'smtp' = envío real.
@@ -128,7 +133,8 @@ const envSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['YCLOUD_API_KEY'],
-          message: 'YCLOUD_API_KEY es obligatoria cuando WHATSAPP_PROVIDER=ycloud',
+          message:
+            'YCLOUD_API_KEY es obligatoria cuando WHATSAPP_PROVIDER=ycloud',
         });
       }
       if (!env.YCLOUD_FROM) {

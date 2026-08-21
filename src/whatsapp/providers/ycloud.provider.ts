@@ -8,7 +8,8 @@ import { WhatsappProvider } from './whatsapp-provider.interface';
  */
 export class YCloudWhatsappProvider implements WhatsappProvider {
   private readonly logger = new Logger('WhatsApp(ycloud)');
-  private readonly url = 'https://api.ycloud.com/v2/whatsapp/messages/sendDirectly';
+  private readonly url =
+    'https://api.ycloud.com/v2/whatsapp/messages/sendDirectly';
 
   constructor(
     private readonly apiKey: string,

@@ -4,7 +4,9 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PromptService } from '../prompts/prompt.service';
 import { ExampleLibraryService } from '../improvement/example-library.service';
 
-function buildHarness(interactions: { direction: Direction; content: string }[]) {
+function buildHarness(
+  interactions: { direction: Direction; content: string }[],
+) {
   const prisma = {
     db: {
       interaction: {

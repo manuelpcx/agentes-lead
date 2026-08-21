@@ -43,7 +43,9 @@ import { YCloudWhatsappProvider } from './providers/ycloud.provider';
           return new MetaCloudWhatsappProvider(token, phoneId);
         }
         if (provider === 'ycloud') {
-          const apiKey = config.get('YCLOUD_API_KEY', { infer: true }) as string;
+          const apiKey = config.get('YCLOUD_API_KEY', {
+            infer: true,
+          }) as string;
           const from = config.get('YCLOUD_FROM', { infer: true }) as string;
           return new YCloudWhatsappProvider(apiKey, from);
         }

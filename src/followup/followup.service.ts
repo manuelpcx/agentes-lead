@@ -8,6 +8,12 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { AgentRunner } from '../agent/agent-runner.service';
 import { isWithinBusinessHours, nextAllowedTime } from './business-hours';
+import {
+  FollowUpChannel,
+  buildFollowUpInstruction,
+  parseLadder,
+  resolveFollowUpChannel,
+} from './channel-ladder';
 
 const CONVERSATION_CHANNELS: Channel[] = [
   Channel.whatsapp,
@@ -29,6 +35,7 @@ export class FollowUpService {
   private readonly logger = new Logger(FollowUpService.name);
   private readonly maxAttempts: number;
   private readonly baseDelayHours: number;
+  private readonly ladder: FollowUpChannel[];
 
   constructor(
     config: ConfigService<EnvVars, true>,
@@ -41,6 +48,9 @@ export class FollowUpService {
     this.baseDelayHours = config.get('FOLLOWUP_BASE_DELAY_HOURS', {
       infer: true,
     });
+    this.ladder = parseLadder(
+      config.get('FOLLOWUP_CHANNEL_LADDER', { infer: true }),
+    );
   }
 
   /**
@@ -103,9 +113,34 @@ export class FollowUpService {
 
     const primerContacto = lead.contactAttempts === 0;
     const attempt = lead.contactAttempts + 1;
-    const instruction = primerContacto
-      ? `[PRIMER CONTACTO] Este lead (origen: ${lead.source ?? 'desconocido'}) aún no ha conversado contigo. Preséntate breve y cálidamente por WhatsApp y ofrece ayuda para iniciar la conversación. No seas invasivo.`
-      : `[SEGUIMIENTO ${attempt}/${this.maxAttempts}] El cliente no ha respondido a tu último mensaje. Envía por WhatsApp un mensaje de seguimiento breve para retomar el contacto. Si ya no tiene sentido insistir, no envíes nada (el sistema lo cerrará más adelante). Respalda cualquier dato con las herramientas.`;
+
+    // Escalera de canales: elige el canal de este intento según los datos de
+    // contacto del lead (correo es el fiable para leads fríos).
+    const channel = resolveFollowUpChannel(attempt, this.ladder, {
+      hasEmail: !!lead.email,
+      hasPhone: !!lead.phone,
+    });
+    if (!channel) {
+      await this.leads.closeAsLost(leadId);
+      await this.interactions.register({
+        leadId,
+        channel: Channel.system,
+        direction: Direction.outbound,
+        content:
+          'Cerrado: el lead no tiene teléfono ni correo para contactarlo.',
+        agentId: null,
+      });
+      this.logger.log(`Lead cerrado por inalcanzable (leadId=${leadId})`);
+      return;
+    }
+
+    const instruction = buildFollowUpInstruction({
+      channel,
+      attempt,
+      maxAttempts: this.maxAttempts,
+      primerContacto,
+      source: lead.source,
+    });
 
     const outcome = await this.agent.runFollowUp(leadId, instruction);
     if (outcome.escalated) {
