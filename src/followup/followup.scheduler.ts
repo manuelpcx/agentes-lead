@@ -59,7 +59,10 @@ export class FollowUpScheduler {
           leadId: lead.id,
           correlationId: randomUUID(),
         },
-        { jobId: `followup:${lead.id}` },
+        // El `jobId` NO puede llevar `:` (BullMQ lo prohíbe). `removeOnComplete`
+        // libera el id al terminar, para que el mismo lead pueda reencolarse en
+        // la próxima ventana (si no, el job completado retendría el id).
+        { jobId: `followup-${lead.id}`, removeOnComplete: true },
       );
     }
 
