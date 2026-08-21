@@ -73,6 +73,13 @@ const envSchema = z
       .transform((v) => v === 'true'),
     FOLLOWUP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     FOLLOWUP_BASE_DELAY_HOURS: z.coerce.number().int().positive().default(24),
+    // Minutos de espera antes del primer contacto de un lead nuevo (0 = casi
+    // inmediato). Responder rápido sin parecer un bot instantáneo.
+    FOLLOWUP_FIRST_CONTACT_DELAY_MIN: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(5),
     // Escalera de canales del seguimiento (coma-separado): email|whatsapp|call.
     // El índice es el intento; cicla si hay más intentos que canales.
     FOLLOWUP_CHANNEL_LADDER: z

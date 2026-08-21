@@ -17,9 +17,10 @@ const TERMINAL_STATUSES: LeadStatus[] = [
 ];
 
 /**
- * Cron cada 15 min: busca leads con `nextActionAt` vencido (en todas las
+ * Cron cada 2 min: busca leads con `nextActionAt` vencido (en todas las
  * empresas, sin contexto de tenant) y encola un seguimiento por cada uno. El
- * `jobId` determinista evita duplicados dentro de la misma ventana.
+ * `jobId` determinista evita duplicados dentro de la misma ventana. Frecuencia
+ * alta = baja latencia del primer contacto (responder rápido).
  */
 @Injectable()
 export class FollowUpScheduler {
@@ -35,7 +36,7 @@ export class FollowUpScheduler {
     this.enabled = config.get('FOLLOWUP_ENABLED', { infer: true });
   }
 
-  @Cron('0 */15 * * * *')
+  @Cron('0 */2 * * * *')
   async sweep(): Promise<void> {
     if (!this.enabled) {
       return;

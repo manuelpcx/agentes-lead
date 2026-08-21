@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { LeadsService } from './leads.service';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -5,6 +6,7 @@ import { AgentsService } from '../agents/agents.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { IncomingLeadDto } from '../webhooks/dto/incoming-lead.dto';
 import { TenantContext } from '../common/tenant/tenant-context';
+import type { EnvVars } from '../common/config/env.validation';
 
 /** Ejecuta la ingesta dentro de un contexto de tenant (como en producción). */
 function ingestWithTenant(service: LeadsService, companyId = 'company-1') {
@@ -41,8 +43,11 @@ function buildHarness() {
   const interactions = {
     register: jest.fn().mockResolvedValue({}),
   } as unknown as InteractionsService;
+  const config = {
+    get: () => 0, // FOLLOWUP_FIRST_CONTACT_DELAY_MIN
+  } as unknown as ConfigService<EnvVars, true>;
 
-  const service = new LeadsService(prisma, agents, interactions);
+  const service = new LeadsService(prisma, agents, interactions, config);
   return { service, db, tx, agents, interactions };
 }
 

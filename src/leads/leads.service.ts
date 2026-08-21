@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Channel, Direction, Lead, LeadStatus, Prisma } from '@prisma/client';
+import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AgentsService } from '../agents/agents.service';
 import { InteractionsService } from '../interactions/interactions.service';
@@ -15,11 +17,17 @@ export interface IngestResult {
 
 @Injectable()
 export class LeadsService {
+  private readonly firstContactDelayMs: number;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly agents: AgentsService,
     private readonly interactions: InteractionsService,
-  ) {}
+    config: ConfigService<EnvVars, true>,
+  ) {
+    this.firstContactDelayMs =
+      config.get('FOLLOWUP_FIRST_CONTACT_DELAY_MIN', { infer: true }) * 60_000;
+  }
 
   /**
    * Ingesta idempotente por `(companyId, externalId)`: si el lead no existe lo
@@ -200,8 +208,9 @@ export class LeadsService {
           timezone: payload.timezone,
           metadata: (payload.metadata ?? {}) as Prisma.InputJsonValue,
           status: LeadStatus.NUEVO,
-          // Programa el primer contacto proactivo (Fase 4 lo ejecuta).
-          nextActionAt: new Date(),
+          // Programa el primer contacto proactivo (Fase 4 lo ejecuta). Con un
+          // pequeño retardo configurable para responder rápido sin parecer bot.
+          nextActionAt: new Date(Date.now() + this.firstContactDelayMs),
           nextActionType: 'primer_contacto',
         },
         select: { id: true },
