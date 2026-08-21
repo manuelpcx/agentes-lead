@@ -100,7 +100,12 @@ export class AgentRunner {
       return { messageSent: false, escalated: true };
     }
 
-    const system = await this.contextBuilder.buildSystem(agent, lead);
+    const companyWhatsApp = await this.resolveCompanyWhatsApp();
+    const system = await this.contextBuilder.buildSystem(
+      agent,
+      lead,
+      companyWhatsApp,
+    );
     const tools = this.toolRegistry.forAgent(agent.enabledTools);
     const toolDefs: Anthropic.Tool[] = tools.map((t) => t.definition);
 
@@ -109,6 +114,7 @@ export class AgentRunner {
       agentId: agent.id,
       conversationId: conversation.id,
       recordedFacts: [],
+      companyWhatsApp,
       escalated: false,
       messageSent: false,
     };
@@ -223,6 +229,24 @@ export class AgentRunner {
       });
     }
     this.logger.warn(`Lead ${lead.id} escalado por degradación (sin LLM)`);
+  }
+
+  /**
+   * Número de WhatsApp de la empresa desde `channelsConfig.whatsapp.phoneNumber`
+   * (el número de negocio que ve el cliente). Se usa para invitarlo por correo a
+   * seguir por WhatsApp y como respaldo del guardrail. Devuelve null si no está.
+   */
+  private async resolveCompanyWhatsApp(): Promise<string | null> {
+    const companyId = TenantContext.requireCompanyId();
+    const company = await this.prisma.raw.company.findUnique({
+      where: { id: companyId },
+      select: { channelsConfig: true },
+    });
+    const config = company?.channelsConfig as {
+      whatsapp?: { phoneNumber?: unknown };
+    } | null;
+    const phone = config?.whatsapp?.phoneNumber;
+    return typeof phone === 'string' && phone.trim() ? phone.trim() : null;
   }
 
   /** Busca la conversación abierta del lead (canal WhatsApp) o la crea. */

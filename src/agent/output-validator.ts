@@ -43,14 +43,17 @@ export function validateOutgoingMessage(
 
 /**
  * Fuentes de datos válidas para el guardrail: los resultados de herramientas del
- * turno MÁS los datos de contacto del propio lead. El teléfono/email del lead no
- * son cifras "inventadas": el agente puede referirlos (incluso formateados, p.
- * ej. "+569 2033 7143"), así que se agregan como respaldo para evitar falsos
- * positivos con fragmentos del teléfono.
+ * turno MÁS los datos de contacto del propio lead MÁS datos de contacto propios
+ * de la empresa (p. ej. su número de WhatsApp). Ninguno es una cifra "inventada":
+ * el agente puede referirlos (incluso formateados, p. ej. "+569 2033 7143"), así
+ * que se agregan como respaldo para evitar falsos positivos con sus fragmentos.
+ *
+ * `extra` permite pasar datos adicionales de respaldo (nulos/vacíos se ignoran).
  */
 export function leadFactSources(
   recordedFacts: string[],
   lead: { phone?: string | null; email?: string | null },
+  extra: Array<string | null | undefined> = [],
 ): string[] {
   const own: string[] = [];
   if (lead.phone) {
@@ -58,6 +61,11 @@ export function leadFactSources(
   }
   if (lead.email) {
     own.push(lead.email);
+  }
+  for (const value of extra) {
+    if (value) {
+      own.push(value);
+    }
   }
   return [...recordedFacts, ...own];
 }

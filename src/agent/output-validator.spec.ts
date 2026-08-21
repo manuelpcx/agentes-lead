@@ -40,6 +40,17 @@ describe('validateOutgoingMessage (guardrail)', () => {
     expect(r.allowed).toBe(true);
   });
 
+  it('permite el número de WhatsApp de la empresa vía extra (invitación por correo)', () => {
+    const facts = leadFactSources([], { phone: null, email: 'a@b.cl' }, [
+      '+56912345678',
+    ]);
+    const r = validateOutgoingMessage(
+      'Si quieres, seguimos por WhatsApp al +569 1234 5678.',
+      facts,
+    );
+    expect(r.allowed).toBe(true);
+  });
+
   it('sigue bloqueando una cifra inventada aunque el lead tenga teléfono', () => {
     const facts = leadFactSources([], {
       phone: '+56920337143',

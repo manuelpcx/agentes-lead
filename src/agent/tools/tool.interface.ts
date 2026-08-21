@@ -12,6 +12,13 @@ export interface ToolContext {
   conversationId: string;
   /** Textos de resultados de consulta de este turno (para validar salida). */
   recordedFacts: string[];
+  /**
+   * Número de WhatsApp de la empresa (de `channelsConfig.whatsapp.phoneNumber`),
+   * si está configurado. Es un dato propio válido: el agente puede citarlo (p.
+   * ej. al invitar por correo a seguir por WhatsApp) sin que el guardrail lo
+   * bloquee. Ver `leadFactSources`.
+   */
+  companyWhatsApp?: string | null;
   /** El lead fue escalado a humano en este turno. */
   escalated: boolean;
   /** Se envió al menos un mensaje al cliente en este turno. */

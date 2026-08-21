@@ -24,11 +24,16 @@ export class ContextBuilder {
   ) {}
 
   /**
-   * Arma el system prompt: versión activa + resumen del lead + guardrail +
-   * ejemplos aprobados similares (few-shot, Fase 6) + roster de otros agentes y
-   * nota de derivación recibida (multi-agente, Fase 8).
+   * Arma el system prompt: versión activa + resumen del lead + política de
+   * canales (correo→WhatsApp) + guardrail + ejemplos aprobados similares
+   * (few-shot, Fase 6) + roster de otros agentes y nota de derivación recibida
+   * (multi-agente, Fase 8).
    */
-  async buildSystem(agent: Agent, lead: Lead): Promise<string> {
+  async buildSystem(
+    agent: Agent,
+    lead: Lead,
+    companyWhatsApp?: string | null,
+  ): Promise<string> {
     const base = await this.prompts.getActiveContent(agent.id, agent.type);
     const resumen = [
       '--- Contexto del lead ---',
@@ -37,11 +42,36 @@ export class ContextBuilder {
       `Estado actual: ${lead.status}`,
       `Origen: ${lead.source ?? '(desconocido)'}`,
     ].join('\n');
+    const canales = this.channelPolicy(companyWhatsApp);
     const roster = await this.agentRoster(agent);
     const derivacion = await this.handoffNote(agent, lead);
     return (
-      `${base}\n\n${resumen}${derivacion}${roster}` +
+      `${base}\n\n${resumen}${canales}${derivacion}${roster}` +
       `${OUTPUT_GUARDRAIL_REMINDER}${await this.fewShot(lead)}`
+    );
+  }
+
+  /**
+   * Política de canales: el correo es un canal de una sola vía (el cliente no
+   * puede responderlo dentro del sistema). Por eso, en cada correo, el agente
+   * debe invitar a continuar por WhatsApp — que es el mismo hilo: cuando el
+   * cliente escriba por WhatsApp, la conversación se retoma donde quedó (el
+   * historial se une por lead). Si no hay número de WhatsApp configurado, se
+   * invita igual pero sin dictar un número (para no inventarlo).
+   */
+  private channelPolicy(companyWhatsApp?: string | null): string {
+    const destino = companyWhatsApp
+      ? `por WhatsApp al ${companyWhatsApp}`
+      : 'por WhatsApp';
+    return (
+      '\n\n--- Política de canales ---\n' +
+      'WhatsApp es tu canal principal de conversación. El correo es un canal de ' +
+      'una sola vía: sirve para enganchar o enviar información, pero el cliente ' +
+      'NO puede responderte por ahí. Por eso, en CADA correo que envíes, cierra ' +
+      `invitando de forma natural y breve a seguir la conversación ${destino}. ` +
+      'Es el mismo hilo: cuando el cliente te escriba por WhatsApp, retomas la ' +
+      'conversación donde quedó (no lo trates como alguien nuevo). No pidas que ' +
+      '"respondan este correo".'
     );
   }
 

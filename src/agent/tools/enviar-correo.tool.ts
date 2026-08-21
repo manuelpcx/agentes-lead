@@ -51,7 +51,7 @@ export class EnviarCorreoTool implements AgentTool {
 
     const validation = validateOutgoingMessage(
       cuerpo,
-      leadFactSources(ctx.recordedFacts, ctx.lead),
+      leadFactSources(ctx.recordedFacts, ctx.lead, [ctx.companyWhatsApp]),
     );
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);

@@ -8,8 +8,17 @@ import { InteractionsService } from '../interactions/interactions.service';
 import { LeadsService } from '../leads/leads.service';
 import { AgentActionsService } from '../agent-actions/agent-actions.service';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { TenantContext } from '../common/tenant/tenant-context';
 import { AgentTool, ToolContext } from './tools/tool.interface';
 import type { EnvVars } from '../common/config/env.validation';
+
+/** Corre `fn` dentro de un contexto de tenant (como el processor de la cola). */
+function inTenant<T>(fn: () => Promise<T>): Promise<T> {
+  return TenantContext.run(
+    { companyId: 'company-1', correlationId: 'test' },
+    fn,
+  );
+}
 
 const LEAD = {
   id: 'lead-1',
@@ -64,6 +73,13 @@ function buildHarness(configured = true) {
       conversation: {
         findFirst: jest.fn().mockResolvedValue({ id: 'conv-1' }),
         create: jest.fn(),
+      },
+    },
+    raw: {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({
+          channelsConfig: { whatsapp: { phoneNumber: '+56911112222' } },
+        }),
       },
     },
   } as unknown as PrismaService;
@@ -165,7 +181,7 @@ describe('AgentRunner.runTurn', () => {
       )
       .mockResolvedValueOnce(endTurn());
 
-    await h.runner.runTurn('lead-1');
+    await inTenant(() => h.runner.runTurn('lead-1'));
 
     expect(h.createMessage).toHaveBeenCalledTimes(3);
     expect(h.consultar.execute).toHaveBeenCalledTimes(1);
@@ -179,7 +195,7 @@ describe('AgentRunner.runTurn', () => {
     );
     // Si no cortara, pediría otra iteración; no la proveemos.
 
-    await h.runner.runTurn('lead-1');
+    await inTenant(() => h.runner.runTurn('lead-1'));
 
     expect(h.escalar.execute).toHaveBeenCalledTimes(1);
     // Solo una llamada al modelo: tras el stop no vuelve a iterar.
@@ -189,7 +205,7 @@ describe('AgentRunner.runTurn', () => {
   it('degrada a escalamiento cuando no hay LLM configurado', async () => {
     const h = buildHarness(false);
 
-    await h.runner.runTurn('lead-1');
+    await inTenant(() => h.runner.runTurn('lead-1'));
 
     expect(h.createMessage).not.toHaveBeenCalled();
     expect(h.leads.escalateToHuman).toHaveBeenCalledWith('lead-1');
@@ -203,7 +219,7 @@ describe('AgentRunner.runTurn', () => {
       isPausedForHuman: true,
     });
 
-    await h.runner.runTurn('lead-1');
+    await inTenant(() => h.runner.runTurn('lead-1'));
 
     expect(h.createMessage).not.toHaveBeenCalled();
   });
