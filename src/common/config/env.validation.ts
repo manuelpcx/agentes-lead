@@ -73,6 +73,11 @@ const envSchema = z
       .transform((v) => v === 'true'),
     FOLLOWUP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(4),
     FOLLOWUP_BASE_DELAY_HOURS: z.coerce.number().int().positive().default(24),
+    // Espaciado explícito entre intentos, en horas (coma-separado). El índice es
+    // el intento ejecutado: [tras #1, tras #2, tras #3, …]. Default: 2º toque a
+    // las 12h, luego 48h y 72h. Si un intento supera la lista, cae al espaciado
+    // creciente `FOLLOWUP_BASE_DELAY_HOURS * intento`.
+    FOLLOWUP_DELAYS_HOURS: z.string().default('12,48,72'),
     // Minutos de espera antes del primer contacto de un lead nuevo (0 = casi
     // inmediato). Responder rápido sin parecer un bot instantáneo.
     FOLLOWUP_FIRST_CONTACT_DELAY_MIN: z.coerce

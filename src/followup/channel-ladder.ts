@@ -29,6 +29,21 @@ export function parseLadder(raw: string | undefined): FollowUpChannel[] {
   return parsed.length > 0 ? parsed : DEFAULT_LADDER;
 }
 
+/**
+ * Parsea `FOLLOWUP_DELAYS_HOURS` (coma-separado) a horas por intento. Descarta
+ * valores no numéricos o no positivos. Lista vacía = usar el espaciado creciente
+ * por defecto (`baseDelayHours * intento`).
+ */
+export function parseDelaysHours(raw: string | undefined): number[] {
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
 /** Un canal es usable si el lead tiene el dato de contacto que necesita. */
 function canUse(
   channel: FollowUpChannel,

@@ -1,6 +1,7 @@
 import {
   DEFAULT_LADDER,
   buildFollowUpInstruction,
+  parseDelaysHours,
   parseLadder,
   resolveFollowUpChannel,
 } from './channel-ladder';
@@ -19,6 +20,18 @@ describe('parseLadder', () => {
       'call',
     ]);
     expect(parseLadder('WhatsApp,sms,email')).toEqual(['whatsapp', 'email']);
+  });
+});
+
+describe('parseDelaysHours', () => {
+  it('devuelve lista vacía si no hay valor', () => {
+    expect(parseDelaysHours(undefined)).toEqual([]);
+    expect(parseDelaysHours('')).toEqual([]);
+  });
+
+  it('parsea horas y descarta valores no positivos o no numéricos', () => {
+    expect(parseDelaysHours('12,48,72')).toEqual([12, 48, 72]);
+    expect(parseDelaysHours('12, x, -4, 0, 6')).toEqual([12, 6]);
   });
 });
 

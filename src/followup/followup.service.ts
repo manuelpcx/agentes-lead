@@ -11,6 +11,7 @@ import { isWithinBusinessHours, nextAllowedTime } from './business-hours';
 import {
   FollowUpChannel,
   buildFollowUpInstruction,
+  parseDelaysHours,
   parseLadder,
   resolveFollowUpChannel,
 } from './channel-ladder';
@@ -35,6 +36,7 @@ export class FollowUpService {
   private readonly logger = new Logger(FollowUpService.name);
   private readonly maxAttempts: number;
   private readonly baseDelayHours: number;
+  private readonly delaysHours: number[];
   private readonly ladder: FollowUpChannel[];
 
   constructor(
@@ -48,6 +50,9 @@ export class FollowUpService {
     this.baseDelayHours = config.get('FOLLOWUP_BASE_DELAY_HOURS', {
       infer: true,
     });
+    this.delaysHours = parseDelaysHours(
+      config.get('FOLLOWUP_DELAYS_HOURS', { infer: true }),
+    );
     this.ladder = parseLadder(
       config.get('FOLLOWUP_CHANNEL_LADDER', { infer: true }),
     );
@@ -147,8 +152,10 @@ export class FollowUpService {
       return; // el lead quedó en control humano
     }
 
-    // Cuenta el intento (asegura terminación) y reprograma con espaciado creciente.
-    const delayHours = this.baseDelayHours * attempt;
+    // Cuenta el intento (asegura terminación) y reprograma. Usa el espaciado
+    // explícito de `FOLLOWUP_DELAYS_HOURS` para este intento; si no está listado,
+    // cae al espaciado creciente `baseDelayHours * intento`.
+    const delayHours = this.delaysHours[attempt - 1] ?? this.baseDelayHours * attempt;
     await this.leads.recordFollowUpAttempt(
       leadId,
       new Date(now.getTime() + delayHours * HOUR_MS),
