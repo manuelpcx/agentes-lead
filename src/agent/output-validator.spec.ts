@@ -1,4 +1,4 @@
-import { validateOutgoingMessage } from './output-validator';
+import { leadFactSources, validateOutgoingMessage } from './output-validator';
 
 describe('validateOutgoingMessage (guardrail)', () => {
   it('permite un mensaje sin cifras', () => {
@@ -28,5 +28,25 @@ describe('validateOutgoingMessage (guardrail)', () => {
   it('ignora cifras pequeñas (horas, cantidades)', () => {
     const r = validateOutgoingMessage('Atendemos a las 9 y tengo 2 cupos', []);
     expect(r.allowed).toBe(true);
+  });
+
+  it('permite fragmentos del teléfono del lead vía leadFactSources', () => {
+    const facts = leadFactSources([], {
+      phone: '+56920337143',
+      email: null,
+    });
+    // El teléfono formateado se parte en 2033 y 7143; no debe bloquearse.
+    const r = validateOutgoingMessage('Te contacto al +569 2033 7143', facts);
+    expect(r.allowed).toBe(true);
+  });
+
+  it('sigue bloqueando una cifra inventada aunque el lead tenga teléfono', () => {
+    const facts = leadFactSources([], {
+      phone: '+56920337143',
+      email: null,
+    });
+    const r = validateOutgoingMessage('El plan cuesta 49990', facts);
+    expect(r.allowed).toBe(false);
+    expect(r.offending).toContain('49990');
   });
 });

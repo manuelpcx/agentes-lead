@@ -3,7 +3,7 @@ import { Channel, Direction } from '@prisma/client';
 import { WhatsappService } from '../../whatsapp/whatsapp.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
-import { validateOutgoingMessage } from '../output-validator';
+import { leadFactSources, validateOutgoingMessage } from '../output-validator';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_ENVIAR_WHATSAPP } from './tool-names';
 
@@ -48,7 +48,10 @@ export class EnviarWhatsAppTool implements AgentTool {
       return { content: 'Falta el parámetro "mensaje".', isError: true };
     }
 
-    const validation = validateOutgoingMessage(mensaje, ctx.recordedFacts);
+    const validation = validateOutgoingMessage(
+      mensaje,
+      leadFactSources(ctx.recordedFacts, ctx.lead),
+    );
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);
       await this.interactions.register({

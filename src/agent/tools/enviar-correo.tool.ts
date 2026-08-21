@@ -3,7 +3,7 @@ import { Channel, Direction } from '@prisma/client';
 import { EmailService } from '../../email/email.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
-import { validateOutgoingMessage } from '../output-validator';
+import { leadFactSources, validateOutgoingMessage } from '../output-validator';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_ENVIAR_CORREO } from './tool-names';
 
@@ -49,7 +49,10 @@ export class EnviarCorreoTool implements AgentTool {
       return { content: 'El lead no tiene correo registrado.', isError: true };
     }
 
-    const validation = validateOutgoingMessage(cuerpo, ctx.recordedFacts);
+    const validation = validateOutgoingMessage(
+      cuerpo,
+      leadFactSources(ctx.recordedFacts, ctx.lead),
+    );
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);
       await this.interactions.register({

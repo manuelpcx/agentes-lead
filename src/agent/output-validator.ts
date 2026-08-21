@@ -40,3 +40,24 @@ export function validateOutgoingMessage(
 
   return { allowed: offending.length === 0, offending };
 }
+
+/**
+ * Fuentes de datos válidas para el guardrail: los resultados de herramientas del
+ * turno MÁS los datos de contacto del propio lead. El teléfono/email del lead no
+ * son cifras "inventadas": el agente puede referirlos (incluso formateados, p.
+ * ej. "+569 2033 7143"), así que se agregan como respaldo para evitar falsos
+ * positivos con fragmentos del teléfono.
+ */
+export function leadFactSources(
+  recordedFacts: string[],
+  lead: { phone?: string | null; email?: string | null },
+): string[] {
+  const own: string[] = [];
+  if (lead.phone) {
+    own.push(lead.phone);
+  }
+  if (lead.email) {
+    own.push(lead.email);
+  }
+  return [...recordedFacts, ...own];
+}
