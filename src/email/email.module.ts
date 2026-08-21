@@ -8,8 +8,9 @@ import {
 } from './providers/email-provider.interface';
 import { LogEmailProvider } from './providers/log.provider';
 import { SmtpEmailProvider } from './providers/smtp.provider';
+import { ResendEmailProvider } from './providers/resend.provider';
 
-/** Módulo global de correo (proveedor `log` o `smtp`). */
+/** Módulo global de correo (proveedor `log`, `smtp` o `resend`). */
 @Global()
 @Module({
   providers: [
@@ -17,7 +18,14 @@ import { SmtpEmailProvider } from './providers/smtp.provider';
       provide: EMAIL_PROVIDER,
       inject: [ConfigService],
       useFactory: (config: ConfigService<EnvVars, true>): EmailProvider => {
-        if (config.get('EMAIL_PROVIDER', { infer: true }) === 'smtp') {
+        const provider = config.get('EMAIL_PROVIDER', { infer: true });
+        if (provider === 'resend') {
+          return new ResendEmailProvider(
+            config.get('RESEND_API_KEY', { infer: true }) as string,
+            config.get('EMAIL_FROM', { infer: true }),
+          );
+        }
+        if (provider === 'smtp') {
           return new SmtpEmailProvider({
             host: config.get('SMTP_HOST', { infer: true }) as string,
             port: config.get('SMTP_PORT', { infer: true }) ?? 587,

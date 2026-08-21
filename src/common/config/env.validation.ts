@@ -87,8 +87,9 @@ const envSchema = z
       .default('email,whatsapp,whatsapp,email'),
 
     // ── Correo (Fase 5) ──
-    // 'log' = registra el correo en consola (dev). 'smtp' = envío real.
-    EMAIL_PROVIDER: z.enum(['log', 'smtp']).default('log'),
+    // 'log' = consola (dev). 'smtp' = SMTP. 'resend' = API HTTP de Resend
+    // (recomendado en la nube: los PaaS suelen bloquear SMTP).
+    EMAIL_PROVIDER: z.enum(['log', 'smtp', 'resend']).default('log'),
     EMAIL_FROM: z
       .string()
       .default('Agentes Lead <no-reply@agentes-lead.local>'),
@@ -100,6 +101,8 @@ const envSchema = z
       .transform((v) => v === 'true'),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+    // Resend (si EMAIL_PROVIDER=resend). El `from` sale de EMAIL_FROM.
+    RESEND_API_KEY: z.string().optional(),
 
     // ── Llamadas de voz / Vapi (Fase 5) ──
     // 'log' = stub sin llamada real (dev). 'vapi' = Vapi.ai.
@@ -124,6 +127,14 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         path: ['SMTP_HOST'],
         message: 'SMTP_HOST es obligatorio cuando EMAIL_PROVIDER=smtp',
+      });
+    }
+    // Si el correo usa Resend, se requiere la API key.
+    if (env.EMAIL_PROVIDER === 'resend' && !env.RESEND_API_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['RESEND_API_KEY'],
+        message: 'RESEND_API_KEY es obligatoria cuando EMAIL_PROVIDER=resend',
       });
     }
     // Si las llamadas usan Vapi, se requiere la API key.
