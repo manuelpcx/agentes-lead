@@ -1,5 +1,8 @@
 import { Logger } from '@nestjs/common';
-import { WhatsappProvider } from './whatsapp-provider.interface';
+import {
+  WhatsappProvider,
+  WhatsappTemplateMessage,
+} from './whatsapp-provider.interface';
 
 /**
  * Proveedor de WhatsApp para desarrollo: no envía nada real, solo registra el
@@ -10,5 +13,15 @@ export class LogWhatsappProvider implements WhatsappProvider {
 
   async send(to: string, text: string): Promise<void> {
     this.logger.log(`→ ${to}: ${text}`);
+  }
+
+  async sendTemplate(
+    to: string,
+    template: WhatsappTemplateMessage,
+  ): Promise<void> {
+    this.logger.log(
+      `→ ${to}: [plantilla ${template.name}/${template.languageCode}] ` +
+        `params=[${template.bodyParams.join(', ')}]`,
+    );
   }
 }

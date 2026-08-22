@@ -1,11 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Channel, Direction, LeadStatus } from '@prisma/client';
+import { Channel, Direction, Lead, LeadStatus } from '@prisma/client';
 import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
 import { isWithinBusinessHours, nextAllowedTime } from './business-hours';
 import {
@@ -30,6 +31,8 @@ const TERMINAL_STATUSES: LeadStatus[] = [
 ];
 
 const HOUR_MS = 60 * 60 * 1000;
+/** Ventana de servicio de WhatsApp para mensajes de texto libre. */
+const WHATSAPP_WINDOW_MS = 24 * HOUR_MS;
 
 @Injectable()
 export class FollowUpService {
@@ -38,12 +41,15 @@ export class FollowUpService {
   private readonly baseDelayHours: number;
   private readonly delaysHours: number[];
   private readonly ladder: FollowUpChannel[];
+  private readonly whatsappTemplate: string;
+  private readonly whatsappTemplateLang: string;
 
   constructor(
     config: ConfigService<EnvVars, true>,
     private readonly prisma: PrismaService,
     private readonly leads: LeadsService,
     private readonly interactions: InteractionsService,
+    private readonly whatsapp: WhatsappService,
     private readonly agent: AgentRunner,
   ) {
     this.maxAttempts = config.get('FOLLOWUP_MAX_ATTEMPTS', { infer: true });
@@ -56,6 +62,12 @@ export class FollowUpService {
     this.ladder = parseLadder(
       config.get('FOLLOWUP_CHANNEL_LADDER', { infer: true }),
     );
+    this.whatsappTemplate = config
+      .get('FOLLOWUP_WHATSAPP_TEMPLATE', { infer: true })
+      .trim();
+    this.whatsappTemplateLang = config.get('FOLLOWUP_WHATSAPP_TEMPLATE_LANG', {
+      infer: true,
+    });
   }
 
   /**
@@ -118,10 +130,11 @@ export class FollowUpService {
 
     const primerContacto = lead.contactAttempts === 0;
     const attempt = lead.contactAttempts + 1;
+    const nextTime = this.nextActionTime(now, attempt);
 
     // Escalera de canales: elige el canal de este intento según los datos de
     // contacto del lead (correo es el fiable para leads fríos).
-    const channel = resolveFollowUpChannel(attempt, this.ladder, {
+    let channel = resolveFollowUpChannel(attempt, this.ladder, {
       hasEmail: !!lead.email,
       hasPhone: !!lead.phone,
     });
@@ -139,6 +152,35 @@ export class FollowUpService {
       return;
     }
 
+    // Ventana de 24h de WhatsApp: el texto libre del agente SOLO se puede enviar
+    // si el cliente escribió por WhatsApp en las últimas 24h. Si está cerrada:
+    //  - con plantilla configurada → envío determinista de plantilla (HSM).
+    //  - sin plantilla → cae a correo; si tampoco hay correo, cuenta el intento.
+    if (channel === 'whatsapp' && !(await this.isWhatsAppWindowOpen(leadId))) {
+      if (this.whatsappTemplate && lead.phone) {
+        await this.sendWhatsAppTemplate(lead);
+        await this.leads.recordFollowUpAttempt(leadId, nextTime, 'plantilla_wa');
+        this.logger.log(
+          `Seguimiento por plantilla WhatsApp (leadId=${leadId} intento=${attempt})`,
+        );
+        return;
+      }
+      if (lead.email) {
+        channel = 'email'; // fallback: fuera de ventana y sin plantilla
+      } else {
+        await this.leads.recordFollowUpAttempt(
+          leadId,
+          nextTime,
+          'wa_fuera_de_ventana',
+        );
+        this.logger.warn(
+          `WhatsApp fuera de ventana y sin plantilla ni correo ` +
+            `(leadId=${leadId} intento=${attempt})`,
+        );
+        return;
+      }
+    }
+
     const instruction = buildFollowUpInstruction({
       channel,
       attempt,
@@ -152,18 +194,60 @@ export class FollowUpService {
       return; // el lead quedó en control humano
     }
 
-    // Cuenta el intento (asegura terminación) y reprograma. Usa el espaciado
-    // explícito de `FOLLOWUP_DELAYS_HOURS` para este intento; si no está listado,
-    // cae al espaciado creciente `baseDelayHours * intento`.
-    const delayHours = this.delaysHours[attempt - 1] ?? this.baseDelayHours * attempt;
-    await this.leads.recordFollowUpAttempt(
-      leadId,
-      new Date(now.getTime() + delayHours * HOUR_MS),
-      'seguimiento',
-    );
+    // Cuenta el intento (asegura terminación) y reprograma.
+    await this.leads.recordFollowUpAttempt(leadId, nextTime, 'seguimiento');
     this.logger.log(
       `Seguimiento ejecutado (leadId=${leadId} intento=${attempt} ` +
-        `enviado=${outcome.messageSent})`,
+        `canal=${channel} enviado=${outcome.messageSent})`,
     );
+  }
+
+  // ─────────────────────── privados ───────────────────────
+
+  /**
+   * Reprograma según el espaciado explícito de `FOLLOWUP_DELAYS_HOURS` para este
+   * intento; si no está listado, cae al espaciado creciente `baseDelayHours *
+   * intento`.
+   */
+  private nextActionTime(now: Date, attempt: number): Date {
+    const delayHours =
+      this.delaysHours[attempt - 1] ?? this.baseDelayHours * attempt;
+    return new Date(now.getTime() + delayHours * HOUR_MS);
+  }
+
+  /** La ventana de 24h está abierta si hubo un WhatsApp entrante hace < 24h. */
+  private async isWhatsAppWindowOpen(leadId: string): Promise<boolean> {
+    const lastInbound = await this.prisma.db.interaction.findFirst({
+      where: {
+        leadId,
+        channel: Channel.whatsapp,
+        direction: Direction.inbound,
+      },
+      orderBy: { occurredAt: 'desc' },
+      select: { occurredAt: true },
+    });
+    if (!lastInbound) {
+      return false;
+    }
+    return Date.now() - lastInbound.occurredAt.getTime() < WHATSAPP_WINDOW_MS;
+  }
+
+  /** Envía la plantilla configurada (contacto proactivo fuera de ventana). */
+  private async sendWhatsAppTemplate(lead: Lead): Promise<void> {
+    const firstName = lead.name?.trim().split(/\s+/)[0] || 'allí';
+    await this.whatsapp.sendTemplate(lead.phone as string, {
+      name: this.whatsappTemplate,
+      languageCode: this.whatsappTemplateLang,
+      bodyParams: [firstName],
+    });
+    await this.interactions.register({
+      leadId: lead.id,
+      channel: Channel.whatsapp,
+      direction: Direction.outbound,
+      content:
+        `[plantilla ${this.whatsappTemplate}] contacto proactivo ` +
+        '(fuera de ventana de 24h)',
+      agentId: null,
+    });
   }
 }

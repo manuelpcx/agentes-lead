@@ -3,6 +3,7 @@ import { FollowUpService } from './followup.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import type { EnvVars } from '../common/config/env.validation';
@@ -42,14 +43,18 @@ const LEAD: {
 function buildHarness(
   overrides: Partial<typeof LEAD> = {},
   businessHours: unknown = ALWAYS_OPEN,
+  template = '',
 ) {
+  const cfg: Record<string, unknown> = {
+    FOLLOWUP_MAX_ATTEMPTS: 4,
+    FOLLOWUP_BASE_DELAY_HOURS: 24,
+    FOLLOWUP_DELAYS_HOURS: undefined,
+    FOLLOWUP_CHANNEL_LADDER: undefined,
+    FOLLOWUP_WHATSAPP_TEMPLATE: template,
+    FOLLOWUP_WHATSAPP_TEMPLATE_LANG: 'es',
+  };
   const config = {
-    get: (k: string) =>
-      k === 'FOLLOWUP_MAX_ATTEMPTS'
-        ? 4
-        : k === 'FOLLOWUP_BASE_DELAY_HOURS'
-          ? 24
-          : undefined,
+    get: (k: string) => cfg[k],
   } as unknown as ConfigService<EnvVars, true>;
 
   const prisma = {
@@ -80,14 +85,27 @@ function buildHarness(
       .mockResolvedValue({ messageSent: true, escalated: false }),
   } as unknown as AgentRunner;
 
+  const whatsapp = {
+    send: jest.fn().mockResolvedValue(undefined),
+    sendTemplate: jest.fn().mockResolvedValue(undefined),
+  } as unknown as WhatsappService;
+
   const service = new FollowUpService(
     config,
     prisma,
     leads,
     interactions,
+    whatsapp,
     agent,
   );
-  return { service, prisma, leads, interactions, agent };
+  return { service, prisma, leads, interactions, whatsapp, agent };
+}
+
+/** Marca la ventana de WhatsApp como abierta (WA entrante reciente). */
+function openWhatsAppWindow(prisma: PrismaService) {
+  (prisma.db.interaction.findFirst as jest.Mock)
+    .mockResolvedValueOnce(null) // lastConv: nadie habló último
+    .mockResolvedValueOnce({ occurredAt: new Date() }); // ventana abierta
 }
 
 function run(fn: () => Promise<void>) {
@@ -136,14 +154,44 @@ describe('FollowUpService.processFollowUp', () => {
     expect(h.agent.runFollowUp).not.toHaveBeenCalled();
   });
 
-  it('en horario y con intentos disponibles: corre el agente y reprograma', async () => {
+  it('con ventana de WhatsApp abierta: corre el agente por WhatsApp y reprograma', async () => {
     const h = buildHarness({ contactAttempts: 1 });
+    openWhatsAppWindow(h.prisma);
     await run(() => h.service.processFollowUp('lead-1'));
     expect(h.agent.runFollowUp).toHaveBeenCalledTimes(1);
     expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
     // Intento 2 en la escalera por defecto (email,whatsapp,...) → WhatsApp.
     const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
     expect(instruction).toContain('WHATSAPP');
+  });
+
+  it('WhatsApp fuera de ventana sin plantilla: cae a correo', async () => {
+    // Intento 2 = WhatsApp, pero la ventana está cerrada (findFirst → null) y no
+    // hay plantilla configurada: debe usar correo en su lugar.
+    const h = buildHarness({ contactAttempts: 1 });
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).toContain('CORREO');
+  });
+
+  it('WhatsApp fuera de ventana con plantilla: envía plantilla y no corre el agente', async () => {
+    const h = buildHarness({ contactAttempts: 1 }, ALWAYS_OPEN, 'bienvenida');
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.whatsapp.sendTemplate).toHaveBeenCalledTimes(1);
+    const [to, tpl] = (h.whatsapp.sendTemplate as jest.Mock).mock.calls[0];
+    expect(to).toBe('+56911111111');
+    expect(tpl).toMatchObject({ name: 'bienvenida', languageCode: 'es' });
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it('WhatsApp fuera de ventana, sin plantilla ni correo: cuenta el intento sin contactar', async () => {
+    const h = buildHarness({ contactAttempts: 1, email: null });
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
   });
 
   it('primer contacto: escalera empieza por correo', async () => {

@@ -1,5 +1,8 @@
 import { Logger } from '@nestjs/common';
-import { WhatsappProvider } from './whatsapp-provider.interface';
+import {
+  WhatsappProvider,
+  WhatsappTemplateMessage,
+} from './whatsapp-provider.interface';
 
 const GRAPH_VERSION = 'v21.0';
 
@@ -16,6 +19,46 @@ export class MetaCloudWhatsappProvider implements WhatsappProvider {
   ) {}
 
   async send(to: string, text: string): Promise<void> {
+    await this.post({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'text',
+      text: { body: text },
+    });
+  }
+
+  async sendTemplate(
+    to: string,
+    template: WhatsappTemplateMessage,
+  ): Promise<void> {
+    const components =
+      template.bodyParams.length > 0
+        ? [
+            {
+              type: 'body',
+              parameters: template.bodyParams.map((text) => ({
+                type: 'text',
+                text,
+              })),
+            },
+          ]
+        : [];
+    await this.post({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'template',
+      template: {
+        name: template.name,
+        language: { code: template.languageCode },
+        components,
+      },
+    });
+  }
+
+  /** POST común a la Cloud API; lanza si Meta responde con error. */
+  private async post(body: Record<string, unknown>): Promise<void> {
     const url = `https://graph.facebook.com/${GRAPH_VERSION}/${this.phoneNumberId}/messages`;
     const response = await fetch(url, {
       method: 'POST',
@@ -23,13 +66,7 @@ export class MetaCloudWhatsappProvider implements WhatsappProvider {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.token}`,
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to,
-        type: 'text',
-        text: { body: text },
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

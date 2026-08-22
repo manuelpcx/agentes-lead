@@ -90,6 +90,12 @@ const envSchema = z
     FOLLOWUP_CHANNEL_LADDER: z
       .string()
       .default('email,whatsapp,whatsapp,email'),
+    // Plantilla (HSM) aprobada para iniciar WhatsApp fuera de la ventana de 24h.
+    // Vacío = sin plantilla (el agente cae a correo cuando la ventana está
+    // cerrada). Debe existir/estar aprobada en el proveedor (YCloud/Meta) con
+    // UNA variable de cuerpo {{1}} = nombre del lead.
+    FOLLOWUP_WHATSAPP_TEMPLATE: z.string().default(''),
+    FOLLOWUP_WHATSAPP_TEMPLATE_LANG: z.string().default('es'),
 
     // ── Correo (Fase 5) ──
     // 'log' = consola (dev). 'smtp' = SMTP. 'resend' = API HTTP de Resend
