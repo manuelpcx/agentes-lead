@@ -93,7 +93,8 @@ const envSchema = z
     // Plantilla (HSM) aprobada para iniciar WhatsApp fuera de la ventana de 24h.
     // Vacío = sin plantilla (el agente cae a correo cuando la ventana está
     // cerrada). Debe existir/estar aprobada en el proveedor (YCloud/Meta) con
-    // UNA variable de cuerpo {{1}} = nombre del lead.
+    // DOS variables de cuerpo: {{1}} = nombre del lead, {{2}} = nombre de la
+    // empresa (tenant). El LANG debe calzar con el idioma de la plantilla.
     FOLLOWUP_WHATSAPP_TEMPLATE: z.string().default(''),
     FOLLOWUP_WHATSAPP_TEMPLATE_LANG: z.string().default('es'),
 

@@ -98,10 +98,10 @@ export class FollowUpService {
       return;
     }
 
-    // Guarda de horario hábil + zona horaria.
+    // Guarda de horario hábil + zona horaria (y nombre para la plantilla).
     const company = await this.prisma.raw.company.findUnique({
       where: { id: TenantContext.requireCompanyId() },
-      select: { businessHours: true, timezone: true },
+      select: { name: true, businessHours: true, timezone: true },
     });
     const timezone = lead.timezone ?? company?.timezone ?? 'America/Santiago';
     const now = new Date();
@@ -158,7 +158,7 @@ export class FollowUpService {
     //  - sin plantilla → cae a correo; si tampoco hay correo, cuenta el intento.
     if (channel === 'whatsapp' && !(await this.isWhatsAppWindowOpen(leadId))) {
       if (this.whatsappTemplate && lead.phone) {
-        await this.sendWhatsAppTemplate(lead);
+        await this.sendWhatsAppTemplate(lead, company?.name);
         await this.leads.recordFollowUpAttempt(leadId, nextTime, 'plantilla_wa');
         this.logger.log(
           `Seguimiento por plantilla WhatsApp (leadId=${leadId} intento=${attempt})`,
@@ -232,13 +232,20 @@ export class FollowUpService {
     return Date.now() - lastInbound.occurredAt.getTime() < WHATSAPP_WINDOW_MS;
   }
 
-  /** Envía la plantilla configurada (contacto proactivo fuera de ventana). */
-  private async sendWhatsAppTemplate(lead: Lead): Promise<void> {
+  /**
+   * Envía la plantilla configurada (contacto proactivo fuera de ventana). La
+   * plantilla espera 2 variables de cuerpo: {{1}} = nombre del lead, {{2}} =
+   * nombre de la empresa (el tenant).
+   */
+  private async sendWhatsAppTemplate(
+    lead: Lead,
+    companyName?: string | null,
+  ): Promise<void> {
     const firstName = lead.name?.trim().split(/\s+/)[0] || 'allí';
     await this.whatsapp.sendTemplate(lead.phone as string, {
       name: this.whatsappTemplate,
       languageCode: this.whatsappTemplateLang,
-      bodyParams: [firstName],
+      bodyParams: [firstName, companyName?.trim() || 'nuestra empresa'],
     });
     await this.interactions.register({
       leadId: lead.id,

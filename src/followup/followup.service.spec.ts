@@ -63,7 +63,7 @@ function buildHarness(
       company: {
         findUnique: jest
           .fn()
-          .mockResolvedValue({ businessHours, timezone: 'UTC' }),
+          .mockResolvedValue({ name: 'Estudio Demo', businessHours, timezone: 'UTC' }),
       },
     },
   } as unknown as PrismaService;
@@ -182,6 +182,8 @@ describe('FollowUpService.processFollowUp', () => {
     const [to, tpl] = (h.whatsapp.sendTemplate as jest.Mock).mock.calls[0];
     expect(to).toBe('+56911111111');
     expect(tpl).toMatchObject({ name: 'bienvenida', languageCode: 'es' });
+    // {{1}} = nombre del lead (sin nombre → 'allí'), {{2}} = nombre de la empresa.
+    expect(tpl.bodyParams).toEqual(['allí', 'Estudio Demo']);
     expect(h.agent.runFollowUp).not.toHaveBeenCalled();
     expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
   });
