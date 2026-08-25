@@ -1,5 +1,5 @@
 import { Direction } from '@prisma/client';
-import { ContextBuilder } from './context-builder.service';
+import { ContextBuilder, formatLeadMetadata } from './context-builder.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PromptService } from '../prompts/prompt.service';
 import { ExampleLibraryService } from '../improvement/example-library.service';
@@ -18,6 +18,31 @@ function buildHarness(
   const examples = {} as unknown as ExampleLibraryService;
   return new ContextBuilder(prisma, prompts, examples);
 }
+
+describe('formatLeadMetadata', () => {
+  it('devuelve vacío si no hay metadata útil', () => {
+    expect(formatLeadMetadata(undefined)).toBe('');
+    expect(formatLeadMetadata({})).toBe('');
+    expect(formatLeadMetadata('texto')).toBe('');
+    expect(formatLeadMetadata([1, 2])).toBe('');
+  });
+
+  it('renderiza pares clave: valor e ignora vacíos', () => {
+    const out = formatLeadMetadata({
+      presupuesto: 500000,
+      interes: 'plan pro',
+      vacio: '',
+      nulo: null,
+    });
+    expect(out).toBe('- presupuesto: 500000\n- interes: plan pro');
+  });
+
+  it('serializa objetos anidados y recorta valores largos', () => {
+    const out = formatLeadMetadata({ extra: { a: 1 }, largo: 'x'.repeat(400) }, 10);
+    expect(out).toContain('- extra: {"a":1}');
+    expect(out).toContain('- largo: xxxxxxxxxx…');
+  });
+});
 
 describe('ContextBuilder.buildMessages', () => {
   it('termina en un turno "user" aunque la última interacción sea saliente (ej. aviso de derivación)', async () => {

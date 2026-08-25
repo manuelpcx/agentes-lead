@@ -39,8 +39,8 @@ const envSchema = z
     // ── Agente / LLM (Fase 3) ──
     // La key es opcional al arrancar; sin ella el agente degrada a escalamiento.
     ANTHROPIC_API_KEY: z.string().optional(),
-    // Por defecto opus-5. Para alto volumen se puede usar 'claude-sonnet-5'.
-    ANTHROPIC_MODEL: z.string().default('claude-opus-5'),
+    // Por defecto sonnet-5. Para alto volumen se puede usar 'claude-sonnet-5'.
+    ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
     ANTHROPIC_EFFORT: z
       .enum(['low', 'medium', 'high', 'xhigh', 'max'])
       .default('medium'),

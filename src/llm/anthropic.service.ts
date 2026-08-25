@@ -14,7 +14,7 @@ export interface CreateMessageInput {
  * Envoltura del SDK de Anthropic. Si no hay `ANTHROPIC_API_KEY`, el cliente
  * queda nulo y `isConfigured()` devuelve false: el agente degrada a
  * escalamiento en vez de romper. Se deja el thinking en adaptive (default en
- * opus-5); NO se desactiva (desactivarlo tiene fallos conocidos de tool-calls).
+ * sonnet-5); NO se desactiva (desactivarlo tiene fallos conocidos de tool-calls).
  */
 @Injectable()
 export class AnthropicService {
