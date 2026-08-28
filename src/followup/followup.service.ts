@@ -8,6 +8,7 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
+import { SCHEDULED_CALL_TYPE } from '../agent/agent.constants';
 import { isWithinBusinessHours, nextAllowedTime } from './business-hours';
 import {
   FollowUpChannel,
@@ -82,20 +83,29 @@ export class FollowUpService {
       return;
     }
 
+    // Llamada que el propio lead pidió agendar (vía el tool iniciarLlamada). No
+    // pasa por el guard de "cliente habló último" ni por la escalera: es una
+    // acción explícita, solo se respeta el horario hábil.
+    const scheduledCall =
+      lead.nextActionType === SCHEDULED_CALL_TYPE && !!lead.phone;
+
     // Si el cliente fue el último en hablar, el flujo de respuesta (Fase 3) se
-    // encarga; no perseguimos. Reprogramamos por si queda en silencio.
-    const lastConv = await this.prisma.db.interaction.findFirst({
-      where: { leadId, channel: { in: CONVERSATION_CHANNELS } },
-      orderBy: { occurredAt: 'desc' },
-      select: { direction: true },
-    });
-    if (lastConv?.direction === Direction.inbound) {
-      await this.leads.scheduleNextAction(
-        leadId,
-        new Date(Date.now() + this.baseDelayHours * HOUR_MS),
-        'espera_respuesta',
-      );
-      return;
+    // encarga; no perseguimos. Reprogramamos por si queda en silencio. (No aplica
+    // a una llamada agendada por el propio lead.)
+    if (!scheduledCall) {
+      const lastConv = await this.prisma.db.interaction.findFirst({
+        where: { leadId, channel: { in: CONVERSATION_CHANNELS } },
+        orderBy: { occurredAt: 'desc' },
+        select: { direction: true },
+      });
+      if (lastConv?.direction === Direction.inbound) {
+        await this.leads.scheduleNextAction(
+          leadId,
+          new Date(Date.now() + this.baseDelayHours * HOUR_MS),
+          'espera_respuesta',
+        );
+        return;
+      }
     }
 
     // Guarda de horario hábil + zona horaria (y nombre para la plantilla).
@@ -107,10 +117,35 @@ export class FollowUpService {
     const now = new Date();
     if (!isWithinBusinessHours(company?.businessHours, timezone, now)) {
       const next = nextAllowedTime(company?.businessHours, timezone, now);
-      await this.leads.scheduleNextAction(leadId, next, 'fuera_de_horario');
+      // Preserva el tipo si es una llamada agendada, para no perder la intención.
+      await this.leads.scheduleNextAction(
+        leadId,
+        next,
+        scheduledCall ? SCHEDULED_CALL_TYPE : 'fuera_de_horario',
+      );
       this.logger.log(
         `Seguimiento pospuesto por horario (leadId=${leadId} → ${next.toISOString()})`,
       );
+      return;
+    }
+
+    // Ejecuta la llamada agendada: fuerza canal 'call' con instrucción explícita.
+    if (scheduledCall) {
+      const attempt = lead.contactAttempts + 1;
+      const instruction =
+        '[LLAMADA AGENDADA] El lead pidió que lo llamaras. Llámalo AHORA con la ' +
+        'herramienta iniciarLlamada (sin volver a programar). Respalda cualquier ' +
+        'dato con tus herramientas.';
+      const outcome = await this.agent.runFollowUp(leadId, instruction);
+      if (outcome.escalated) {
+        return;
+      }
+      await this.leads.recordFollowUpAttempt(
+        leadId,
+        this.nextActionTime(now, attempt),
+        'seguimiento',
+      );
+      this.logger.log(`Llamada agendada ejecutada (leadId=${leadId})`);
       return;
     }
 

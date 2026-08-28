@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { StartCallParams, VapiProvider } from './vapi-provider.interface';
+import { StartCallParams, VoiceProvider } from './voice-provider.interface';
 
 const VAPI_URL = 'https://api.vapi.ai/call';
 
@@ -10,8 +10,8 @@ export interface VapiApiConfig {
 }
 
 /** Proveedor de llamadas contra la API de Vapi.ai. */
-export class VapiApiProvider implements VapiProvider {
-  private readonly logger = new Logger('Vapi(api)');
+export class VapiVoiceProvider implements VoiceProvider {
+  private readonly logger = new Logger('Voice(vapi)');
 
   constructor(private readonly config: VapiApiConfig) {}
 
@@ -27,6 +27,10 @@ export class VapiApiProvider implements VapiProvider {
         assistantId: this.config.assistantId,
         customer: { number: params.to },
         metadata: params.metadata,
+        // Vapi inyecta variables al assistant vía assistantOverrides.
+        assistantOverrides: params.dynamicVariables
+          ? { variableValues: params.dynamicVariables }
+          : undefined,
       }),
     });
 

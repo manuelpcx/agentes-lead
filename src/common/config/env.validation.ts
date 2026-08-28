@@ -116,12 +116,19 @@ const envSchema = z
     // Resend (si EMAIL_PROVIDER=resend). El `from` sale de EMAIL_FROM.
     RESEND_API_KEY: z.string().optional(),
 
-    // ── Llamadas de voz / Vapi (Fase 5) ──
-    // 'log' = stub sin llamada real (dev). 'vapi' = Vapi.ai.
-    VAPI_PROVIDER: z.enum(['log', 'vapi']).default('log'),
+    // ── Llamadas de voz (Fase 5) ──
+    // 'log' = stub sin llamada real (dev). 'vapi' = Vapi.ai. 'retell' = Retell AI
+    // (agente de voz; el número lo provee Twilio importado en Retell).
+    VOICE_PROVIDER: z.enum(['log', 'vapi', 'retell']).default('log'),
+    // Vapi (si VOICE_PROVIDER=vapi).
     VAPI_API_KEY: z.string().optional(),
     VAPI_PHONE_NUMBER_ID: z.string().optional(),
     VAPI_ASSISTANT_ID: z.string().optional(),
+    // Retell (si VOICE_PROVIDER=retell). RETELL_FROM_NUMBER = número de Twilio
+    // importado en Retell (E.164). RETELL_AGENT_ID = agente de voz a usar.
+    RETELL_API_KEY: z.string().optional(),
+    RETELL_FROM_NUMBER: z.string().optional(),
+    RETELL_AGENT_ID: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     // Si se usa Voyage, la API key es obligatoria.
@@ -150,12 +157,30 @@ const envSchema = z
       });
     }
     // Si las llamadas usan Vapi, se requiere la API key.
-    if (env.VAPI_PROVIDER === 'vapi' && !env.VAPI_API_KEY) {
+    if (env.VOICE_PROVIDER === 'vapi' && !env.VAPI_API_KEY) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['VAPI_API_KEY'],
-        message: 'VAPI_API_KEY es obligatoria cuando VAPI_PROVIDER=vapi',
+        message: 'VAPI_API_KEY es obligatoria cuando VOICE_PROVIDER=vapi',
       });
+    }
+    // Si las llamadas usan Retell, se requieren API key y número de origen.
+    if (env.VOICE_PROVIDER === 'retell') {
+      if (!env.RETELL_API_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['RETELL_API_KEY'],
+          message: 'RETELL_API_KEY es obligatoria cuando VOICE_PROVIDER=retell',
+        });
+      }
+      if (!env.RETELL_FROM_NUMBER) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['RETELL_FROM_NUMBER'],
+          message:
+            'RETELL_FROM_NUMBER es obligatorio cuando VOICE_PROVIDER=retell',
+        });
+      }
     }
     // Si WhatsApp usa YCloud, se requieren API key y número de negocio.
     if (env.WHATSAPP_PROVIDER === 'ycloud') {

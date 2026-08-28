@@ -23,7 +23,7 @@ import { AgentActionsModule } from './agent-actions/agent-actions.module';
 import { AgentModule } from './agent/agent.module';
 import { FollowupModule } from './followup/followup.module';
 import { EmailModule } from './email/email.module';
-import { VapiModule } from './vapi/vapi.module';
+import { VoiceModule } from './voice/voice.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { ImprovementModule } from './improvement/improvement.module';
 import { AuditModule } from './audit/audit.module';
@@ -79,7 +79,7 @@ import { HealthModule } from './health/health.module';
     LlmModule,
     PromptsModule,
     EmailModule,
-    VapiModule,
+    VoiceModule,
 
     // Dominios de la Fase 1.
     CompaniesModule,

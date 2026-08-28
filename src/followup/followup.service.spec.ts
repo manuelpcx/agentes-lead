@@ -29,6 +29,7 @@ const LEAD: {
   source: string | null;
   email: string | null;
   phone: string | null;
+  nextActionType: string | null;
 } = {
   id: 'lead-1',
   status: 'NUEVO',
@@ -38,6 +39,7 @@ const LEAD: {
   source: 'landing',
   email: 'lead@x.cl',
   phone: '+56911111111',
+  nextActionType: null,
 };
 
 function buildHarness(
@@ -194,6 +196,37 @@ describe('FollowUpService.processFollowUp', () => {
     expect(h.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(h.agent.runFollowUp).not.toHaveBeenCalled();
     expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it('llamada agendada por el lead: corre el agente con instrucción de llamada, sin pasar por el guard de "cliente habló último"', async () => {
+    const h = buildHarness({
+      contactAttempts: 1,
+      nextActionType: 'llamada_programada',
+    });
+    // Aunque el cliente haya hablado último, la llamada agendada NO se pospone.
+    (h.prisma.db.interaction.findFirst as jest.Mock).mockResolvedValueOnce({
+      direction: 'inbound',
+    });
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.leads.scheduleNextAction).not.toHaveBeenCalled(); // no reprograma como espera
+    expect(h.agent.runFollowUp).toHaveBeenCalledTimes(1);
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).toContain('LLAMADA AGENDADA');
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it('llamada agendada fuera de horario: la pospone conservando el tipo', async () => {
+    const h = buildHarness(
+      { contactAttempts: 1, nextActionType: 'llamada_programada' },
+      { days: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] } },
+    );
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.scheduleNextAction).toHaveBeenCalledWith(
+      'lead-1',
+      expect.any(Date),
+      'llamada_programada',
+    );
   });
 
   it('primer contacto: escalera empieza por correo', async () => {

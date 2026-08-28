@@ -19,6 +19,8 @@ export interface ToolContext {
    * bloquee. Ver `leadFactSources`.
    */
   companyWhatsApp?: string | null;
+  /** Nombre de la empresa (tenant), para personalizar (p. ej. la llamada de voz). */
+  companyName?: string | null;
   /** El lead fue escalado a humano en este turno. */
   escalated: boolean;
   /** Se envió al menos un mensaje al cliente en este turno. */
