@@ -40,7 +40,7 @@ Reglas:
 - Si {{nombre}} no puede hablar, ofrece llamar más tarde o seguir por WhatsApp y despídete amablemente.`;
 const BEGIN_MESSAGE = `Hola {{nombre}}, te llamo de {{empresa}}. ¿Tienes un minuto?`;
 
-async function post(path, body) {
+async function post(path, body, { allowConflict = false } = {}) {
   const res = await fetch(`${API}${path}`, {
     method: 'POST',
     headers: {
@@ -51,6 +51,12 @@ async function post(path, body) {
   });
   const text = await res.text();
   if (!res.ok) {
+    // El número ya importado no es un fallo: para salientes usamos
+    // override_agent_id por llamada, basta con que el número exista en Retell.
+    if (allowConflict && /already exists/i.test(text)) {
+      console.log('   (el número ya estaba importado en Retell — OK)');
+      return null;
+    }
     console.error(`✗ ${path} → ${res.status}: ${text.slice(0, 500)}`);
     process.exit(1);
   }
@@ -78,15 +84,21 @@ if (TERMINATION_URI) {
     process.exit(1);
   }
   console.log('3) Importando número de Twilio…');
-  const number = await post('/import-phone-number', {
-    phone_number: FROM,
-    termination_uri: TERMINATION_URI,
-    ...(SIP_USER ? { sip_trunk_auth_username: SIP_USER } : {}),
-    ...(SIP_PASS ? { sip_trunk_auth_password: SIP_PASS } : {}),
-    inbound_agents: [{ agent_id: agent.agent_id, weight: 1 }],
-    outbound_agents: [{ agent_id: agent.agent_id, weight: 1 }],
-  });
-  console.log(`   número importado = ${number.phone_number ?? FROM}`);
+  const number = await post(
+    '/import-phone-number',
+    {
+      phone_number: FROM,
+      termination_uri: TERMINATION_URI,
+      ...(SIP_USER ? { sip_trunk_auth_username: SIP_USER } : {}),
+      ...(SIP_PASS ? { sip_trunk_auth_password: SIP_PASS } : {}),
+      inbound_agents: [{ agent_id: agent.agent_id, weight: 1 }],
+      outbound_agents: [{ agent_id: agent.agent_id, weight: 1 }],
+    },
+    { allowConflict: true },
+  );
+  if (number) {
+    console.log(`   número importado = ${number.phone_number ?? FROM}`);
+  }
 } else {
   console.log(
     '3) (omitido) No definiste TWILIO_TERMINATION_URI: importa el número en\n' +
