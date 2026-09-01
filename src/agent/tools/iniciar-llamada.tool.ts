@@ -9,6 +9,7 @@ import {
   voiceConfigToOverrides,
 } from '../../voice/voice-config';
 import { SCHEDULED_CALL_TYPE } from '../agent.constants';
+import { nextLocalTime } from '../../followup/business-hours';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_INICIAR_LLAMADA } from './tool-names';
 
@@ -25,18 +26,27 @@ export class IniciarLlamadaTool implements AgentTool {
     name: this.name,
     description:
       'Inicia una llamada de voz al lead. Úsala cuando el lead está caliente, ' +
-      'pide que lo llamen, o el texto no avanza. Para una llamada MÁS TARDE ' +
-      '(el lead pidió que lo llamen a cierta hora), pasa "programarEnMinutos" ' +
-      'con los minutos de espera. La transcripción se registra al finalizar.',
+      'pide que lo llamen, o el texto no avanza. Para agendar la llamada a una ' +
+      'HORA concreta que pidió el lead (ej. "a las 16"), pasa "programarParaHora" ' +
+      'en formato 24h "HH:MM" (el sistema calcula la espera en la zona horaria ' +
+      'correcta; si la hora ya pasó hoy, será mañana). Como alternativa, ' +
+      '"programarEnMinutos" agenda en N minutos. Sin ninguno de los dos, llama ' +
+      'de inmediato. La transcripción se registra al finalizar.',
     input_schema: {
       type: 'object' as const,
       properties: {
         motivo: { type: 'string', description: 'Motivo de la llamada.' },
+        programarParaHora: {
+          type: 'string',
+          description:
+            'Opcional. Hora local a la que llamar, formato 24h "HH:MM" ' +
+            '(ej. "16:00"). Úsalo cuando el lead pide una hora específica.',
+        },
         programarEnMinutos: {
           type: 'number',
           description:
-            'Opcional. Minutos de espera antes de llamar (para agendar la ' +
-            'llamada más tarde). Omítelo o usa 0 para llamar de inmediato.',
+            'Opcional. Minutos de espera antes de llamar. Omítelo o usa 0 para ' +
+            'llamar de inmediato. Si defines "programarParaHora", ignora esto.',
         },
       },
       required: ['motivo'],
@@ -61,10 +71,29 @@ export class IniciarLlamadaTool implements AgentTool {
       };
     }
 
+    // Agendar para más tarde: por hora absoluta (preferido) o por minutos.
+    // El servidor calcula la hora exacta en la zona horaria del lead/empresa,
+    // así el modelo no tiene que hacer aritmética de tiempo.
+    const tz = ctx.timezone ?? 'America/Santiago';
+    const horaAbs =
+      typeof input.programarParaHora === 'string'
+        ? input.programarParaHora.trim()
+        : '';
     const minutos = Number(input.programarEnMinutos ?? 0);
-    // Agendar para más tarde: el seguimiento la dispara a la hora indicada.
-    if (Number.isFinite(minutos) && minutos > 0) {
-      const cuando = new Date(Date.now() + minutos * 60_000);
+    let cuando: Date | null = null;
+    if (horaAbs) {
+      cuando = nextLocalTime(new Date(), tz, horaAbs);
+      if (!cuando) {
+        return {
+          content: `Hora inválida "${horaAbs}". Usa formato 24h "HH:MM".`,
+          isError: true,
+        };
+      }
+    } else if (Number.isFinite(minutos) && minutos > 0) {
+      cuando = new Date(Date.now() + minutos * 60_000);
+    }
+
+    if (cuando) {
       await this.leads.scheduleNextAction(
         ctx.lead.id,
         cuando,
@@ -79,8 +108,8 @@ export class IniciarLlamadaTool implements AgentTool {
       });
       return {
         content:
-          `Llamada agendada en ~${Math.round(minutos)} min. Confírmaselo al ` +
-          'lead por el canal de texto que corresponda.',
+          'Llamada agendada. Confírmaselo al lead por el canal de texto que ' +
+          'corresponda (dile a qué hora lo llamarás).',
       };
     }
 

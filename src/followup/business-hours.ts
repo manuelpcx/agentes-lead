@@ -94,6 +94,45 @@ function safeTimezone(tz: string): string {
   }
 }
 
+/**
+ * Próxima ocurrencia de una hora local "HH:MM" a partir de `from`, en la zona
+ * horaria dada. Si la hora ya pasó hoy, devuelve la de mañana. Sirve para
+ * agendar callbacks por hora absoluta ("llámame a las 16:00") sin que el modelo
+ * tenga que calcular minutos. Devuelve null si el formato no es válido.
+ */
+export function nextLocalTime(
+  from: Date,
+  timezone: string,
+  hhmm: string,
+): Date | null {
+  if (!/^\d{1,2}:\d{2}$/.test(hhmm.trim())) {
+    return null;
+  }
+  const target = toMinutes(hhmm.trim());
+  if (target < 0 || target >= 24 * 60) {
+    return null;
+  }
+  const current = localParts(from, timezone).minutes;
+  let delta = target - current;
+  if (delta <= 0) {
+    delta += 24 * 60; // ya pasó hoy → mañana
+  }
+  return new Date(from.getTime() + delta * 60 * 1000);
+}
+
+/** Fecha y hora local legible en la zona horaria dada (para el prompt). */
+export function formatLocalDateTime(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat('es-CL', {
+    timeZone: safeTimezone(timezone),
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
 /** ¿`date` cae dentro del horario hábil (en la zona horaria dada)? */
 export function isWithinBusinessHours(
   config: unknown,

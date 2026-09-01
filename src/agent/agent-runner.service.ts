@@ -15,6 +15,7 @@ import { ToolRegistry } from './tools/tool-registry.service';
 import { ToolContext, ToolResult } from './tools/tool.interface';
 import { FALLBACK_ESCALATION_MESSAGE } from './agent.constants';
 import { VoiceConfig, parseVoiceConfig } from '../voice/voice-config';
+import { formatLocalDateTime } from '../followup/business-hours';
 
 /** Resultado de un turno (para el planificador de seguimiento). */
 export interface TurnOutcome {
@@ -102,10 +103,13 @@ export class AgentRunner {
     }
 
     const company = await this.resolveCompanyInfo();
+    const timezone = lead.timezone ?? company.timezone ?? 'America/Santiago';
+    const nowText = formatLocalDateTime(new Date(), timezone);
     const system = await this.contextBuilder.buildSystem(
       agent,
       lead,
       company.whatsapp,
+      nowText,
     );
     const tools = this.toolRegistry.forAgent(agent.enabledTools);
     const toolDefs: Anthropic.Tool[] = tools.map((t) => t.definition);
@@ -118,6 +122,7 @@ export class AgentRunner {
       companyWhatsApp: company.whatsapp,
       companyName: company.name,
       companyVoice: company.voice,
+      timezone,
       escalated: false,
       messageSent: false,
     };
@@ -244,11 +249,12 @@ export class AgentRunner {
     name: string | null;
     whatsapp: string | null;
     voice: VoiceConfig;
+    timezone: string | null;
   }> {
     const companyId = TenantContext.requireCompanyId();
     const company = await this.prisma.raw.company.findUnique({
       where: { id: companyId },
-      select: { name: true, channelsConfig: true },
+      select: { name: true, channelsConfig: true, timezone: true },
     });
     const config = company?.channelsConfig as {
       whatsapp?: { phoneNumber?: unknown };
@@ -258,6 +264,7 @@ export class AgentRunner {
       name: company?.name ?? null,
       whatsapp: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
       voice: parseVoiceConfig(company?.channelsConfig),
+      timezone: company?.timezone ?? null,
     };
   }
 

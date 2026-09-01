@@ -24,6 +24,8 @@ export interface ToolContext {
   companyName?: string | null;
   /** Config de voz de la empresa (voz/tono/idioma/velocidad/saludo) para las llamadas. */
   companyVoice?: VoiceConfig | null;
+  /** Zona horaria efectiva del lead/empresa (para agendar por hora absoluta). */
+  timezone?: string | null;
   /** El lead fue escalado a humano en este turno. */
   escalated: boolean;
   /** Se envió al menos un mensaje al cliente en este turno. */

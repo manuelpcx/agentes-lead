@@ -60,6 +60,7 @@ export class ContextBuilder {
     agent: Agent,
     lead: Lead,
     companyWhatsApp?: string | null,
+    nowText?: string,
   ): Promise<string> {
     const base = await this.prompts.getActiveContent(agent.id, agent.type);
     const resumen = [
@@ -68,6 +69,7 @@ export class ContextBuilder {
       `Teléfono: ${lead.phone ?? '(sin teléfono)'}`,
       `Estado actual: ${lead.status}`,
       `Origen: ${lead.source ?? '(desconocido)'}`,
+      ...(nowText ? [`Fecha y hora actual: ${nowText}`] : []),
     ].join('\n');
     // Datos adicionales del lead (metadata de la ingesta). Se marcan como
     // referencia y NO como instrucciones: son datos externos, no órdenes.
