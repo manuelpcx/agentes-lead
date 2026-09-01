@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Lead } from '@prisma/client';
+import { VoiceConfig } from '../../voice/voice-config';
 
 /**
  * Contexto compartido de un turno del agente. Los tools de consulta acumulan
@@ -21,6 +22,8 @@ export interface ToolContext {
   companyWhatsApp?: string | null;
   /** Nombre de la empresa (tenant), para personalizar (p. ej. la llamada de voz). */
   companyName?: string | null;
+  /** Config de voz de la empresa (voz/tono/idioma/velocidad/saludo) para las llamadas. */
+  companyVoice?: VoiceConfig | null;
   /** El lead fue escalado a humano en este turno. */
   escalated: boolean;
   /** Se envió al menos un mensaje al cliente en este turno. */

@@ -36,6 +36,31 @@ export class RetellVoiceProvider implements VoiceProvider {
       body.retell_llm_dynamic_variables = params.dynamicVariables;
     }
 
+    // Config de voz por empresa → agent_override (anidado: agent + retell_llm).
+    const ov = params.overrides;
+    if (ov) {
+      const agent: Record<string, unknown> = {};
+      if (ov.voiceId) {
+        agent.voice_id = ov.voiceId;
+      }
+      if (typeof ov.voiceSpeed === 'number') {
+        agent.voice_speed = ov.voiceSpeed;
+      }
+      if (ov.language) {
+        agent.language = ov.language;
+      }
+      const override: Record<string, unknown> = {};
+      if (Object.keys(agent).length > 0) {
+        override.agent = agent;
+      }
+      if (ov.beginMessage) {
+        override.retell_llm = { begin_message: ov.beginMessage };
+      }
+      if (Object.keys(override).length > 0) {
+        body.agent_override = override;
+      }
+    }
+
     const response = await fetch(RETELL_URL, {
       method: 'POST',
       headers: {

@@ -14,6 +14,7 @@ import { ContextBuilder } from './context-builder.service';
 import { ToolRegistry } from './tools/tool-registry.service';
 import { ToolContext, ToolResult } from './tools/tool.interface';
 import { FALLBACK_ESCALATION_MESSAGE } from './agent.constants';
+import { VoiceConfig, parseVoiceConfig } from '../voice/voice-config';
 
 /** Resultado de un turno (para el planificador de seguimiento). */
 export interface TurnOutcome {
@@ -116,6 +117,7 @@ export class AgentRunner {
       recordedFacts: [],
       companyWhatsApp: company.whatsapp,
       companyName: company.name,
+      companyVoice: company.voice,
       escalated: false,
       messageSent: false,
     };
@@ -241,6 +243,7 @@ export class AgentRunner {
   private async resolveCompanyInfo(): Promise<{
     name: string | null;
     whatsapp: string | null;
+    voice: VoiceConfig;
   }> {
     const companyId = TenantContext.requireCompanyId();
     const company = await this.prisma.raw.company.findUnique({
@@ -254,6 +257,7 @@ export class AgentRunner {
     return {
       name: company?.name ?? null,
       whatsapp: typeof phone === 'string' && phone.trim() ? phone.trim() : null,
+      voice: parseVoiceConfig(company?.channelsConfig),
     };
   }
 

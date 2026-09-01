@@ -4,6 +4,10 @@ import { VoiceService } from '../../voice/voice.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
 import { TenantContext } from '../../common/tenant/tenant-context';
+import {
+  DEFAULT_VOICE_TONE,
+  voiceConfigToOverrides,
+} from '../../voice/voice-config';
 import { SCHEDULED_CALL_TYPE } from '../agent.constants';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_INICIAR_LLAMADA } from './tool-names';
@@ -80,7 +84,9 @@ export class IniciarLlamadaTool implements AgentTool {
       };
     }
 
-    // Llamada inmediata.
+    // Llamada inmediata. Aplica la config de voz de la empresa (voz/tono/idioma/
+    // velocidad/saludo) como overrides y variable dinámica de tono.
+    const voiceCfg = ctx.companyVoice ?? {};
     const { callId } = await this.voice.startCall({
       to: ctx.lead.phone,
       metadata: {
@@ -92,7 +98,9 @@ export class IniciarLlamadaTool implements AgentTool {
         nombre: ctx.lead.name ?? 'cliente',
         empresa: ctx.companyName ?? 'la empresa',
         motivo,
+        tono: voiceCfg.tone ?? DEFAULT_VOICE_TONE,
       },
+      overrides: voiceConfigToOverrides(voiceCfg),
     });
     await this.interactions.register({
       leadId: ctx.lead.id,

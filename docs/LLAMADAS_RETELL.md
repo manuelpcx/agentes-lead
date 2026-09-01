@@ -63,6 +63,27 @@ RETELL_FROM_NUMBER=+56XXXXXXXXX
 ```
 Redeploy (`railway up`).
 
+## Voz y tono por empresa (multiempresa)
+
+Cada empresa configura su **voz y tono** desde el panel (Configuración de la
+empresa → sección "Voz del agente"). Se guarda en `channelsConfig.voice` y se
+aplica **por llamada** vía `agent_override` de Retell — un solo agente base
+sirve a todas las empresas.
+
+Campos:
+- **Voz** (`voiceId`): del catálogo de Retell. El panel lo lista desde
+  `GET /panel/voice/voices` (proxy a `list-voices`, requiere `RETELL_API_KEY`).
+- **Tono/estilo** (`tone`): se inyecta en el prompt como la variable `{{tono}}`
+  (por eso el prompt del agente base debe incluir `{{tono}}` — ya lo hace el de
+  `setup-retell.mjs`).
+- **Saludo inicial** (`beginMessage`): puede usar `{{nombre}}` / `{{empresa}}`.
+- **Idioma** (`language`) y **velocidad** (`speed`, 0.5–2).
+
+Mapeo por llamada: `voiceId`/`speed`/`language` → `agent_override.agent`;
+`beginMessage` → `agent_override.retell_llm.begin_message`; `tono` →
+`retell_llm_dynamic_variables`. Lo que no se configura, cae al default del
+agente base.
+
 ## Notas
 - **Verificación de firma** del webhook (`x-retell-signature`) queda pendiente,
   igual que en WhatsApp/YCloud. La correlación exige `companyId`+`leadId` en la

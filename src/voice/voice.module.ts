@@ -6,6 +6,7 @@ import { QUEUE_AGENT_TURN } from '../queue/queue.constants';
 import { InteractionsModule } from '../interactions/interactions.module';
 import { VoiceService } from './voice.service';
 import { VoiceInboundService } from './voice-inbound.service';
+import { VoiceCatalogService } from './voice-catalog.service';
 import { VoiceController } from './voice.controller';
 import {
   VOICE_PROVIDER,
@@ -50,7 +51,8 @@ import { RetellVoiceProvider } from './providers/retell.provider';
     },
     VoiceService,
     VoiceInboundService,
+    VoiceCatalogService,
   ],
-  exports: [VoiceService],
+  exports: [VoiceService, VoiceCatalogService],
 })
 export class VoiceModule {}

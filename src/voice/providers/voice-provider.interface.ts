@@ -13,9 +13,20 @@ export interface StartCallParams {
   /**
    * Variables dinámicas que el proveedor inyecta en el prompt de SU agente de
    * voz (p. ej. Retell `retell_llm_dynamic_variables`): nombre del lead,
-   * empresa, motivo. Todas string. Providers que no las soportan las ignoran.
+   * empresa, motivo, tono. Todas string. Providers que no las soportan las ignoran.
    */
   dynamicVariables?: Record<string, string>;
+  /**
+   * Overrides de configuración de voz de la empresa para esta llamada (voz,
+   * velocidad, idioma, saludo). El provider los traduce a su formato
+   * (Retell: `agent_override`). Providers que no los soportan los ignoran.
+   */
+  overrides?: {
+    voiceId?: string;
+    voiceSpeed?: number;
+    language?: string;
+    beginMessage?: string;
+  };
 }
 
 /** Contrato de llamadas de voz (salida). */

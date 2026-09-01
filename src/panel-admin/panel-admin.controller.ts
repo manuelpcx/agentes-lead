@@ -22,6 +22,7 @@ import { Roles } from '../auth/roles.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { AgentsService } from '../agents/agents.service';
+import { VoiceCatalogService } from '../voice/voice-catalog.service';
 import { KnowledgeDocumentService } from '../knowledge/knowledge-document.service';
 import { StructuredFactsService } from '../knowledge/structured-facts.service';
 import { SemanticSearchService } from '../knowledge/semantic-search.service';
@@ -51,7 +52,15 @@ export class PanelAdminController {
     private readonly facts: StructuredFactsService,
     private readonly search: SemanticSearchService,
     private readonly onboarding: OnboardingService,
+    private readonly voiceCatalog: VoiceCatalogService,
   ) {}
+
+  // ── Voz (config por empresa) ──
+  /** Voces disponibles del proveedor para el selector del panel. */
+  @Get('voice/voices')
+  listVoices() {
+    return this.voiceCatalog.list();
+  }
 
   // ── Agentes (Fase 8) ──
   @Get('agents')
