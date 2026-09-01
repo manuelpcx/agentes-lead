@@ -26,8 +26,21 @@ export interface ToolContext {
   companyVoice?: VoiceConfig | null;
   /** Zona horaria efectiva del lead/empresa (para agendar por hora absoluta). */
   timezone?: string | null;
+  /**
+   * El turno es proactivo (seguimiento), no una respuesta a un mensaje del
+   * cliente. Lo usa la derivación: en un seguimiento no hay mensaje al que
+   * responder, así que el receptor debe contactar proactivamente (no encolar un
+   * turno de respuesta ni avisar al cliente).
+   */
+  followUp?: boolean;
   /** El lead fue escalado a humano en este turno. */
   escalated: boolean;
+  /**
+   * El lead fue derivado a otro agente en este turno. El seguimiento no debe
+   * contar esto como un intento de contacto: la derivación reprograma al
+   * receptor por su cuenta.
+   */
+  derived?: boolean;
   /** Se envió al menos un mensaje al cliente en este turno. */
   messageSent: boolean;
 }

@@ -99,6 +99,7 @@ export class DerivarAAgenteTool implements AgentTool {
 
     // Reasigna al nuevo agente (fuente de verdad del "a cargo").
     await this.leads.reassignAgent(ctx.lead.id, destino.id);
+    ctx.derived = true;
 
     // Constancia interna del traspaso (marca `derivacion` para handoffs).
     await this.interactions.register({
@@ -117,30 +118,42 @@ export class DerivarAAgenteTool implements AgentTool {
       },
     });
 
-    // Aviso honesto y fijo al lead (no inventa nada del negocio).
-    if (ctx.lead.phone) {
-      const aviso =
-        'Te comunico con nuestro equipo especializado para ayudarte mejor. ' +
-        'En un momento continúan contigo.';
-      await this.whatsapp.send(ctx.lead.phone, aviso);
-      await this.interactions.register({
+    if (ctx.followUp) {
+      // Turno proactivo (seguimiento/primer contacto): no hay un mensaje del
+      // cliente al que responder. NO se avisa (confundiría) y se programa al
+      // receptor para que contacte YA de forma proactiva (el cron lo ejecuta).
+      // No cuenta como intento (ctx.derived corta el conteo en el seguimiento).
+      await this.leads.scheduleNextAction(
+        ctx.lead.id,
+        new Date(),
+        'primer_contacto',
+      );
+    } else {
+      // Respuesta en vivo: el cliente está esperando. Avísale que sigue otro
+      // equipo y encola un turno de respuesta para que el receptor conteste.
+      if (ctx.lead.phone) {
+        const aviso =
+          'Te comunico con nuestro equipo especializado para ayudarte mejor. ' +
+          'En un momento continúan contigo.';
+        await this.whatsapp.send(ctx.lead.phone, aviso);
+        await this.interactions.register({
+          leadId: ctx.lead.id,
+          channel: Channel.whatsapp,
+          direction: Direction.outbound,
+          content: aviso,
+          agentId: ctx.agentId,
+        });
+      }
+      await this.agentQueue.add('turn', {
+        companyId: TenantContext.requireCompanyId(),
         leadId: ctx.lead.id,
-        channel: Channel.whatsapp,
-        direction: Direction.outbound,
-        content: aviso,
-        agentId: ctx.agentId,
+        correlationId: TenantContext.get()?.correlationId ?? randomUUID(),
       });
     }
 
-    // Encola un turno para que el agente receptor responda al mismo mensaje.
-    await this.agentQueue.add('turn', {
-      companyId: TenantContext.requireCompanyId(),
-      leadId: ctx.lead.id,
-      correlationId: TenantContext.get()?.correlationId ?? randomUUID(),
-    });
-
     this.logger.log(
-      `Lead ${ctx.lead.id} derivado de ${ctx.agentId} a ${destino.id} (${destino.name})`,
+      `Lead ${ctx.lead.id} derivado de ${ctx.agentId} a ${destino.id} ` +
+        `(${destino.name}); proactivo=${!!ctx.followUp}`,
     );
     return {
       content: `Conversación derivada a ${destino.name}. Termina tu turno.`,

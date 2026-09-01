@@ -21,6 +21,8 @@ import { formatLocalDateTime } from '../followup/business-hours';
 export interface TurnOutcome {
   messageSent: boolean;
   escalated: boolean;
+  /** El lead se derivó a otro agente (el seguimiento no cuenta un intento). */
+  derived: boolean;
 }
 
 @Injectable()
@@ -68,7 +70,11 @@ export class AgentRunner {
     followUpInstruction?: string,
   ): Promise<TurnOutcome> {
     const followUp = followUpInstruction !== undefined;
-    const idle: TurnOutcome = { messageSent: false, escalated: false };
+    const idle: TurnOutcome = {
+      messageSent: false,
+      escalated: false,
+      derived: false,
+    };
 
     const lead = await this.leads.getById(leadId);
     if (lead.isPausedForHuman) {
@@ -99,7 +105,7 @@ export class AgentRunner {
         return idle;
       }
       await this.degradeToHuman(lead);
-      return { messageSent: false, escalated: true };
+      return { messageSent: false, escalated: true, derived: false };
     }
 
     const company = await this.resolveCompanyInfo();
@@ -123,7 +129,9 @@ export class AgentRunner {
       companyName: company.name,
       companyVoice: company.voice,
       timezone,
+      followUp,
       escalated: false,
+      derived: false,
       messageSent: false,
     };
 
@@ -186,7 +194,11 @@ export class AgentRunner {
       `Turno completado (leadId=${leadId} seguimiento=${followUp} ` +
         `enviado=${ctx.messageSent} escalado=${ctx.escalated})`,
     );
-    return { messageSent: ctx.messageSent, escalated: ctx.escalated };
+    return {
+      messageSent: ctx.messageSent,
+      escalated: ctx.escalated,
+      derived: ctx.derived ?? false,
+    };
   }
 
   // ─────────────────────── privados ───────────────────────

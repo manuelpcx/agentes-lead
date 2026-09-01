@@ -145,8 +145,8 @@ export class FollowUpService {
         'con registrarPromesaPago si corresponde. Respalda cualquier cifra con el ' +
         'contexto de la deuda.';
       const outcome = await this.agent.runFollowUp(leadId, instruction);
-      if (outcome.escalated) {
-        return;
+      if (outcome.escalated || outcome.derived) {
+        return; // escalado o derivado a otro agente: no contamos intento
       }
       await this.leads.recordFollowUpAttempt(
         leadId,
@@ -165,8 +165,8 @@ export class FollowUpService {
         'herramienta iniciarLlamada (sin volver a programar). Respalda cualquier ' +
         'dato con tus herramientas.';
       const outcome = await this.agent.runFollowUp(leadId, instruction);
-      if (outcome.escalated) {
-        return;
+      if (outcome.escalated || outcome.derived) {
+        return; // escalado o derivado a otro agente: no contamos intento
       }
       await this.leads.recordFollowUpAttempt(
         leadId,
@@ -253,8 +253,8 @@ export class FollowUpService {
     });
 
     const outcome = await this.agent.runFollowUp(leadId, instruction);
-    if (outcome.escalated) {
-      return; // el lead quedó en control humano
+    if (outcome.escalated || outcome.derived) {
+      return; // escalado o derivado a otro agente: no contamos intento
     }
 
     // Cuenta el intento (asegura terminación) y reprograma.
