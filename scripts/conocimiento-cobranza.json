@@ -1,0 +1,118 @@
+{
+  "_instrucciones": "Base de conocimiento de COBRANZA. Reemplaza los valores REEMPLAZAR_* con los datos reales de la empresa. 'policies' se vuelven datos consultables (consultarDato) por su 'key'; 'faqs' y 'objections' se indexan para búsqueda semántica (buscarConocimiento). Borra este campo _instrucciones antes de cargar si quieres (el backend ignora campos extra igualmente).",
+
+  "businessHours": {
+    "days": {
+      "mon": [{ "start": "09:00", "end": "19:00" }],
+      "tue": [{ "start": "09:00", "end": "19:00" }],
+      "wed": [{ "start": "09:00", "end": "19:00" }],
+      "thu": [{ "start": "09:00", "end": "19:00" }],
+      "fri": [{ "start": "09:00", "end": "19:00" }],
+      "sat": [{ "start": "10:00", "end": "14:00" }],
+      "sun": []
+    }
+  },
+
+  "toneOfVoice": "Empático, respetuoso y resolutivo. El objetivo es ayudar a la persona a regularizar, no presionarla. Nunca amenazar, avergonzar ni presionar de forma abusiva. Facilitar el pago y ofrecer alternativas.",
+
+  "policies": [
+    {
+      "key": "medios_de_pago",
+      "description": "REEMPLAZAR: medios de pago disponibles. Ej: transferencia bancaria, link de pago en línea (Webpay/Flow/Khipu), pago en oficina."
+    },
+    {
+      "key": "datos_transferencia",
+      "description": "REEMPLAZAR: datos para transferencia. Banco, tipo de cuenta, número de cuenta, RUT, titular y correo para enviar el comprobante."
+    },
+    {
+      "key": "convenio_cuotas",
+      "description": "REEMPLAZAR: condiciones de convenio. Ej: hasta 6 cuotas, con abono inicial mínimo de 30% del total. Fuera de esas condiciones, se deriva a un ejecutivo."
+    },
+    {
+      "key": "descuento_pronto_pago",
+      "description": "REEMPLAZAR: descuento por pago pronto, si existe. Ej: pagando el total dentro de 5 días, se condona el 50% de los intereses por mora. Si no hay descuento, indícalo explícitamente."
+    },
+    {
+      "key": "recargos_mora",
+      "description": "REEMPLAZAR: recargos o intereses por mora aplicables, si corresponde. Si no aplican, indícalo."
+    },
+    {
+      "key": "comprobante_pago",
+      "description": "REEMPLAZAR: cómo enviar el comprobante de pago. Ej: responder por este mismo canal con la foto/PDF, o enviarlo a pagos@empresa.cl."
+    },
+    {
+      "key": "proceso_reclamo",
+      "description": "REEMPLAZAR: qué hacer si la persona no reconoce la deuda o dice que ya pagó. Ej: se registra el reclamo y se deriva a un ejecutivo que revisa en 24-48h; pedir comprobante o antecedentes."
+    },
+    {
+      "key": "horario_pagos",
+      "description": "REEMPLAZAR: horario de atención para gestionar pagos, convenios o dudas con una persona."
+    },
+    {
+      "key": "contacto_ejecutivo",
+      "description": "REEMPLAZAR: canal/correo/teléfono del área de cobranza para casos que requieren una persona."
+    }
+  ],
+
+  "faqs": [
+    {
+      "question": "¿Cómo puedo pagar mi deuda?",
+      "answer": "REEMPLAZAR con los medios reales (ver medios_de_pago). Explica brevemente cada opción y facilita el link de pago si está disponible."
+    },
+    {
+      "question": "¿Puedo pagar en cuotas o hacer un convenio?",
+      "answer": "REEMPLAZAR: sí, dentro de las condiciones de convenio_cuotas (ej. hasta N cuotas con abono inicial). Casos especiales se derivan a un ejecutivo."
+    },
+    {
+      "question": "¿Tengo algún descuento si pago ahora?",
+      "answer": "REEMPLAZAR según descuento_pronto_pago. Si no hay descuento, dilo con transparencia y ofrece facilidades de convenio."
+    },
+    {
+      "question": "¿Dónde veo el detalle de mi deuda?",
+      "answer": "El agente indica el monto y el folio del contexto del caso. Para el detalle completo o histórico, se envía por correo o se deriva a un ejecutivo (ver contacto_ejecutivo)."
+    },
+    {
+      "question": "Ya pagué, ¿por qué me siguen contactando?",
+      "answer": "Ofrecemos disculpas y pedimos el comprobante de pago (ver comprobante_pago). Se registra y se deriva a un ejecutivo para regularizar el estado; no insistir con el cobro."
+    },
+    {
+      "question": "No reconozco esta deuda, ¿qué hago?",
+      "answer": "No se discute. Se registra el reclamo y se deriva a un ejecutivo según proceso_reclamo, pidiendo antecedentes si corresponde."
+    },
+    {
+      "question": "Estoy pasando por un momento difícil y no puedo pagar todo, ¿qué opciones tengo?",
+      "answer": "Con empatía, se ofrece un convenio o un abono parcial dentro de convenio_cuotas, y se agenda un seguimiento. El objetivo es ayudar a regularizar."
+    },
+    {
+      "question": "¿Con quién hablo si tengo dudas?",
+      "answer": "REEMPLAZAR: con el área de cobranza (ver contacto_ejecutivo) en el horario indicado (horario_pagos). El agente también puede agendar una llamada."
+    }
+  ],
+
+  "objections": [
+    {
+      "objection": "No tengo plata ahora / no puedo pagar",
+      "response": "Mostrar empatía, no presionar. Ofrecer un convenio o un abono parcial (convenio_cuotas) y agendar un seguimiento para una fecha que le acomode."
+    },
+    {
+      "objection": "Ya pagué",
+      "response": "No discutir. Disculparse, pedir el comprobante (comprobante_pago), registrar y derivar a un ejecutivo."
+    },
+    {
+      "objection": "No reconozco la deuda",
+      "response": "No discutir. Registrar el reclamo y derivar según proceso_reclamo."
+    },
+    {
+      "objection": "Estoy pasando por un mal momento",
+      "response": "Empatía genuina y trato humano. Ofrecer facilidades (convenio/abono) y flexibilidad en la fecha. Nunca presionar."
+    },
+    {
+      "objection": "Llámame / escríbeme más tarde",
+      "response": "Acordar y agendar el contacto a la hora que la persona indique (el agente puede programar una llamada o un seguimiento). Confirmar la hora."
+    },
+    {
+      "objection": "No me contacten más",
+      "response": "Respetar el tono, no insistir de forma abusiva. Informar de forma clara y breve el canal para regularizar cuando pueda, dejar el registro y derivar si insiste."
+    }
+  ]
+}
