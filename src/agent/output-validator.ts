@@ -43,16 +43,18 @@ export function validateOutgoingMessage(
 
 /**
  * Fuentes de datos válidas para el guardrail: los resultados de herramientas del
- * turno MÁS los datos de contacto del propio lead MÁS datos de contacto propios
- * de la empresa (p. ej. su número de WhatsApp). Ninguno es una cifra "inventada":
- * el agente puede referirlos (incluso formateados, p. ej. "+569 2033 7143"), así
- * que se agregan como respaldo para evitar falsos positivos con sus fragmentos.
+ * turno MÁS los datos de contacto del propio lead MÁS su `metadata` MÁS datos
+ * propios de la empresa (p. ej. su WhatsApp). Ninguno es una cifra "inventada":
+ * el teléfono/email/metadata vienen de la ingesta confiable (formulario, ERP,
+ * n8n), no del modelo. El guardrail existe para impedir que el LLM invente
+ * cifras, no para bloquear datos reales del upstream — por eso la metadata (que
+ * en cobranza trae monto/vencimiento/folio) cuenta como respaldo.
  *
  * `extra` permite pasar datos adicionales de respaldo (nulos/vacíos se ignoran).
  */
 export function leadFactSources(
   recordedFacts: string[],
-  lead: { phone?: string | null; email?: string | null },
+  lead: { phone?: string | null; email?: string | null; metadata?: unknown },
   extra: Array<string | null | undefined> = [],
 ): string[] {
   const own: string[] = [];
@@ -61,6 +63,9 @@ export function leadFactSources(
   }
   if (lead.email) {
     own.push(lead.email);
+  }
+  if (lead.metadata && typeof lead.metadata === 'object') {
+    own.push(JSON.stringify(lead.metadata));
   }
   for (const value of extra) {
     if (value) {

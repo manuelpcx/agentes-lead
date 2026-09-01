@@ -8,7 +8,7 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
-import { SCHEDULED_CALL_TYPE } from '../agent/agent.constants';
+import { PROMISE_PAY_TYPE, SCHEDULED_CALL_TYPE } from '../agent/agent.constants';
 import { isWithinBusinessHours, nextAllowedTime } from './business-hours';
 import {
   FollowUpChannel,
@@ -88,11 +88,13 @@ export class FollowUpService {
     // acción explícita, solo se respeta el horario hábil.
     const scheduledCall =
       lead.nextActionType === SCHEDULED_CALL_TYPE && !!lead.phone;
+    // Verificación de una promesa de pago (cobranza): acción proactiva pactada.
+    const promisePay = lead.nextActionType === PROMISE_PAY_TYPE;
 
     // Si el cliente fue el último en hablar, el flujo de respuesta (Fase 3) se
     // encarga; no perseguimos. Reprogramamos por si queda en silencio. (No aplica
-    // a una llamada agendada por el propio lead.)
-    if (!scheduledCall) {
+    // a acciones proactivas pactadas: llamada agendada o verificar promesa.)
+    if (!scheduledCall && !promisePay) {
       const lastConv = await this.prisma.db.interaction.findFirst({
         where: { leadId, channel: { in: CONVERSATION_CHANNELS } },
         orderBy: { occurredAt: 'desc' },
@@ -121,11 +123,37 @@ export class FollowUpService {
       await this.leads.scheduleNextAction(
         leadId,
         next,
-        scheduledCall ? SCHEDULED_CALL_TYPE : 'fuera_de_horario',
+        scheduledCall
+          ? SCHEDULED_CALL_TYPE
+          : promisePay
+            ? PROMISE_PAY_TYPE
+            : 'fuera_de_horario',
       );
       this.logger.log(
         `Seguimiento pospuesto por horario (leadId=${leadId} → ${next.toISOString()})`,
       );
+      return;
+    }
+
+    // Verifica la promesa de pago: retoma con tacto para confirmar el pago.
+    if (promisePay) {
+      const attempt = lead.contactAttempts + 1;
+      const instruction =
+        '[VERIFICAR PROMESA DE PAGO] La persona se comprometió a pagar para esta ' +
+        'fecha. Retoma con respeto y sin presionar para confirmar si pudo pagar. ' +
+        'Si aún no, ofrece ayuda para regularizar y registra una nueva promesa ' +
+        'con registrarPromesaPago si corresponde. Respalda cualquier cifra con el ' +
+        'contexto de la deuda.';
+      const outcome = await this.agent.runFollowUp(leadId, instruction);
+      if (outcome.escalated) {
+        return;
+      }
+      await this.leads.recordFollowUpAttempt(
+        leadId,
+        this.nextActionTime(now, attempt),
+        'seguimiento',
+      );
+      this.logger.log(`Verificación de promesa de pago (leadId=${leadId})`);
       return;
     }
 

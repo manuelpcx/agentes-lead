@@ -18,6 +18,7 @@ import { EnviarCorreoTool } from './tools/enviar-correo.tool';
 import { AgendarCitaTool } from './tools/agendar-cita.tool';
 import { IniciarLlamadaTool } from './tools/iniciar-llamada.tool';
 import { DerivarAAgenteTool } from './tools/derivar-a-agente.tool';
+import { RegistrarPromesaPagoTool } from './tools/registrar-promesa-pago.tool';
 import { ToolRegistry } from './tools/tool-registry.service';
 import { ContextBuilder } from './context-builder.service';
 import { AgentRunner } from './agent-runner.service';
@@ -49,6 +50,7 @@ import { AgentTurnProcessor } from './agent-turn.processor';
     AgendarCitaTool,
     IniciarLlamadaTool,
     DerivarAAgenteTool,
+    RegistrarPromesaPagoTool,
     {
       provide: AGENT_TOOLS,
       inject: [
@@ -61,6 +63,7 @@ import { AgentTurnProcessor } from './agent-turn.processor';
         AgendarCitaTool,
         IniciarLlamadaTool,
         DerivarAAgenteTool,
+        RegistrarPromesaPagoTool,
       ],
       useFactory: (...tools: AgentTool[]): AgentTool[] => tools,
     },

@@ -9,3 +9,10 @@ export const FALLBACK_ESCALATION_MESSAGE =
  * el FollowUpService.
  */
 export const SCHEDULED_CALL_TYPE = 'llamada_programada';
+
+/**
+ * `Lead.nextActionType` de una promesa de pago (cobranza). El seguimiento la
+ * ejecuta el día pactado para verificar el pago, saltándose el guard de
+ * "cliente habló último". Compartida entre el tool y el FollowUpService.
+ */
+export const PROMISE_PAY_TYPE = 'promesa_pago';

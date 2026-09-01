@@ -51,6 +51,30 @@ describe('validateOutgoingMessage (guardrail)', () => {
     expect(r.allowed).toBe(true);
   });
 
+  it('permite cifras que vienen de la metadata del lead (deuda desde el ERP)', () => {
+    const facts = leadFactSources([], {
+      phone: null,
+      email: null,
+      metadata: { monto: 150000, folio: 'F-4821', vencimiento: '2026-08-15' },
+    });
+    const r = validateOutgoingMessage(
+      'Tu deuda es de $150.000 (folio 4821), vencida el 15/08.',
+      facts,
+    );
+    expect(r.allowed).toBe(true);
+  });
+
+  it('bloquea una cifra inventada aunque la metadata traiga otras', () => {
+    const facts = leadFactSources([], {
+      phone: null,
+      email: null,
+      metadata: { monto: 150000 },
+    });
+    const r = validateOutgoingMessage('Te ofrezco pagar solo 89990', facts);
+    expect(r.allowed).toBe(false);
+    expect(r.offending).toContain('89990');
+  });
+
   it('sigue bloqueando una cifra inventada aunque el lead tenga teléfono', () => {
     const facts = leadFactSources([], {
       phone: '+56920337143',

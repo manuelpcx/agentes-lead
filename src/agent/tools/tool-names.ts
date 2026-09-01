@@ -9,6 +9,8 @@ export const TOOL_AGENDAR_CITA = 'agendarCita';
 export const TOOL_INICIAR_LLAMADA = 'iniciarLlamada';
 /** Traspaso de conversación a otro agente (Fase 8). */
 export const TOOL_DERIVAR_A_AGENTE = 'derivarAAgente';
+/** Registra una promesa de pago del deudor (cobranza). */
+export const TOOL_REGISTRAR_PROMESA_PAGO = 'registrarPromesaPago';
 
 /** Conjunto de herramientas iniciales habilitadas por defecto. */
 export const DEFAULT_ENABLED_TOOLS: string[] = [
@@ -21,4 +23,5 @@ export const DEFAULT_ENABLED_TOOLS: string[] = [
   TOOL_AGENDAR_CITA,
   TOOL_INICIAR_LLAMADA,
   TOOL_DERIVAR_A_AGENTE,
+  TOOL_REGISTRAR_PROMESA_PAGO,
 ];
