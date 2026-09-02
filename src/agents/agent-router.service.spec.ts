@@ -44,6 +44,26 @@ describe('AgentRouterService.route (canal → estado → clasificador)', () => {
     expect(complete).not.toHaveBeenCalled();
   });
 
+  it('enruta por tipo de agente cuando se pide (cobranza)', async () => {
+    const { service, complete } = build([
+      agent({ id: 'ventas', type: 'VENTAS', isDefault: true }),
+      agent({ id: 'cobranza', type: 'COBRANZA' }),
+    ]);
+    await expect(service.route({ agentType: 'COBRANZA' })).resolves.toBe(
+      'cobranza',
+    );
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('ignora el tipo si ningún agente es de ese tipo (no bloquea)', async () => {
+    const { service } = build([
+      agent({ id: 'ventas', type: 'VENTAS', isDefault: true }),
+    ]);
+    await expect(service.route({ agentType: 'COBRANZA' })).resolves.toBe(
+      'ventas',
+    );
+  });
+
   it('filtra por canal: descarta a quien no atiende el canal', async () => {
     const { service } = build([
       agent({ id: 'mail', channels: ['email'] }),

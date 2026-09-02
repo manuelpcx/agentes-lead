@@ -16,6 +16,12 @@ export interface RouteInput {
   /** Estado actual del lead (nombre del enum LeadStatus como texto). */
   status?: string | null;
   /**
+   * Tipo de agente deseado (valor de AgentType como texto, p. ej. 'COBRANZA').
+   * Señal fuerte para enrutar por especialidad desde la creación; si ningún
+   * agente activo es de ese tipo, se ignora (no bloquea).
+   */
+  agentType?: string | null;
+  /**
    * Último mensaje del cliente. Solo se usa para el clasificador LLM cuando,
    * tras filtrar por canal y estado, siguen quedando varios candidatos.
    */
@@ -60,8 +66,11 @@ export class AgentRouterService {
       );
     }
 
+    // 0) Por tipo de agente (especialidad): señal más fuerte. Si el lead pide
+    //    COBRANZA y existe un agente de ese tipo, se queda con esos.
+    const porTipo = this.filtrarPorTipo(base, input.agentType);
     // 1) Por canal.
-    const porCanal = this.filtrarPorCanal(base, input.channel);
+    const porCanal = this.filtrarPorCanal(porTipo, input.channel);
     // 2) Por estado del lead.
     const porEstado = this.filtrarPorEstado(porCanal, input.status);
 
@@ -81,6 +90,18 @@ export class AgentRouterService {
   }
 
   // ─────────────────────── filtros deterministas ───────────────────────
+
+  /**
+   * Conserva agentes del tipo pedido (`AgentType` como texto). Si ninguno es de
+   * ese tipo, devuelve la entrada intacta (no bloquea el enrutamiento).
+   */
+  private filtrarPorTipo(agents: Agent[], agentType?: string | null): Agent[] {
+    if (!agentType) {
+      return agents;
+    }
+    const match = agents.filter((a) => a.type === agentType);
+    return match.length > 0 ? match : agents;
+  }
 
   /**
    * Conserva agentes cuyos `channels` incluyan el canal (o lo tengan vacío =

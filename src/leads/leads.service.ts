@@ -4,6 +4,7 @@ import { Channel, Direction, Lead, LeadStatus, Prisma } from '@prisma/client';
 import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AgentsService } from '../agents/agents.service';
+import { inferAgentType } from '../agents/infer-agent-type';
 import { InteractionsService } from '../interactions/interactions.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { IncomingLeadDto } from '../webhooks/dto/incoming-lead.dto';
@@ -190,9 +191,12 @@ export class LeadsService {
   private async applyCreate(payload: IncomingLeadDto): Promise<IngestResult> {
     return this.prisma.db.$transaction(async (tx) => {
       // Enrutamiento determinista al crear (aún no hay mensaje del cliente).
+      // Si la metadata indica el tipo (o parece deuda), enruta por especialidad
+      // (p. ej. directo al agente de COBRANZA) sin depender de la derivación.
       const agentId = await this.agents.resolveDefaultAgentId(tx, {
         channel: payload.preferredChannel,
         status: LeadStatus.NUEVO,
+        agentType: inferAgentType(payload.metadata),
       });
       const lead = await tx.lead.create({
         data: {
