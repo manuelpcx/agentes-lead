@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { to: '/prompts', label: 'Prompts', icon: DocIcon },
   { to: '/metrics', label: 'Métricas', icon: ChartIcon },
   { to: '/agents', label: 'Agentes', icon: UsersIcon },
+  { to: '/templates', label: 'Plantillas WA', icon: DocIcon },
   { to: '/config', label: 'Configuración', icon: CogIcon },
 ];
 

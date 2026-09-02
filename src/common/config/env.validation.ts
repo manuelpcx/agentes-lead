@@ -59,6 +59,9 @@ const envSchema = z
     // YCloud (proveedor alternativo). `YCLOUD_FROM` = número de negocio E.164.
     YCLOUD_API_KEY: z.string().optional(),
     YCLOUD_FROM: z.string().optional(),
+    // WhatsApp Business Account ID en YCloud (para crear/gestionar plantillas
+    // desde el panel). Se obtiene del dashboard de YCloud.
+    YCLOUD_WABA_ID: z.string().optional(),
 
     // ── Panel / Auth (Fase 7A) ──
     JWT_SECRET: z

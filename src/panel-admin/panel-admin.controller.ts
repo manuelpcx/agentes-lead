@@ -23,6 +23,8 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { AgentsService } from '../agents/agents.service';
 import { VoiceCatalogService } from '../voice/voice-catalog.service';
+import { WhatsappTemplatesService } from '../whatsapp/whatsapp-templates.service';
+import { CreateWhatsappTemplateDto } from '../whatsapp/dto/create-template.dto';
 import { KnowledgeDocumentService } from '../knowledge/knowledge-document.service';
 import { StructuredFactsService } from '../knowledge/structured-facts.service';
 import { SemanticSearchService } from '../knowledge/semantic-search.service';
@@ -53,6 +55,7 @@ export class PanelAdminController {
     private readonly search: SemanticSearchService,
     private readonly onboarding: OnboardingService,
     private readonly voiceCatalog: VoiceCatalogService,
+    private readonly waTemplates: WhatsappTemplatesService,
   ) {}
 
   // ── Voz (config por empresa) ──
@@ -60,6 +63,20 @@ export class PanelAdminController {
   @Get('voice/voices')
   listVoices() {
     return this.voiceCatalog.list();
+  }
+
+  // ── Plantillas de WhatsApp ──
+  /** Lista las plantillas con su estado de aprobación (Meta). */
+  @Get('whatsapp/templates')
+  listTemplates() {
+    return this.waTemplates.list();
+  }
+
+  /** Crea una plantilla y la envía a aprobación de Meta (vía YCloud). */
+  @Post('whatsapp/templates')
+  @Roles(PanelRole.OWNER)
+  createTemplate(@Body() dto: CreateWhatsappTemplateDto) {
+    return this.waTemplates.create(dto);
   }
 
   // ── Agentes (Fase 8) ──

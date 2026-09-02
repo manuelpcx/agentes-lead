@@ -9,6 +9,7 @@ import { ApprovalPage } from './pages/ApprovalPage';
 import { PromptsPage } from './pages/PromptsPage';
 import { MetricsPage } from './pages/MetricsPage';
 import { AgentsPage } from './pages/AgentsPage';
+import { WhatsappTemplatesPage } from './pages/WhatsappTemplatesPage';
 import { CompanyConfigPage } from './pages/CompanyConfigPage';
 import { AppLayout } from './components/AppLayout';
 
@@ -36,6 +37,7 @@ export default function App() {
       <Route path="/prompts" element={page(<PromptsPage />)} />
       <Route path="/metrics" element={page(<MetricsPage />)} />
       <Route path="/agents" element={page(<AgentsPage />)} />
+      <Route path="/templates" element={page(<WhatsappTemplatesPage />)} />
       <Route path="/config" element={page(<CompanyConfigPage />)} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

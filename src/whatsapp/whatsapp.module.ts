@@ -8,6 +8,7 @@ import { LeadsModule } from '../leads/leads.module';
 import { InteractionsModule } from '../interactions/interactions.module';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappInboundService } from './whatsapp-inbound.service';
+import { WhatsappTemplatesService } from './whatsapp-templates.service';
 import { WhatsappController } from './whatsapp.controller';
 import {
   WHATSAPP_PROVIDER,
@@ -54,7 +55,8 @@ import { YCloudWhatsappProvider } from './providers/ycloud.provider';
     },
     WhatsappService,
     WhatsappInboundService,
+    WhatsappTemplatesService,
   ],
-  exports: [WhatsappService],
+  exports: [WhatsappService, WhatsappTemplatesService],
 })
 export class WhatsappModule {}
