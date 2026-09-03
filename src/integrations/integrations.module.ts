@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { CredentialsService } from './credentials.service';
+import { IntegrationTester } from './integration-tester.service';
 
 /**
  * Credenciales de proveedores por empresa (BYO). Global para que las fachadas
@@ -7,7 +8,7 @@ import { CredentialsService } from './credentials.service';
  */
 @Global()
 @Module({
-  providers: [CredentialsService],
-  exports: [CredentialsService],
+  providers: [CredentialsService, IntegrationTester],
+  exports: [CredentialsService, IntegrationTester],
 })
 export class IntegrationsModule {}

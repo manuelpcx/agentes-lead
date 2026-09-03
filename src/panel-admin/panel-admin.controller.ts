@@ -30,6 +30,7 @@ import {
   CredentialsService,
   IntegrationChannel,
 } from '../integrations/credentials.service';
+import { IntegrationTester } from '../integrations/integration-tester.service';
 import { UpsertIntegrationDto } from './dto/upsert-integration.dto';
 import { KnowledgeDocumentService } from '../knowledge/knowledge-document.service';
 import { StructuredFactsService } from '../knowledge/structured-facts.service';
@@ -63,6 +64,7 @@ export class PanelAdminController {
     private readonly voiceCatalog: VoiceCatalogService,
     private readonly waTemplates: WhatsappTemplatesService,
     private readonly credentials: CredentialsService,
+    private readonly tester: IntegrationTester,
   ) {}
 
   // ── Integraciones (credenciales por empresa, BYO) ──
@@ -84,6 +86,17 @@ export class PanelAdminController {
       throw new NotFoundException(`Canal inválido: ${channel}`);
     }
     return this.credentials.upsert(channel as IntegrationChannel, dto);
+  }
+
+  /** Prueba la conexión con el proveedor usando las credenciales guardadas. */
+  @Post('integrations/:channel/test')
+  @Roles(PanelRole.OWNER)
+  testIntegration(@Param('channel') channel: string) {
+    const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice'];
+    if (!valid.includes(channel as IntegrationChannel)) {
+      throw new NotFoundException(`Canal inválido: ${channel}`);
+    }
+    return this.tester.test(channel as IntegrationChannel);
   }
 
   // ── Voz (config por empresa) ──

@@ -112,6 +112,11 @@ function ChannelCard({
   const [secret, setSecret] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
 
   // Precarga la config (NO secreta) que vuelve del backend.
   useEffect(() => {
@@ -139,11 +144,25 @@ function ChannelCard({
       });
       setSecret('');
       setMsg('Guardado.');
+      setTestResult(null);
       onSaved();
     } catch {
       setMsg('No se pudo guardar.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    setTestResult(null);
+    setTesting(true);
+    try {
+      const r = await api.post(`/panel/integrations/${schema.channel}/test`);
+      setTestResult(r.data);
+    } catch {
+      setTestResult({ ok: false, message: 'No se pudo probar la conexión.' });
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -202,9 +221,35 @@ function ChannelCard({
         </Field>
 
         {msg && <p className="text-sm text-slate-600">{msg}</p>}
-        <Button onClick={save} disabled={saving}>
-          {saving ? 'Guardando…' : 'Guardar'}
-        </Button>
+        {testResult && (
+          <p
+            className={
+              testResult.ok
+                ? 'text-sm text-emerald-600'
+                : 'text-sm text-rose-600'
+            }
+          >
+            {testResult.ok ? '✓ ' : '✗ '}
+            {testResult.message}
+          </p>
+        )}
+        <div className="flex gap-2">
+          <Button onClick={save} disabled={saving}>
+            {saving ? 'Guardando…' : 'Guardar'}
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={test}
+            disabled={testing || !status?.configured}
+          >
+            {testing ? 'Probando…' : 'Probar conexión'}
+          </Button>
+        </div>
+        {!status?.configured && (
+          <p className="text-xs text-slate-400">
+            Guarda las credenciales para poder probar la conexión.
+          </p>
+        )}
       </div>
     </Card>
   );
