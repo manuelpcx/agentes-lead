@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { EnvVars } from '../common/config/env.validation';
+import { CredentialsService } from '../integrations/credentials.service';
 
 /** Voz disponible para elegir en el panel (del catálogo del proveedor). */
 export interface VoiceOption {
@@ -14,19 +13,20 @@ export interface VoiceOption {
 }
 
 /**
- * Lista las voces disponibles del proveedor de voz (Retell `list-voices`) para
- * poblar el selector del panel. Server-side (usa la API key). Si no hay key o
- * falla, devuelve lista vacía (el panel muestra el estado correspondiente).
+ * Lista las voces disponibles del proveedor de voz de la empresa (Retell
+ * `list-voices`). Usa la API key que el cliente configuró en el panel. Sin
+ * credenciales de Retell, devuelve lista vacía.
  * Doc: https://docs.retellai.com/api-references/list-voices
  */
 @Injectable()
 export class VoiceCatalogService {
   private readonly logger = new Logger('VoiceCatalog');
 
-  constructor(private readonly config: ConfigService<EnvVars, true>) {}
+  constructor(private readonly credentials: CredentialsService) {}
 
   async list(): Promise<VoiceOption[]> {
-    const key = this.config.get('RETELL_API_KEY', { infer: true });
+    const c = await this.credentials.get('voice');
+    const key = c?.provider === 'retell' ? c.secret : undefined;
     if (!key) {
       return [];
     }

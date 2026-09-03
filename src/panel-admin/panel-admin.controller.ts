@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -25,6 +26,11 @@ import { AgentsService } from '../agents/agents.service';
 import { VoiceCatalogService } from '../voice/voice-catalog.service';
 import { WhatsappTemplatesService } from '../whatsapp/whatsapp-templates.service';
 import { CreateWhatsappTemplateDto } from '../whatsapp/dto/create-template.dto';
+import {
+  CredentialsService,
+  IntegrationChannel,
+} from '../integrations/credentials.service';
+import { UpsertIntegrationDto } from './dto/upsert-integration.dto';
 import { KnowledgeDocumentService } from '../knowledge/knowledge-document.service';
 import { StructuredFactsService } from '../knowledge/structured-facts.service';
 import { SemanticSearchService } from '../knowledge/semantic-search.service';
@@ -56,7 +62,29 @@ export class PanelAdminController {
     private readonly onboarding: OnboardingService,
     private readonly voiceCatalog: VoiceCatalogService,
     private readonly waTemplates: WhatsappTemplatesService,
+    private readonly credentials: CredentialsService,
   ) {}
+
+  // ── Integraciones (credenciales por empresa, BYO) ──
+  /** Estado de las integraciones de la empresa (sin secretos). */
+  @Get('integrations')
+  listIntegrations() {
+    return this.credentials.status();
+  }
+
+  /** Guarda las credenciales de un canal (whatsapp|email|voice). */
+  @Put('integrations/:channel')
+  @Roles(PanelRole.OWNER)
+  upsertIntegration(
+    @Param('channel') channel: string,
+    @Body() dto: UpsertIntegrationDto,
+  ) {
+    const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice'];
+    if (!valid.includes(channel as IntegrationChannel)) {
+      throw new NotFoundException(`Canal inválido: ${channel}`);
+    }
+    return this.credentials.upsert(channel as IntegrationChannel, dto);
+  }
 
   // ── Voz (config por empresa) ──
   /** Voces disponibles del proveedor para el selector del panel. */

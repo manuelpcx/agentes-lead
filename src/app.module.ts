@@ -24,6 +24,7 @@ import { AgentModule } from './agent/agent.module';
 import { FollowupModule } from './followup/followup.module';
 import { EmailModule } from './email/email.module';
 import { VoiceModule } from './voice/voice.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { ImprovementModule } from './improvement/improvement.module';
 import { AuditModule } from './audit/audit.module';
@@ -80,6 +81,7 @@ import { HealthModule } from './health/health.module';
     PromptsModule,
     EmailModule,
     VoiceModule,
+    IntegrationsModule,
 
     // Dominios de la Fase 1.
     CompaniesModule,

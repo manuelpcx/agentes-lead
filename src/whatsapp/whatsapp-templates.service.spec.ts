@@ -1,13 +1,26 @@
 import { WhatsappTemplatesService } from './whatsapp-templates.service';
-import { ConfigService } from '@nestjs/config';
+import { CredentialsService } from '../integrations/credentials.service';
 import { TemplateCategory } from './dto/create-template.dto';
-import type { EnvVars } from '../common/config/env.validation';
 
-function build(cfg: Record<string, unknown>) {
-  const config = {
-    get: (k: string) => cfg[k],
-  } as unknown as ConfigService<EnvVars, true>;
-  return new WhatsappTemplatesService(config);
+/** Mockea CredentialsService.get('whatsapp') con (o sin) cuenta de YCloud. */
+function build(cred: {
+  provider?: string;
+  secret?: string;
+  wabaId?: string;
+} | null) {
+  const credentials = {
+    get: jest.fn().mockResolvedValue(
+      cred
+        ? {
+            provider: cred.provider ?? 'ycloud',
+            secret: cred.secret,
+            config: cred.wabaId ? { wabaId: cred.wabaId } : {},
+            isActive: true,
+          }
+        : null,
+    ),
+  } as unknown as CredentialsService;
+  return new WhatsappTemplatesService(credentials);
 }
 
 function mockFetch(res: { ok: boolean; body: unknown; status?: number }) {
@@ -23,7 +36,7 @@ function mockFetch(res: { ok: boolean; body: unknown; status?: number }) {
 
 describe('WhatsappTemplatesService', () => {
   it('crea la plantilla con wabaId, category y BODY + ejemplos', async () => {
-    const svc = build({ YCLOUD_API_KEY: 'key', YCLOUD_WABA_ID: 'waba1' });
+    const svc = build({ secret: 'key', wabaId: 'waba1' });
     const fetchMock = mockFetch({
       ok: true,
       body: { name: 'recordatorio', status: 'PENDING' },
@@ -52,7 +65,7 @@ describe('WhatsappTemplatesService', () => {
   });
 
   it('falla al crear si falta la config de YCloud', async () => {
-    const svc = build({});
+    const svc = build(null);
     await expect(
       svc.create({
         name: 'x',
@@ -60,11 +73,11 @@ describe('WhatsappTemplatesService', () => {
         category: TemplateCategory.UTILITY,
         body: 'hola',
       }),
-    ).rejects.toThrow(/YCLOUD/);
+    ).rejects.toThrow(/YCloud/i);
   });
 
   it('lista y normaliza (status, reason, body)', async () => {
-    const svc = build({ YCLOUD_API_KEY: 'key', YCLOUD_WABA_ID: 'waba1' });
+    const svc = build({ secret: 'key', wabaId: 'waba1' });
     mockFetch({
       ok: true,
       body: {
@@ -91,7 +104,7 @@ describe('WhatsappTemplatesService', () => {
   });
 
   it('sin API key, listar devuelve vacío', async () => {
-    const svc = build({});
+    const svc = build(null);
     await expect(svc.list()).resolves.toEqual([]);
   });
 });

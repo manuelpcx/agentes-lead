@@ -112,8 +112,34 @@ model Company {
   knowledgeGaps      KnowledgeGap[]
   examples           ExampleLibrary[]
   metrics            AgentMetric[]
+  integrations       Integration[]
 
   @@index([isActive])
+}
+
+// Credenciales de proveedores por empresa (BYO: cada empresa trae su propia
+// cuenta de WhatsApp/correo/voz). El secreto (API key/token) va cifrado en
+// reposo (app-layer, CryptoService). Tenant-scoped por `companyId`.
+model Integration {
+  id        String  @id @default(uuid()) @db.Uuid
+  companyId String  @db.Uuid
+  /// Canal: 'whatsapp' | 'email' | 'voice'.
+  channel   String
+  /// Proveedor: 'ycloud' | 'meta' | 'resend' | 'retell'.
+  provider  String
+  /// Datos NO secretos del proveedor (from, wabaId, agentId, etc.).
+  config    Json    @default("{}")
+  /// Secreto (API key/token) cifrado con CryptoService. Nunca se expone.
+  secretEnc String?
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, channel])
+  @@index([companyId])
 }
 
 /// Agente especializado dentro de una empresa. Existe desde Fase 1, pero el

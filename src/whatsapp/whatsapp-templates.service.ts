@@ -4,8 +4,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { EnvVars } from '../common/config/env.validation';
+import { CredentialsService } from '../integrations/credentials.service';
 import { CreateWhatsappTemplateDto } from './dto/create-template.dto';
 
 const YCLOUD_URL = 'https://api.ycloud.com/v2/whatsapp/templates';
@@ -22,28 +21,34 @@ export interface TemplateSummary {
 }
 
 /**
- * Gestión de plantillas de WhatsApp (HSM) contra YCloud: crear (se envían a
- * aprobación de Meta) y listar con su estado. La aprobación la decide Meta;
- * aquí solo se crea y se consulta el estado (PENDING/APPROVED/REJECTED/...).
+ * Gestión de plantillas de WhatsApp (HSM) contra la cuenta de YCloud de CADA
+ * empresa (BYO). Crea (se envían a aprobación de Meta) y lista con su estado.
  * Doc: https://docs.ycloud.com/reference/whatsapp_template-create
  */
 @Injectable()
 export class WhatsappTemplatesService {
   private readonly logger = new Logger('WhatsappTemplates');
 
-  constructor(private readonly config: ConfigService<EnvVars, true>) {}
+  constructor(private readonly credentials: CredentialsService) {}
 
-  private apiKey(): string | undefined {
-    return this.config.get('YCLOUD_API_KEY', { infer: true });
+  /** Resuelve la cuenta de YCloud de la empresa (API key + WABA). */
+  private async ycloud(): Promise<{ key: string; wabaId?: string } | null> {
+    const c = await this.credentials.get('whatsapp');
+    if (!c || c.provider !== 'ycloud' || !c.secret) {
+      return null;
+    }
+    return {
+      key: c.secret,
+      wabaId: c.config.wabaId ? String(c.config.wabaId) : undefined,
+    };
   }
 
-  /** Crea la plantilla y la envía a aprobación de Meta. Devuelve su estado inicial. */
+  /** Crea la plantilla y la envía a aprobación de Meta. */
   async create(dto: CreateWhatsappTemplateDto): Promise<TemplateSummary> {
-    const key = this.apiKey();
-    const wabaId = this.config.get('YCLOUD_WABA_ID', { infer: true });
-    if (!key || !wabaId) {
+    const acc = await this.ycloud();
+    if (!acc || !acc.wabaId) {
       throw new BadRequestException(
-        'Falta configurar YCLOUD_API_KEY y/o YCLOUD_WABA_ID para gestionar plantillas.',
+        'Configura WhatsApp (YCloud) con API key y WABA en el panel para crear plantillas.',
       );
     }
 
@@ -62,9 +67,9 @@ export class WhatsappTemplatesService {
 
     const res = await fetch(YCLOUD_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': key },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': acc.key },
       body: JSON.stringify({
-        wabaId,
+        wabaId: acc.wabaId,
         name: dto.name,
         language: dto.language,
         category: dto.category,
@@ -81,19 +86,18 @@ export class WhatsappTemplatesService {
     return this.normalize(text ? JSON.parse(text) : {});
   }
 
-  /** Lista las plantillas con su estado. Sin API key devuelve lista vacía. */
+  /** Lista las plantillas con su estado. Sin WhatsApp YCloud configurado: vacío. */
   async list(): Promise<TemplateSummary[]> {
-    const key = this.apiKey();
-    if (!key) {
+    const acc = await this.ycloud();
+    if (!acc) {
       return [];
     }
-    const wabaId = this.config.get('YCLOUD_WABA_ID', { infer: true });
     const qs = new URLSearchParams({ limit: '100' });
-    if (wabaId) {
-      qs.set('filter.wabaId', wabaId);
+    if (acc.wabaId) {
+      qs.set('filter.wabaId', acc.wabaId);
     }
     const res = await fetch(`${YCLOUD_URL}?${qs.toString()}`, {
-      headers: { 'X-API-Key': key },
+      headers: { 'X-API-Key': acc.key },
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');

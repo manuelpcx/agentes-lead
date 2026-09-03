@@ -143,85 +143,9 @@ const envSchema = z
           'VOYAGE_API_KEY es obligatoria cuando EMBEDDINGS_PROVIDER=voyage',
       });
     }
-    // Si el correo usa SMTP, se requiere al menos el host.
-    if (env.EMAIL_PROVIDER === 'smtp' && !env.SMTP_HOST) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['SMTP_HOST'],
-        message: 'SMTP_HOST es obligatorio cuando EMAIL_PROVIDER=smtp',
-      });
-    }
-    // Si el correo usa Resend, se requiere la API key.
-    if (env.EMAIL_PROVIDER === 'resend' && !env.RESEND_API_KEY) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['RESEND_API_KEY'],
-        message: 'RESEND_API_KEY es obligatoria cuando EMAIL_PROVIDER=resend',
-      });
-    }
-    // Si las llamadas usan Vapi, se requiere la API key.
-    if (env.VOICE_PROVIDER === 'vapi' && !env.VAPI_API_KEY) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['VAPI_API_KEY'],
-        message: 'VAPI_API_KEY es obligatoria cuando VOICE_PROVIDER=vapi',
-      });
-    }
-    // Si las llamadas usan Retell, se requieren API key y número de origen.
-    if (env.VOICE_PROVIDER === 'retell') {
-      if (!env.RETELL_API_KEY) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['RETELL_API_KEY'],
-          message: 'RETELL_API_KEY es obligatoria cuando VOICE_PROVIDER=retell',
-        });
-      }
-      if (!env.RETELL_FROM_NUMBER) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['RETELL_FROM_NUMBER'],
-          message:
-            'RETELL_FROM_NUMBER es obligatorio cuando VOICE_PROVIDER=retell',
-        });
-      }
-    }
-    // Si WhatsApp usa YCloud, se requieren API key y número de negocio.
-    if (env.WHATSAPP_PROVIDER === 'ycloud') {
-      if (!env.YCLOUD_API_KEY) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['YCLOUD_API_KEY'],
-          message:
-            'YCLOUD_API_KEY es obligatoria cuando WHATSAPP_PROVIDER=ycloud',
-        });
-      }
-      if (!env.YCLOUD_FROM) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['YCLOUD_FROM'],
-          message: 'YCLOUD_FROM es obligatorio cuando WHATSAPP_PROVIDER=ycloud',
-        });
-      }
-    }
-    // Si WhatsApp usa Meta Cloud API, se requieren token y phone number id.
-    if (env.WHATSAPP_PROVIDER === 'meta') {
-      if (!env.WHATSAPP_TOKEN) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['WHATSAPP_TOKEN'],
-          message:
-            'WHATSAPP_TOKEN es obligatorio cuando WHATSAPP_PROVIDER=meta',
-        });
-      }
-      if (!env.WHATSAPP_PHONE_NUMBER_ID) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['WHATSAPP_PHONE_NUMBER_ID'],
-          message:
-            'WHATSAPP_PHONE_NUMBER_ID es obligatorio cuando WHATSAPP_PROVIDER=meta',
-        });
-      }
-    }
+    // Nota: las credenciales de WhatsApp/correo/voz YA NO se validan aquí —
+    // ahora cada empresa las configura en el panel (BYO, cifradas en reposo).
+    // Ver `IntegrationsModule` / `CredentialsService`.
   });
 
 /** Tipo fuerte de la configuración validada, usado por `ConfigService`. */
