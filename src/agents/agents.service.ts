@@ -122,6 +122,7 @@ export class AgentsService {
     enabledTools?: string[];
     priority?: number;
     isDefault?: boolean;
+    followupConfig?: Record<string, unknown>;
   }): Promise<Agent> {
     const companyId = TenantContext.requireCompanyId();
     const type = input.type ?? AgentType.CUSTOM;
@@ -141,6 +142,7 @@ export class AgentsService {
           priority: input.priority ?? 0,
           isDefault: input.isDefault ?? false,
           knowledgeScope: {},
+          followupConfig: (input.followupConfig ?? {}) as Prisma.InputJsonValue,
         },
       });
       await this.prompts.seedDefaultPrompt(companyId, agent.id, type, tx);

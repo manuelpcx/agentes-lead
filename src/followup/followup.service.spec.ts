@@ -46,6 +46,7 @@ function buildHarness(
   overrides: Partial<typeof LEAD> = {},
   businessHours: unknown = ALWAYS_OPEN,
   template = '',
+  agentFollowupConfig: Record<string, unknown> = {},
 ) {
   const cfg: Record<string, unknown> = {
     FOLLOWUP_MAX_ATTEMPTS: 4,
@@ -60,12 +61,21 @@ function buildHarness(
   } as unknown as ConfigService<EnvVars, true>;
 
   const prisma = {
-    db: { interaction: { findFirst: jest.fn().mockResolvedValue(null) } },
+    db: {
+      interaction: { findFirst: jest.fn().mockResolvedValue(null) },
+      agent: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ followupConfig: agentFollowupConfig }),
+      },
+    },
     raw: {
       company: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ name: 'Estudio Demo', businessHours, timezone: 'UTC' }),
+        findUnique: jest.fn().mockResolvedValue({
+          name: 'Estudio Demo',
+          businessHours,
+          timezone: 'UTC',
+        }),
       },
     },
   } as unknown as PrismaService;
@@ -190,6 +200,36 @@ describe('FollowUpService.processFollowUp', () => {
     expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
   });
 
+  it('la escalera del AGENTE pisa la global: fuerza whatsapp desde el primer intento', async () => {
+    // Escalera global default = email primero; el agente pide solo whatsapp.
+    const h = buildHarness({ contactAttempts: 0 }, ALWAYS_OPEN, '', {
+      channelLadder: ['whatsapp'],
+    });
+    openWhatsAppWindow(h.prisma); // así no cae a la ventana cerrada/plantilla
+    await run(() => h.service.processFollowUp('lead-1'));
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).toContain('WHATSAPP');
+  });
+
+  it('plantilla de REACTIVACIÓN del agente se usa en el último intento (attempt === maxAttempts)', async () => {
+    const h = buildHarness(
+      { contactAttempts: 3 }, // próximo intento = 4 = maxAttempts (tope=4)
+      ALWAYS_OPEN,
+      '',
+      {
+        channelLadder: ['whatsapp'],
+        templates: {
+          opening: { name: 'apertura', language: 'es' },
+          reactivation: { name: 'reactiva_v1', language: 'es_CL' },
+        },
+      },
+    );
+    await run(() => h.service.processFollowUp('lead-1'));
+    expect(h.whatsapp.sendTemplate).toHaveBeenCalledTimes(1);
+    const [, tpl] = (h.whatsapp.sendTemplate as jest.Mock).mock.calls[0];
+    expect(tpl).toMatchObject({ name: 'reactiva_v1', languageCode: 'es_CL' });
+  });
+
   it('WhatsApp fuera de ventana, sin plantilla ni correo: cuenta el intento sin contactar', async () => {
     const h = buildHarness({ contactAttempts: 1, email: null });
     await run(() => h.service.processFollowUp('lead-1'));
@@ -218,7 +258,9 @@ describe('FollowUpService.processFollowUp', () => {
   it('llamada agendada fuera de horario: la pospone conservando el tipo', async () => {
     const h = buildHarness(
       { contactAttempts: 1, nextActionType: 'llamada_programada' },
-      { days: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] } },
+      {
+        days: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+      },
     );
     await run(() => h.service.processFollowUp('lead-1'));
     expect(h.agent.runFollowUp).not.toHaveBeenCalled();

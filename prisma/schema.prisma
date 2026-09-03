@@ -154,6 +154,11 @@ model Agent {
   enabledTools   String[]  @default([])
   /// Qué documentos y categorías de StructuredFact puede consultar (Fase 2+).
   knowledgeScope Json      @default("{}")
+  /// Config de seguimiento propia del agente: escalera de canales, espaciado,
+  /// tope de intentos, retardo de primer contacto y plantillas de WhatsApp por
+  /// propósito (apertura/seguimiento/reactivación). Lo no definido cae a los
+  /// defaults globales. Ver `agents/followup-config.ts`.
+  followupConfig Json      @default("{}")
   /// Enrutamiento por canal: canales que este agente atiende ([] = cualquiera).
   channels       String[]  @default([])
   /// Enrutamiento por estado del lead: estados que maneja ([] = cualquiera).

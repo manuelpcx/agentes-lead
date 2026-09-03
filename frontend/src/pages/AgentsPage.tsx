@@ -24,6 +24,36 @@ const LEAD_STATES = [
   'ESCALADO_HUMANO',
 ];
 
+/** Plantilla de WhatsApp aprobada, para elegir en el pool por propósito. */
+interface TemplateOption {
+  name: string;
+  language: string;
+}
+
+type TemplatePurpose = 'opening' | 'followup' | 'reactivation';
+const PURPOSES: { key: TemplatePurpose; label: string; hint: string }[] = [
+  { key: 'opening', label: 'Apertura', hint: 'Primer contacto fuera de la ventana de 24h.' },
+  { key: 'followup', label: 'Seguimiento', hint: 'Reintentos intermedios.' },
+  { key: 'reactivation', label: 'Reactivación', hint: 'Último intento antes de cerrar.' },
+];
+
+/** Sub-estado (crudo, como texto) de la config de seguimiento del formulario. */
+interface FollowupUiState {
+  channelLadder: string; // "email,whatsapp,whatsapp,email"
+  delaysHours: string; // "12,48,72"
+  maxAttempts: string;
+  firstContactDelayMin: string;
+  templates: Record<TemplatePurpose, string>; // nombre de plantilla o ''
+}
+
+const EMPTY_FOLLOWUP_UI: FollowupUiState = {
+  channelLadder: '',
+  delaysHours: '',
+  maxAttempts: '',
+  firstContactDelayMin: '',
+  templates: { opening: '', followup: '', reactivation: '' },
+};
+
 /** Estado editable de un agente en el formulario. */
 interface FormState {
   name: string;
@@ -33,6 +63,7 @@ interface FormState {
   leadStates: string[];
   priority: number;
   isDefault: boolean;
+  followupUi: FollowupUiState;
 }
 
 const EMPTY_FORM: FormState = {
@@ -43,7 +74,91 @@ const EMPTY_FORM: FormState = {
   leadStates: [],
   priority: 0,
   isDefault: false,
+  followupUi: EMPTY_FOLLOWUP_UI,
 };
+
+/** Lee `followupConfig` (JSON del backend) a los campos de texto del formulario. */
+function parseFollowupUi(cfg: Record<string, unknown> | undefined): FollowupUiState {
+  if (!cfg || typeof cfg !== 'object') {
+    return EMPTY_FOLLOWUP_UI;
+  }
+  const ladder = Array.isArray(cfg.channelLadder)
+    ? (cfg.channelLadder as unknown[]).filter((x) => typeof x === 'string').join(',')
+    : '';
+  const delays = Array.isArray(cfg.delaysHours)
+    ? (cfg.delaysHours as unknown[]).map(String).join(',')
+    : '';
+  const maxAttempts =
+    typeof cfg.maxAttempts === 'number' ? String(cfg.maxAttempts) : '';
+  const firstContactDelayMin =
+    typeof cfg.firstContactDelayMin === 'number'
+      ? String(cfg.firstContactDelayMin)
+      : '';
+  const rawTemplates = (cfg.templates ?? {}) as Record<string, unknown>;
+  const templates = { opening: '', followup: '', reactivation: '' } as Record<
+    TemplatePurpose,
+    string
+  >;
+  for (const p of ['opening', 'followup', 'reactivation'] as TemplatePurpose[]) {
+    const t = rawTemplates[p] as { name?: string } | undefined;
+    if (t?.name) {
+      templates[p] = t.name;
+    }
+  }
+  return { channelLadder: ladder, delaysHours: delays, maxAttempts, firstContactDelayMin, templates };
+}
+
+/** Traduce el formulario a `followupConfig` (JSON) para el backend. */
+function buildFollowupConfig(
+  ui: FollowupUiState,
+  templates: TemplateOption[],
+): Record<string, unknown> {
+  const cfg: Record<string, unknown> = {};
+
+  const ladder = ui.channelLadder
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (ladder.length > 0) {
+    cfg.channelLadder = ladder;
+  }
+
+  const delays = ui.delaysHours
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (delays.length > 0) {
+    cfg.delaysHours = delays;
+  }
+
+  const maxAttempts = Number(ui.maxAttempts);
+  if (ui.maxAttempts.trim() && Number.isFinite(maxAttempts) && maxAttempts > 0) {
+    cfg.maxAttempts = Math.floor(maxAttempts);
+  }
+
+  const firstContact = Number(ui.firstContactDelayMin);
+  if (
+    ui.firstContactDelayMin.trim() &&
+    Number.isFinite(firstContact) &&
+    firstContact >= 0
+  ) {
+    cfg.firstContactDelayMin = Math.floor(firstContact);
+  }
+
+  const tpl: Record<string, unknown> = {};
+  for (const p of ['opening', 'followup', 'reactivation'] as TemplatePurpose[]) {
+    const name = ui.templates[p];
+    if (name) {
+      const found = templates.find((t) => t.name === name);
+      tpl[p] = { name, language: found?.language ?? 'es' };
+    }
+  }
+  if (Object.keys(tpl).length > 0) {
+    cfg.templates = tpl;
+  }
+
+  return cfg;
+}
 
 function toForm(a: AgentFull): FormState {
   return {
@@ -54,6 +169,7 @@ function toForm(a: AgentFull): FormState {
     leadStates: a.leadStates,
     priority: a.priority,
     isDefault: a.isDefault,
+    followupUi: parseFollowupUi(a.followupConfig),
   };
 }
 
@@ -97,11 +213,13 @@ function AgentForm({
   onSubmit,
   onCancel,
   submitLabel,
+  templates,
 }: {
   initial: FormState;
   onSubmit: (f: FormState) => Promise<void>;
   onCancel?: () => void;
   submitLabel: string;
+  templates: TemplateOption[];
 }) {
   const [form, setForm] = useState<FormState>(initial);
   const [saving, setSaving] = useState(false);
@@ -113,6 +231,11 @@ function AgentForm({
         ? f[field].filter((v) => v !== value)
         : [...f[field], value],
     }));
+
+  const setFollowup = <K extends keyof FollowupUiState>(
+    key: K,
+    value: FollowupUiState[K],
+  ) => setForm((f) => ({ ...f, followupUi: { ...f.followupUi, [key]: value } }));
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -199,6 +322,107 @@ function AgentForm({
         </label>
       </div>
 
+      {/* ── Seguimiento propio del agente (opcional) ── */}
+      <div className="border-t border-slate-200 pt-5">
+        <h4 className="mb-1 text-sm font-semibold text-slate-800">
+          Seguimiento de este agente
+        </h4>
+        <p className="mb-4 text-xs text-slate-500">
+          Opcional. Lo que dejes vacío usa la configuración global de la
+          empresa (útil para que cobranza y ventas tengan cadencias distintas).
+        </p>
+
+        <Field
+          label="Escalera de canales"
+          hint='Orden separado por comas: email, whatsapp, call. Ej: "email,whatsapp,whatsapp,email".'
+        >
+          <Input
+            value={form.followupUi.channelLadder}
+            onChange={(e) => setFollowup('channelLadder', e.target.value)}
+            placeholder="(usa la escalera global)"
+            className="font-mono text-xs"
+          />
+        </Field>
+
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <Field
+            label="Espaciado entre intentos (horas)"
+            hint='Ej: "12,48,72".'
+          >
+            <Input
+              value={form.followupUi.delaysHours}
+              onChange={(e) => setFollowup('delaysHours', e.target.value)}
+              placeholder="(usa el global)"
+              className="font-mono text-xs"
+            />
+          </Field>
+          <Field label="Tope de intentos">
+            <Input
+              type="number"
+              min={1}
+              value={form.followupUi.maxAttempts}
+              onChange={(e) => setFollowup('maxAttempts', e.target.value)}
+              placeholder="(global)"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4">
+          <Field
+            label="Retardo del primer contacto (minutos)"
+            hint="0 = casi inmediato."
+          >
+            <Input
+              type="number"
+              min={0}
+              value={form.followupUi.firstContactDelayMin}
+              onChange={(e) =>
+                setFollowup('firstContactDelayMin', e.target.value)
+              }
+              placeholder="(global)"
+              className="max-w-[10rem]"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-5">
+          <p className="mb-2 text-xs font-medium text-slate-600">
+            Plantillas de WhatsApp (fuera de la ventana de 24h)
+          </p>
+          {templates.length === 0 ? (
+            <p className="text-xs text-slate-400">
+              No hay plantillas APROBADAS todavía. Créalas y apruébalas en{' '}
+              <span className="font-medium">Plantillas WA</span>.
+            </p>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-3">
+              {PURPOSES.map((p) => (
+                <Field key={p.key} label={p.label} hint={p.hint}>
+                  <Select
+                    value={form.followupUi.templates[p.key]}
+                    onChange={(e) =>
+                      setFollowup('templates', {
+                        ...form.followupUi.templates,
+                        [p.key]: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="">
+                      {p.key === 'opening' ? '(usa la global)' : '(usa apertura)'}
+                    </option>
+                    {templates.map((t) => (
+                      <option key={t.name} value={t.name}>
+                        {t.name} ({t.language})
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
           {saving ? 'Guardando…' : submitLabel}
@@ -220,23 +444,47 @@ function MetricCell({ value }: { value: number }) {
   );
 }
 
+/** Solo los campos que aceptan los DTOs del backend (whitelist estricta). */
+function toPayload(f: FormState, templates: TemplateOption[]) {
+  return {
+    name: f.name,
+    type: f.type,
+    description: f.description,
+    channels: f.channels,
+    leadStates: f.leadStates,
+    priority: f.priority,
+    isDefault: f.isDefault,
+    followupConfig: buildFollowupConfig(f.followupUi, templates),
+  };
+}
+
 export function AgentsPage() {
   const [agents, setAgents] = useState<AgentFull[]>([]);
   const [metrics, setMetrics] = useState<AgentMetricsRow[]>([]);
   const [handoffs, setHandoffs] = useState<HandoffRow[]>([]);
+  const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [a, m, h] = await Promise.all([
+    const [a, m, h, t] = await Promise.all([
       api.get('/panel/agents').then((r) => r.data),
       api.get('/panel/agents/metrics').then((r) => r.data),
       api.get('/panel/handoffs').then((r) => r.data),
+      api
+        .get('/panel/whatsapp/templates')
+        .then((r) => r.data)
+        .catch(() => []),
     ]);
     setAgents(a);
     setMetrics(m);
     setHandoffs(h);
+    setTemplates(
+      (t as { name: string; language: string; status: string }[])
+        .filter((tpl) => tpl.status === 'APPROVED')
+        .map((tpl) => ({ name: tpl.name, language: tpl.language })),
+    );
   }, []);
 
   useEffect(() => {
@@ -258,9 +506,12 @@ export function AgentsPage() {
     }
   };
 
-  const create = (f: FormState) => handle(() => api.post('/panel/agents', f));
+  const create = (f: FormState) =>
+    handle(() => api.post('/panel/agents', toPayload(f, templates)));
   const update = (id: string, f: FormState) =>
-    handle(() => api.patch(`/panel/agents/${id}`, f));
+    handle(() =>
+      api.patch(`/panel/agents/${id}`, toPayload(f, templates)),
+    );
   const deactivate = (id: string) =>
     handle(() => api.delete(`/panel/agents/${id}`));
 
@@ -349,6 +600,7 @@ export function AgentsPage() {
             submitLabel="Crear"
             onSubmit={create}
             onCancel={() => setCreating(false)}
+            templates={templates}
           />
         </Card>
       )}
@@ -409,6 +661,7 @@ export function AgentsPage() {
                   submitLabel="Guardar"
                   onSubmit={(f) => update(a.id, f)}
                   onCancel={() => setEditingId(null)}
+                  templates={templates}
                 />
               </div>
             )}

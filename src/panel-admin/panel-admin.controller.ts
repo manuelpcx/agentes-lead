@@ -156,7 +156,12 @@ export class PanelAdminController {
     @Body() dto: UpdateAgentDto,
     @CurrentUser() user: AuthUser,
   ) {
-    const agent = await this.agents.update(id, dto);
+    const { followupConfig, ...rest } = dto;
+    const data: Prisma.AgentUpdateInput & { isDefault?: boolean } = { ...rest };
+    if (followupConfig !== undefined) {
+      data.followupConfig = followupConfig as Prisma.InputJsonValue;
+    }
+    const agent = await this.agents.update(id, data);
     await this.audit.record({
       userId: user.userId,
       action: 'update_agent',

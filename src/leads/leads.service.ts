@@ -5,6 +5,7 @@ import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AgentsService } from '../agents/agents.service';
 import { inferAgentType } from '../agents/infer-agent-type';
+import { parseAgentFollowupConfig } from '../agents/followup-config';
 import { InteractionsService } from '../interactions/interactions.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { IncomingLeadDto } from '../webhooks/dto/incoming-lead.dto';
@@ -198,6 +199,20 @@ export class LeadsService {
         status: LeadStatus.NUEVO,
         agentType: inferAgentType(payload.metadata),
       });
+      // El agente puede tener su propio retardo de primer contacto; si no, el
+      // default global.
+      const agentRow = await tx.agent.findFirst({
+        where: { id: agentId },
+        select: { followupConfig: true },
+      });
+      const agentDelayMin = parseAgentFollowupConfig(
+        agentRow?.followupConfig,
+      ).firstContactDelayMin;
+      const firstContactDelayMs =
+        agentDelayMin !== undefined
+          ? agentDelayMin * 60_000
+          : this.firstContactDelayMs;
+
       const lead = await tx.lead.create({
         data: {
           companyId: TenantContext.requireCompanyId(),
@@ -214,7 +229,7 @@ export class LeadsService {
           status: LeadStatus.NUEVO,
           // Programa el primer contacto proactivo (Fase 4 lo ejecuta). Con un
           // pequeño retardo configurable para responder rápido sin parecer bot.
-          nextActionAt: new Date(Date.now() + this.firstContactDelayMs),
+          nextActionAt: new Date(Date.now() + firstContactDelayMs),
           nextActionType: 'primer_contacto',
         },
         select: { id: true },

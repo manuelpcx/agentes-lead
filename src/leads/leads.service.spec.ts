@@ -29,6 +29,9 @@ function buildHarness() {
       create: jest.fn().mockResolvedValue({ id: 'lead-nuevo' }),
       update: jest.fn().mockResolvedValue({ id: 'lead-existente' }),
     },
+    agent: {
+      findFirst: jest.fn().mockResolvedValue({ followupConfig: {} }),
+    },
   };
 
   const db = {

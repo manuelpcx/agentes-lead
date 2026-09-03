@@ -81,6 +81,8 @@ export interface AgentFull {
   priority: number;
   isDefault: boolean;
   isActive: boolean;
+  /** Config de seguimiento propia (escalera, delays, plantillas). Ver followup-config. */
+  followupConfig?: Record<string, unknown>;
 }
 
 /** Métricas comparadas por agente (Fase 8). */

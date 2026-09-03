@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -55,4 +56,13 @@ export class CreateAgentDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  /**
+   * Config de seguimiento propia del agente (escalera, espaciado, tope de
+   * intentos, retardo de primer contacto, plantillas por propósito). Lo no
+   * definido cae a los defaults globales. Ver `agents/followup-config.ts`.
+   */
+  @IsOptional()
+  @IsObject()
+  followupConfig?: Record<string, unknown>;
 }

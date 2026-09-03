@@ -70,6 +70,8 @@ const envSchema = z
     JWT_EXPIRES_IN: z.string().default('8h'),
 
     // ── Seguimiento automático (Fase 4) ──
+    // Defaults globales de la empresa; cada Agent puede pisar escalera/delays/
+    // tope/plantillas vía Agent.followupConfig (ver agents/followup-config.ts).
     FOLLOWUP_ENABLED: z
       .enum(['true', 'false'])
       .default('true')

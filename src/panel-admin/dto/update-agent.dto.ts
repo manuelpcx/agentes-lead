@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -55,4 +56,9 @@ export class UpdateAgentDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  /** Ver `CreateAgentDto.followupConfig`. */
+  @IsOptional()
+  @IsObject()
+  followupConfig?: Record<string, unknown>;
 }

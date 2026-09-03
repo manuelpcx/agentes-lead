@@ -8,15 +8,26 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
-import { PROMISE_PAY_TYPE, SCHEDULED_CALL_TYPE } from '../agent/agent.constants';
+import {
+  PROMISE_PAY_TYPE,
+  SCHEDULED_CALL_TYPE,
+} from '../agent/agent.constants';
 import { isWithinBusinessHours, nextAllowedTime } from './business-hours';
 import {
-  FollowUpChannel,
   buildFollowUpInstruction,
   parseDelaysHours,
   parseLadder,
   resolveFollowUpChannel,
 } from './channel-ladder';
+import {
+  AgentTemplateRef,
+  EffectiveFollowup,
+  FollowupDefaults,
+  TemplatePurpose,
+  parseAgentFollowupConfig,
+  pickTemplate,
+  resolveEffectiveFollowup,
+} from '../agents/followup-config';
 
 const CONVERSATION_CHANNELS: Channel[] = [
   Channel.whatsapp,
@@ -38,12 +49,8 @@ const WHATSAPP_WINDOW_MS = 24 * HOUR_MS;
 @Injectable()
 export class FollowUpService {
   private readonly logger = new Logger(FollowUpService.name);
-  private readonly maxAttempts: number;
-  private readonly baseDelayHours: number;
-  private readonly delaysHours: number[];
-  private readonly ladder: FollowUpChannel[];
-  private readonly whatsappTemplate: string;
-  private readonly whatsappTemplateLang: string;
+  /** Defaults globales (de env); fallback de lo que el agente no configure. */
+  private readonly defaults: FollowupDefaults;
 
   constructor(
     config: ConfigService<EnvVars, true>,
@@ -53,22 +60,22 @@ export class FollowUpService {
     private readonly whatsapp: WhatsappService,
     private readonly agent: AgentRunner,
   ) {
-    this.maxAttempts = config.get('FOLLOWUP_MAX_ATTEMPTS', { infer: true });
-    this.baseDelayHours = config.get('FOLLOWUP_BASE_DELAY_HOURS', {
-      infer: true,
-    });
-    this.delaysHours = parseDelaysHours(
-      config.get('FOLLOWUP_DELAYS_HOURS', { infer: true }),
-    );
-    this.ladder = parseLadder(
-      config.get('FOLLOWUP_CHANNEL_LADDER', { infer: true }),
-    );
-    this.whatsappTemplate = config
-      .get('FOLLOWUP_WHATSAPP_TEMPLATE', { infer: true })
-      .trim();
-    this.whatsappTemplateLang = config.get('FOLLOWUP_WHATSAPP_TEMPLATE_LANG', {
-      infer: true,
-    });
+    this.defaults = {
+      ladder: parseLadder(
+        config.get('FOLLOWUP_CHANNEL_LADDER', { infer: true }),
+      ),
+      delaysHours: parseDelaysHours(
+        config.get('FOLLOWUP_DELAYS_HOURS', { infer: true }),
+      ),
+      baseDelayHours: config.get('FOLLOWUP_BASE_DELAY_HOURS', { infer: true }),
+      maxAttempts: config.get('FOLLOWUP_MAX_ATTEMPTS', { infer: true }),
+      template: {
+        name: config.get('FOLLOWUP_WHATSAPP_TEMPLATE', { infer: true }).trim(),
+        language: config.get('FOLLOWUP_WHATSAPP_TEMPLATE_LANG', {
+          infer: true,
+        }),
+      },
+    };
   }
 
   /**
@@ -82,6 +89,16 @@ export class FollowUpService {
     if (lead.isPausedForHuman || TERMINAL_STATUSES.includes(lead.status)) {
       return;
     }
+
+    // Config de seguimiento efectiva: la del agente a cargo sobre los defaults.
+    const agentRow = await this.prisma.db.agent.findFirst({
+      where: { id: lead.agentId },
+      select: { followupConfig: true },
+    });
+    const eff = resolveEffectiveFollowup(
+      parseAgentFollowupConfig(agentRow?.followupConfig),
+      this.defaults,
+    );
 
     // Llamada que el propio lead pidió agendar (vía el tool iniciarLlamada). No
     // pasa por el guard de "cliente habló último" ni por la escalera: es una
@@ -103,7 +120,7 @@ export class FollowUpService {
       if (lastConv?.direction === Direction.inbound) {
         await this.leads.scheduleNextAction(
           leadId,
-          new Date(Date.now() + this.baseDelayHours * HOUR_MS),
+          new Date(Date.now() + eff.baseDelayHours * HOUR_MS),
           'espera_respuesta',
         );
         return;
@@ -150,7 +167,7 @@ export class FollowUpService {
       }
       await this.leads.recordFollowUpAttempt(
         leadId,
-        this.nextActionTime(now, attempt),
+        this.nextActionTime(now, attempt, eff),
         'seguimiento',
       );
       this.logger.log(`Verificación de promesa de pago (leadId=${leadId})`);
@@ -170,7 +187,7 @@ export class FollowUpService {
       }
       await this.leads.recordFollowUpAttempt(
         leadId,
-        this.nextActionTime(now, attempt),
+        this.nextActionTime(now, attempt, eff),
         'seguimiento',
       );
       this.logger.log(`Llamada agendada ejecutada (leadId=${leadId})`);
@@ -178,7 +195,7 @@ export class FollowUpService {
     }
 
     // Tope de intentos → cerrar por falta de respuesta.
-    if (lead.contactAttempts >= this.maxAttempts) {
+    if (lead.contactAttempts >= eff.maxAttempts) {
       await this.leads.closeAsLost(leadId);
       await this.interactions.register({
         leadId,
@@ -193,11 +210,11 @@ export class FollowUpService {
 
     const primerContacto = lead.contactAttempts === 0;
     const attempt = lead.contactAttempts + 1;
-    const nextTime = this.nextActionTime(now, attempt);
+    const nextTime = this.nextActionTime(now, attempt, eff);
 
     // Escalera de canales: elige el canal de este intento según los datos de
     // contacto del lead (correo es el fiable para leads fríos).
-    let channel = resolveFollowUpChannel(attempt, this.ladder, {
+    let channel = resolveFollowUpChannel(attempt, eff.ladder, {
       hasEmail: !!lead.email,
       hasPhone: !!lead.phone,
     });
@@ -217,14 +234,26 @@ export class FollowUpService {
 
     // Ventana de 24h de WhatsApp: el texto libre del agente SOLO se puede enviar
     // si el cliente escribió por WhatsApp en las últimas 24h. Si está cerrada:
-    //  - con plantilla configurada → envío determinista de plantilla (HSM).
+    //  - con plantilla configurada → envío determinista de plantilla (HSM), la
+    //    del propósito de este momento (apertura/seguimiento/reactivación).
     //  - sin plantilla → cae a correo; si tampoco hay correo, cuenta el intento.
     if (channel === 'whatsapp' && !(await this.isWhatsAppWindowOpen(leadId))) {
-      if (this.whatsappTemplate && lead.phone) {
-        await this.sendWhatsAppTemplate(lead, company?.name);
-        await this.leads.recordFollowUpAttempt(leadId, nextTime, 'plantilla_wa');
+      const purpose: TemplatePurpose = primerContacto
+        ? 'opening'
+        : attempt >= eff.maxAttempts
+          ? 'reactivation'
+          : 'followup';
+      const template = pickTemplate(eff, purpose);
+      if (template && lead.phone) {
+        await this.sendWhatsAppTemplate(lead, template, company?.name);
+        await this.leads.recordFollowUpAttempt(
+          leadId,
+          nextTime,
+          'plantilla_wa',
+        );
         this.logger.log(
-          `Seguimiento por plantilla WhatsApp (leadId=${leadId} intento=${attempt})`,
+          `Seguimiento por plantilla WhatsApp (leadId=${leadId} intento=${attempt} ` +
+            `propósito=${purpose} plantilla=${template.name})`,
         );
         return;
       }
@@ -247,7 +276,7 @@ export class FollowUpService {
     const instruction = buildFollowUpInstruction({
       channel,
       attempt,
-      maxAttempts: this.maxAttempts,
+      maxAttempts: eff.maxAttempts,
       primerContacto,
       source: lead.source,
     });
@@ -268,13 +297,17 @@ export class FollowUpService {
   // ─────────────────────── privados ───────────────────────
 
   /**
-   * Reprograma según el espaciado explícito de `FOLLOWUP_DELAYS_HOURS` para este
+   * Reprograma según el espaciado explícito de la config efectiva para este
    * intento; si no está listado, cae al espaciado creciente `baseDelayHours *
    * intento`.
    */
-  private nextActionTime(now: Date, attempt: number): Date {
+  private nextActionTime(
+    now: Date,
+    attempt: number,
+    eff: EffectiveFollowup,
+  ): Date {
     const delayHours =
-      this.delaysHours[attempt - 1] ?? this.baseDelayHours * attempt;
+      eff.delaysHours[attempt - 1] ?? eff.baseDelayHours * attempt;
     return new Date(now.getTime() + delayHours * HOUR_MS);
   }
 
@@ -296,18 +329,19 @@ export class FollowUpService {
   }
 
   /**
-   * Envía la plantilla configurada (contacto proactivo fuera de ventana). La
-   * plantilla espera 2 variables de cuerpo: {{1}} = nombre del lead, {{2}} =
-   * nombre de la empresa (el tenant).
+   * Envía la plantilla del propósito correspondiente (contacto proactivo fuera
+   * de ventana). La plantilla espera 2 variables de cuerpo: {{1}} = nombre del
+   * lead, {{2}} = nombre de la empresa (el tenant).
    */
   private async sendWhatsAppTemplate(
     lead: Lead,
+    template: AgentTemplateRef,
     companyName?: string | null,
   ): Promise<void> {
     const firstName = lead.name?.trim().split(/\s+/)[0] || 'allí';
     await this.whatsapp.sendTemplate(lead.phone as string, {
-      name: this.whatsappTemplate,
-      languageCode: this.whatsappTemplateLang,
+      name: template.name,
+      languageCode: template.language,
       bodyParams: [firstName, companyName?.trim() || 'nuestra empresa'],
     });
     await this.interactions.register({
@@ -315,7 +349,7 @@ export class FollowUpService {
       channel: Channel.whatsapp,
       direction: Direction.outbound,
       content:
-        `[plantilla ${this.whatsappTemplate}] contacto proactivo ` +
+        `[plantilla ${template.name}] contacto proactivo ` +
         '(fuera de ventana de 24h)',
       agentId: null,
     });
