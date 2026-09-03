@@ -47,21 +47,36 @@ $env:SIP_AUTH_USER="..."; $env:SIP_AUTH_PASS="..."   # si creaste credenciales
 node scripts/setup-retell.mjs
 ```
 
-Imprime el `RETELL_AGENT_ID`. Puedes ajustar el prompt/voz editando el script o
-directamente en el dashboard de Retell.
+Imprime el `agent_id`. El prompt vive en `scripts/retell-prompt.mjs` (compartido
+con `update-retell-prompt.mjs`, ver más abajo); para cambiarlo, edítalo ahí —
+no hace falta tocar `setup-retell.mjs`.
 
 ### 3. Retell — webhook
 En Retell, apunta el webhook del agente a:
 `https://TU-BACKEND/voice/retell/webhook`
 
-### 4. Railway — variables del backend
+### 4. Panel — Integraciones → Voz
+Las credenciales son **por empresa** (BYO), NO variables de entorno de
+Railway. En el panel, cada empresa entra a **Integraciones → Voz**, elige
+proveedor "Retell" y pega:
+- **API key** (secreto, cifrado en reposo)
+- **Número** (E.164, el mismo `RETELL_FROM_NUMBER` de arriba)
+- **Agent ID** (el `agent_id` que imprimió el script)
+
+Guarda y prueba con el botón "Probar conexión". Sin esto configurado, la
+empresa no puede llamar (el canal de voz queda inactivo para ella).
+
+### 5. Actualizar el prompt de un agente ya creado
+Si ya tienes un `agent_id` funcionando y solo quieres cambiar el prompt (sin
+crear un agente duplicado ni tocar el Agent ID guardado en el panel):
+
+```powershell
+$env:RETELL_API_KEY="key_..."
+$env:RETELL_AGENT_ID="agent_..."   # el mismo que tienes en Integraciones
+node scripts/update-retell-prompt.mjs
 ```
-VOICE_PROVIDER=retell
-RETELL_API_KEY=key_...
-RETELL_AGENT_ID=agent_...
-RETELL_FROM_NUMBER=+56XXXXXXXXX
-```
-Redeploy (`railway up`).
+
+Edita `scripts/retell-prompt.mjs` primero si quieres cambiar el contenido.
 
 ## Voz y tono por empresa (multiempresa)
 
@@ -72,10 +87,11 @@ sirve a todas las empresas.
 
 Campos:
 - **Voz** (`voiceId`): del catálogo de Retell. El panel lo lista desde
-  `GET /panel/voice/voices` (proxy a `list-voices`, requiere `RETELL_API_KEY`).
+  `GET /panel/voice/voices` (proxy a `list-voices`, usa la API key de esa
+  empresa guardada en Integraciones → Voz).
 - **Tono/estilo** (`tone`): se inyecta en el prompt como la variable `{{tono}}`
-  (por eso el prompt del agente base debe incluir `{{tono}}` — ya lo hace el de
-  `setup-retell.mjs`).
+  (por eso el prompt del agente base debe incluir `{{tono}}` — ver
+  `scripts/retell-prompt.mjs`).
 - **Saludo inicial** (`beginMessage`): puede usar `{{nombre}}` / `{{empresa}}`.
 - **Idioma** (`language`) y **velocidad** (`speed`, 0.5–2).
 

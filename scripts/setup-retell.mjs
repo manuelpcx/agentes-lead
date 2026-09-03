@@ -14,6 +14,11 @@
 //
 // Si el número YA está importado en Retell (o lo harás a mano), no definas
 // TWILIO_TERMINATION_URI: el script solo crea LLM + agente.
+//
+// Para actualizar el prompt de un agente YA creado (sin duplicar), usa
+// scripts/update-retell-prompt.mjs en su lugar.
+
+import { GENERAL_PROMPT, BEGIN_MESSAGE } from './retell-prompt.mjs';
 
 const API = 'https://api.retellai.com';
 const KEY = process.env.RETELL_API_KEY;
@@ -28,18 +33,6 @@ if (!KEY) {
   console.error('Falta RETELL_API_KEY en el entorno.');
   process.exit(1);
 }
-
-// Prompt del agente de voz (español Chile). Usa las variables dinámicas que el
-// backend envía al iniciar la llamada: {{nombre}}, {{empresa}}, {{motivo}}.
-const GENERAL_PROMPT = `Eres un agente de voz de {{empresa}}. Hablas español de Chile.
-Tono y estilo: {{tono}}
-Llamas a {{nombre}} por este motivo: {{motivo}}.
-Objetivo: retomar el contacto, resolver dudas y, si corresponde, coordinar una hora o un siguiente paso.
-Reglas:
-- No inventes precios, disponibilidad ni datos: si no los sabes, dilo y ofrece que el equipo lo confirme por WhatsApp.
-- Sé conciso, una idea a la vez, y confirma lo que entendiste.
-- Si {{nombre}} no puede hablar, ofrece llamar más tarde o seguir por WhatsApp y despídete amablemente.`;
-const BEGIN_MESSAGE = `Hola {{nombre}}, te llamo de {{empresa}}. ¿Tienes un minuto?`;
 
 async function post(path, body, { allowConflict = false } = {}) {
   const res = await fetch(`${API}${path}`, {
@@ -107,11 +100,11 @@ if (TERMINATION_URI) {
   );
 }
 
-console.log('\n✓ Listo. Configura en Railway (servicio backend):');
-console.log('   VOICE_PROVIDER=retell');
-console.log(`   RETELL_API_KEY=<tu key>`);
-console.log(`   RETELL_AGENT_ID=${agent.agent_id}`);
-console.log(`   RETELL_FROM_NUMBER=${FROM ?? '<tu número Twilio E.164>'}`);
+console.log('\n✓ Listo. Configura en el panel (Integraciones → Voz):');
+console.log('   Proveedor: Retell');
+console.log('   API key: <tu key>');
+console.log(`   Agent ID: ${agent.agent_id}`);
+console.log(`   Número (E.164): ${FROM ?? '<tu número Twilio>'}`);
 console.log(
   '\nY en Retell, apunta el webhook a: https://TU-BACKEND/voice/retell/webhook',
 );
