@@ -75,7 +75,11 @@ export class RetellVoiceProvider implements VoiceProvider {
       this.logger.error(
         `Retell respondió ${response.status}: ${detail.slice(0, 300)}`,
       );
-      throw new Error(`Fallo al iniciar la llamada (Retell ${response.status})`);
+      // El detalle (no solo el status) viaja en el mensaje para que quede
+      // visible en "Acciones del agente" del panel sin tener que ir a los logs.
+      throw new Error(
+        `Fallo al iniciar la llamada (Retell ${response.status}): ${detail.slice(0, 300) || '(sin detalle)'}`,
+      );
     }
 
     const json = (await response.json()) as { call_id?: string };
