@@ -84,8 +84,48 @@ Una actualización con `metadata` parcial **mezcla** con lo que ya había —no 
 reemplaza— así que puedes sincronizar solo el campo que cambió sin perder el
 resto.
 
-## 3. (Próximamente) Consulta en vivo durante la conversación
+## 3. Consulta en vivo durante la conversación
 
-Hoy el agente NO puede preguntarle a tu CRM algo en tiempo real a mitad de una
-conversación (solo usa lo que ya está en `metadata`). Es la siguiente pieza
-planeada — pídenosla si la necesitas antes.
+Además de los eventos (fire-and-forget) y la metadata (batch), el agente puede
+**preguntarle algo a tu CRM en tiempo real, a mitad de una conversación**, con
+la herramienta `consultarCrm` (ej. "¿cuál es el saldo actual de este
+cliente?"). Es opcional y **separada** de la URL de eventos — configúrala solo
+si la quieres.
+
+### Setup
+En **Integraciones → CRM**, además de la URL de eventos, define la **"URL de
+consulta en vivo"** — otro trigger de tu flujo (n8n/Zapier/propio) que:
+1. Recibe la pregunta.
+2. Consulta tu CRM (nodo nativo, API, lo que uses).
+3. **Responde de inmediato** con el dato (a diferencia del webhook de eventos,
+   este SÍ debe responder — en n8n, termina el flujo con un nodo
+   "Respond to Webhook").
+
+### Formato del request (lo que te enviamos)
+```json
+{
+  "event": "crm.query",
+  "companyId": "uuid-de-tu-empresa",
+  "leadId": "uuid-interno-del-lead",
+  "externalId": "el-id-que-tú-nos-diste",
+  "query": "¿cuál es el saldo actual del cliente?"
+}
+```
+Firmado igual que los eventos (`X-Signature`, mismo secreto).
+
+### Formato de la respuesta (lo que debes devolver)
+Cualquiera de estas dos formas funciona:
+- **JSON con `data`** (recomendado, más control sobre el texto exacto):
+  ```json
+  { "data": "El saldo actual es $50.000, sin mora." }
+  ```
+- **Texto plano**: lo usamos tal cual.
+
+### Importante
+- **Timeout de 8 segundos** — si tu flujo no responde a tiempo, el agente
+  sigue la conversación sin ese dato (no se cae, pero tampoco lo inventa).
+  Que tu flujo sea rápido (evita pasos lentos antes de responder).
+- El dato que devuelvas queda **respaldado** para el agente (como cualquier
+  otra herramienta): puede citarlo con confianza. Trata esa URL con el mismo
+  cuidado que tu API del CRM — quien la controle puede influir en lo que el
+  agente le dice a tus leads.

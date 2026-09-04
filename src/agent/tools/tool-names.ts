@@ -11,6 +11,8 @@ export const TOOL_INICIAR_LLAMADA = 'iniciarLlamada';
 export const TOOL_DERIVAR_A_AGENTE = 'derivarAAgente';
 /** Registra una promesa de pago del deudor (cobranza). */
 export const TOOL_REGISTRAR_PROMESA_PAGO = 'registrarPromesaPago';
+/** Consulta en vivo el CRM del cliente durante la conversación (BYO). */
+export const TOOL_CONSULTAR_CRM = 'consultarCrm';
 
 /** Conjunto de herramientas iniciales habilitadas por defecto. */
 export const DEFAULT_ENABLED_TOOLS: string[] = [
@@ -24,4 +26,5 @@ export const DEFAULT_ENABLED_TOOLS: string[] = [
   TOOL_INICIAR_LLAMADA,
   TOOL_DERIVAR_A_AGENTE,
   TOOL_REGISTRAR_PROMESA_PAGO,
+  TOOL_CONSULTAR_CRM,
 ];

@@ -106,7 +106,8 @@ const SCHEMAS: Schema[] = [
     hint:
       'Conecta tu CRM (HubSpot, Pipedrive, Salesforce, el que sea) vía un webhook ' +
       '— normalmente el disparador de un flujo de n8n/Zapier que mapea el evento a ' +
-      'tu CRM. El agente avisa cambios de estado, citas agendadas y promesas de pago.',
+      'tu CRM. El agente avisa cambios de estado, citas agendadas y promesas de pago; ' +
+      'opcionalmente, puede consultarle datos en vivo durante la conversación.',
     providers: [
       { value: 'webhook', label: 'Webhook (n8n / Zapier / URL propia)' },
     ],
@@ -115,8 +116,13 @@ const SCHEMAS: Schema[] = [
       webhook: [
         {
           key: 'url',
-          label: 'URL del webhook',
+          label: 'URL de eventos (salientes)',
           ph: 'https://tu-n8n.cl/webhook/crm-eventos',
+        },
+        {
+          key: 'queryUrl',
+          label: 'URL de consulta en vivo (opcional)',
+          ph: 'https://tu-n8n.cl/webhook/crm-consulta',
         },
       ],
     },
