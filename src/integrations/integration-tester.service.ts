@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CredentialsService, IntegrationChannel } from './credentials.service';
+import { TenantContext } from '../common/tenant/tenant-context';
+import { deliverCrmEvent } from '../crm/crm-delivery';
 
 /** Resultado de probar una integración. */
 export interface TestResult {
@@ -34,6 +36,9 @@ export class IntegrationTester {
       }
       if (channel === 'voice') {
         return await this.testVoice(c.provider, c.secret);
+      }
+      if (channel === 'crm') {
+        return await this.testCrm(c.secret, c.config);
       }
       return { ok: false, message: 'Canal no soportado.' };
     } catch (e) {
@@ -116,5 +121,29 @@ export class IntegrationTester {
       return { ok: false, message: 'API key de Retell inválida.' };
     }
     return { ok: false, message: `Retell respondió ${res.status}.` };
+  }
+
+  /**
+   * Manda un evento `test.ping` REAL, firmado, al webhook del CRM — a
+   * diferencia de los demás (que solo hacen un GET liviano), esto además le
+   * deja al cliente un ejemplo real del payload/firma para armar su workflow.
+   */
+  private async testCrm(
+    secret: string,
+    config: Record<string, unknown>,
+  ): Promise<TestResult> {
+    const url = config.url;
+    if (typeof url !== 'string' || !url) {
+      return { ok: false, message: 'Falta la URL del webhook del CRM.' };
+    }
+    const result = await deliverCrmEvent(url, secret, {
+      companyId: TenantContext.requireCompanyId(),
+      leadId: 'test-lead',
+      externalId: null,
+      event: 'test.ping',
+      data: { mensaje: 'Ping de prueba desde el panel de Integraciones.' },
+      occurredAt: new Date().toISOString(),
+    });
+    return { ok: result.ok, message: result.message };
   }
 }

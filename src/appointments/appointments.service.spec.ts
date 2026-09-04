@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { EmailService } from '../email/email.service';
+import { CrmEventsService } from '../crm/crm-events.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 
 const BASE_INPUT: ScheduleInput = {
@@ -45,6 +46,7 @@ function buildHarness(
       name: 'Ana',
       email: opts.leadEmail === undefined ? 'ana@correo.cl' : opts.leadEmail,
       timezone: null,
+      externalId: 'ext-1',
     }),
     updateStatus: jest.fn().mockResolvedValue({}),
   } as unknown as LeadsService;
@@ -55,9 +57,18 @@ function buildHarness(
   const email = {
     send: jest.fn().mockResolvedValue(undefined),
   } as unknown as EmailService;
+  const crmEvents = {
+    emit: jest.fn().mockResolvedValue(undefined),
+  } as unknown as CrmEventsService;
 
-  const service = new AppointmentsService(prisma, leads, interactions, email);
-  return { service, prisma, leads, interactions, email };
+  const service = new AppointmentsService(
+    prisma,
+    leads,
+    interactions,
+    email,
+    crmEvents,
+  );
+  return { service, prisma, leads, interactions, email, crmEvents };
 }
 
 function run<T>(fn: () => Promise<T>) {
@@ -71,6 +82,22 @@ describe('AppointmentsService.schedule', () => {
     expect(h.prisma.db.appointment.create).toHaveBeenCalledTimes(1);
     expect(h.leads.updateStatus).toHaveBeenCalledWith('lead-1', 'AGENDADO');
     expect(h.email.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('emite lead.appointment_scheduled al CRM con los datos de la cita', async () => {
+    const h = buildHarness();
+    await run(() => h.service.schedule(BASE_INPUT));
+    expect(h.crmEvents.emit).toHaveBeenCalledWith({
+      leadId: 'lead-1',
+      externalId: 'ext-1',
+      event: 'lead.appointment_scheduled',
+      data: {
+        title: 'Consulta',
+        startAt: BASE_INPUT.startAt.toISOString(),
+        endAt: BASE_INPUT.endAt.toISOString(),
+        location: undefined,
+      },
+    });
   });
 
   it('rechaza si hay solape con otra cita', async () => {

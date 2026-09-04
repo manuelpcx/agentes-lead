@@ -6,6 +6,7 @@ import { isLocalRedis } from '../common/redis.util';
 import {
   DEFAULT_JOB_OPTIONS,
   QUEUE_AGENT_TURN,
+  QUEUE_CRM_EVENTS,
   QUEUE_LEAD_FOLLOWUP,
   QUEUE_LEAD_INGESTION,
 } from './queue.constants';
@@ -36,6 +37,7 @@ import {
     BullModule.registerQueue({ name: QUEUE_LEAD_INGESTION }),
     BullModule.registerQueue({ name: QUEUE_AGENT_TURN }),
     BullModule.registerQueue({ name: QUEUE_LEAD_FOLLOWUP }),
+    BullModule.registerQueue({ name: QUEUE_CRM_EVENTS }),
   ],
   exports: [BullModule],
 })

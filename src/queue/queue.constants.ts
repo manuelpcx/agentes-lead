@@ -4,6 +4,8 @@ export const QUEUE_LEAD_INGESTION = 'lead-ingestion';
 export const QUEUE_AGENT_TURN = 'agent-turn';
 /** Cola de seguimiento automático de leads (Fase 4). */
 export const QUEUE_LEAD_FOLLOWUP = 'lead-followup';
+/** Cola de eventos salientes hacia el CRM del cliente (webhooks firmados). */
+export const QUEUE_CRM_EVENTS = 'crm-events';
 
 /** Opciones por defecto de los jobs: reintentos con backoff exponencial. */
 export const DEFAULT_JOB_OPTIONS = {

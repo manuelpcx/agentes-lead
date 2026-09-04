@@ -9,6 +9,7 @@ import { parseAgentFollowupConfig } from '../agents/followup-config';
 import { InteractionsService } from '../interactions/interactions.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { IncomingLeadDto } from '../webhooks/dto/incoming-lead.dto';
+import { CrmEventsService } from '../crm/crm-events.service';
 
 /** Resultado de una ingesta idempotente. */
 export interface IngestResult {
@@ -25,6 +26,7 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly agents: AgentsService,
     private readonly interactions: InteractionsService,
+    private readonly crmEvents: CrmEventsService,
     config: ConfigService<EnvVars, true>,
   ) {
     this.firstContactDelayMs =
@@ -119,10 +121,13 @@ export class LeadsService {
 
   /** Cierra el lead como perdido (sin respuesta) y limpia la próxima acción. */
   async closeAsLost(leadId: string): Promise<Lead> {
-    return this.prisma.db.lead.update({
+    const before = await this.getById(leadId);
+    const lead = await this.prisma.db.lead.update({
       where: { id: leadId },
       data: { status: LeadStatus.CERRADO_PERDIDO, nextActionAt: null },
     });
+    await this.emitStatusChanged(lead, before.status);
+    return lead;
   }
 
   /**
@@ -130,10 +135,13 @@ export class LeadsService {
    * registra el motivo (usado por la herramienta escalarAHumano).
    */
   async escalateToHuman(leadId: string): Promise<Lead> {
-    return this.prisma.db.lead.update({
+    const before = await this.getById(leadId);
+    const lead = await this.prisma.db.lead.update({
       where: { id: leadId },
       data: { status: LeadStatus.ESCALADO_HUMANO, isPausedForHuman: true },
     });
+    await this.emitStatusChanged(lead, before.status);
+    return lead;
   }
 
   /**
@@ -167,11 +175,13 @@ export class LeadsService {
 
   /** Actualiza el estado del embudo de un lead. */
   async updateStatus(leadId: string, status: LeadStatus): Promise<Lead> {
-    await this.getById(leadId); // valida pertenencia al tenant
-    return this.prisma.db.lead.update({
+    const before = await this.getById(leadId); // valida pertenencia al tenant
+    const lead = await this.prisma.db.lead.update({
       where: { id: leadId },
       data: { status },
     });
+    await this.emitStatusChanged(lead, before.status);
+    return lead;
   }
 
   /** Programa la próxima acción de seguimiento (usado desde Fase 4). */
@@ -188,6 +198,19 @@ export class LeadsService {
   }
 
   // ─────────────────────── privados ───────────────────────
+
+  /** Avisa al CRM del cliente (si tiene uno conectado) de un cambio de estado. */
+  private async emitStatusChanged(lead: Lead, from: LeadStatus): Promise<void> {
+    if (from === lead.status) {
+      return; // sin cambio real: no hay nada que avisar
+    }
+    await this.crmEvents.emit({
+      leadId: lead.id,
+      externalId: lead.externalId,
+      event: 'lead.status_changed',
+      data: { from, to: lead.status },
+    });
+  }
 
   private async applyCreate(payload: IncomingLeadDto): Promise<IngestResult> {
     return this.prisma.db.$transaction(async (tx) => {
@@ -256,9 +279,17 @@ export class LeadsService {
     payload: IncomingLeadDto,
   ): Promise<IngestResult> {
     return this.prisma.db.$transaction(async (tx) => {
+      // Lee la metadata vigente DENTRO de la transacción (justo antes del
+      // update) para mezclarla con la que llega, en vez de reemplazarla entera
+      // — una sincronización parcial (p. ej. desde un CRM) no debe borrar otros
+      // datos ya guardados (como los de cobranza).
+      const current = await tx.lead.findFirst({
+        where: { id: leadId },
+        select: { metadata: true },
+      });
       await tx.lead.update({
         where: { id: leadId },
-        data: this.buildUpdateData(payload),
+        data: this.buildUpdateData(payload, current?.metadata),
       });
 
       await this.interactions.register(
@@ -280,7 +311,10 @@ export class LeadsService {
   }
 
   /** Construye el `data` de actualización solo con los campos presentes. */
-  private buildUpdateData(payload: IncomingLeadDto): Prisma.LeadUpdateInput {
+  private buildUpdateData(
+    payload: IncomingLeadDto,
+    existingMetadata?: Prisma.JsonValue,
+  ): Prisma.LeadUpdateInput {
     const data: Prisma.LeadUpdateInput = {};
     if (payload.name !== undefined) data.name = payload.name;
     if (payload.phone !== undefined) data.phone = payload.phone;
@@ -292,7 +326,10 @@ export class LeadsService {
     }
     if (payload.timezone !== undefined) data.timezone = payload.timezone;
     if (payload.metadata !== undefined) {
-      data.metadata = payload.metadata as Prisma.InputJsonValue;
+      data.metadata = mergeLeadMetadata(
+        existingMetadata,
+        payload.metadata,
+      ) as Prisma.InputJsonValue;
     }
     return data;
   }
@@ -303,4 +340,21 @@ export class LeadsService {
       error.code === 'P2002'
     );
   }
+}
+
+/**
+ * Mezcla (shallow) la metadata existente del lead con la que llega en una
+ * actualización, para que una sincronización parcial (p. ej. desde un CRM que
+ * solo manda el campo que cambió) NO borre otros datos ya guardados (como los
+ * de cobranza). Si lo existente no es un objeto plano usable, se usa la nueva
+ * tal cual (comportamiento anterior, a salvo de romper con datos inesperados).
+ */
+export function mergeLeadMetadata(
+  existing: unknown,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+    return incoming;
+  }
+  return { ...(existing as Record<string, unknown>), ...incoming };
 }

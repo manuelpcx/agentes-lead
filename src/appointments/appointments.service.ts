@@ -17,6 +17,7 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { EmailService } from '../email/email.service';
 import { appointmentConfirmation } from '../email/templates';
+import { CrmEventsService } from '../crm/crm-events.service';
 
 /** Datos para agendar una cita. */
 export interface ScheduleInput {
@@ -39,6 +40,7 @@ export class AppointmentsService {
     private readonly leads: LeadsService,
     private readonly interactions: InteractionsService,
     private readonly email: EmailService,
+    private readonly crmEvents: CrmEventsService,
   ) {}
 
   /**
@@ -111,6 +113,18 @@ export class AppointmentsService {
         }),
       );
     }
+
+    await this.crmEvents.emit({
+      leadId: input.leadId,
+      externalId: lead.externalId,
+      event: 'lead.appointment_scheduled',
+      data: {
+        title: input.title,
+        startAt: input.startAt.toISOString(),
+        endAt: input.endAt.toISOString(),
+        location: input.location,
+      },
+    });
 
     this.logger.log(
       `Cita agendada (appointmentId=${appointment.id} leadId=${input.leadId})`,

@@ -8,6 +8,7 @@ import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { AgentActionsModule } from '../agent-actions/agent-actions.module';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { ImprovementModule } from '../improvement/improvement.module';
+import { CrmEventsModule } from '../crm/crm-events.module';
 import { AGENT_TOOLS, AgentTool } from './tools/tool.interface';
 import { BuscarConocimientoTool } from './tools/buscar-conocimiento.tool';
 import { ConsultarDatoTool } from './tools/consultar-dato.tool';
@@ -39,6 +40,7 @@ import { AgentTurnProcessor } from './agent-turn.processor';
     AgentActionsModule,
     AppointmentsModule,
     ImprovementModule,
+    CrmEventsModule,
   ],
   providers: [
     BuscarConocimientoTool,

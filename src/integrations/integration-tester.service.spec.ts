@@ -1,5 +1,6 @@
 import { IntegrationTester } from './integration-tester.service';
 import { CredentialsService } from './credentials.service';
+import { TenantContext } from '../common/tenant/tenant-context';
 
 function build(cred: unknown) {
   const credentials = {
@@ -56,5 +57,33 @@ describe('IntegrationTester', () => {
       .mockRejectedValue(new Error('boom'));
     const r = await t.test('email');
     expect(r.ok).toBe(false);
+  });
+
+  it('CRM: sin URL configurada → no ok', async () => {
+    const t = build({ provider: 'webhook', secret: 'wh-secret', config: {} });
+    const r = await TenantContext.run(
+      { companyId: 'c1', correlationId: 'x' },
+      () => t.test('crm'),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/URL/);
+  });
+
+  it('CRM: manda un test.ping firmado y reporta éxito', async () => {
+    const t = build({
+      provider: 'webhook',
+      secret: 'wh-secret',
+      config: { url: 'https://n8n.cliente.cl/webhook/abc' },
+    });
+    const fetchMock = mockFetch(200);
+    const r = await TenantContext.run(
+      { companyId: 'c1', correlationId: 'x' },
+      () => t.test('crm'),
+    );
+    expect(r.ok).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://n8n.cliente.cl/webhook/abc');
+    expect(init.headers['X-Signature']).toBeTruthy();
+    expect(JSON.parse(init.body).event).toBe('test.ping');
   });
 });

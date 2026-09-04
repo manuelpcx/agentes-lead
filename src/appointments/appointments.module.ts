@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 import { LeadsModule } from '../leads/leads.module';
 import { InteractionsModule } from '../interactions/interactions.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { CrmEventsModule } from '../crm/crm-events.module';
 import { AppointmentsService } from './appointments.service';
 import { RemindersScheduler } from './reminders.scheduler';
 
 /** Agendamiento + recordatorios (Fase 5). EmailModule es global. */
 @Module({
-  imports: [LeadsModule, InteractionsModule, WhatsappModule],
+  imports: [LeadsModule, InteractionsModule, WhatsappModule, CrmEventsModule],
   providers: [AppointmentsService, RemindersScheduler],
   exports: [AppointmentsService],
 })

@@ -81,7 +81,7 @@ export class PanelAdminController {
     @Param('channel') channel: string,
     @Body() dto: UpsertIntegrationDto,
   ) {
-    const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice'];
+    const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice', 'crm'];
     if (!valid.includes(channel as IntegrationChannel)) {
       throw new NotFoundException(`Canal inválido: ${channel}`);
     }
@@ -92,7 +92,7 @@ export class PanelAdminController {
   @Post('integrations/:channel/test')
   @Roles(PanelRole.OWNER)
   testIntegration(@Param('channel') channel: string) {
-    const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice'];
+    const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice', 'crm'];
     if (!valid.includes(channel as IntegrationChannel)) {
       throw new NotFoundException(`Canal inválido: ${channel}`);
     }

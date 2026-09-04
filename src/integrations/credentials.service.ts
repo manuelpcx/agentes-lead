@@ -5,7 +5,7 @@ import { CryptoService } from '../common/crypto/crypto.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 
 /** Canales que pueden tener credenciales propias por empresa. */
-export type IntegrationChannel = 'whatsapp' | 'email' | 'voice';
+export type IntegrationChannel = 'whatsapp' | 'email' | 'voice' | 'crm';
 
 /** Credencial resuelta (secretos YA descifrados). Solo para uso interno del backend. */
 export interface ResolvedCredential {

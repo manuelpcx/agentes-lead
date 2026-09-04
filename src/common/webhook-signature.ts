@@ -11,6 +11,16 @@ function safeEquals(a: string, b: string): boolean {
 }
 
 /**
+ * Firma un cuerpo saliente (HMAC-SHA256 hex) con el secreto de la empresa —
+ * usada para los eventos que ENVIAMOS al CRM del cliente (mismo esquema que
+ * exigimos a Retell/YCloud, pero en el sentido inverso: aquí somos el emisor).
+ * El destinatario recompone el mismo cálculo para verificar el header `X-Signature`.
+ */
+export function signHmacSha256Hex(secret: string, body: string): string {
+  return createHmac('sha256', secret).update(body).digest('hex');
+}
+
+/**
  * Verifica la firma de un webhook de Retell (`x-retell-signature`).
  * Header: "v={timestamp_ms},d={hmac_sha256_hex}". Firma sobre `rawBody + timestamp`
  * (concatenación literal, sin separador), con la API key de la cuenta como clave.

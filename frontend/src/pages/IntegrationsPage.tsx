@@ -10,7 +10,7 @@ import {
   Select,
 } from '../components/ui';
 
-type Channel = 'whatsapp' | 'email' | 'voice';
+type Channel = 'whatsapp' | 'email' | 'voice' | 'crm';
 
 interface FieldDef {
   key: string;
@@ -97,6 +97,27 @@ const SCHEMAS: Schema[] = [
       vapi: [
         { key: 'phoneNumberId', label: 'Phone Number ID' },
         { key: 'assistantId', label: 'Assistant ID' },
+      ],
+    },
+  },
+  {
+    channel: 'crm',
+    label: 'CRM',
+    hint:
+      'Conecta tu CRM (HubSpot, Pipedrive, Salesforce, el que sea) vía un webhook ' +
+      '— normalmente el disparador de un flujo de n8n/Zapier que mapea el evento a ' +
+      'tu CRM. El agente avisa cambios de estado, citas agendadas y promesas de pago.',
+    providers: [
+      { value: 'webhook', label: 'Webhook (n8n / Zapier / URL propia)' },
+    ],
+    secretLabel: 'Secreto de firma (lo defines tú)',
+    fields: {
+      webhook: [
+        {
+          key: 'url',
+          label: 'URL del webhook',
+          ph: 'https://tu-n8n.cl/webhook/crm-eventos',
+        },
       ],
     },
   },

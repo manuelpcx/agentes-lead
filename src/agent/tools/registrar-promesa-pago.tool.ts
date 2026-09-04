@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Channel, Direction } from '@prisma/client';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
+import { CrmEventsService } from '../../crm/crm-events.service';
 import { PROMISE_PAY_TYPE } from '../agent.constants';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_REGISTRAR_PROMESA_PAGO } from './tool-names';
@@ -46,6 +47,7 @@ export class RegistrarPromesaPagoTool implements AgentTool {
   constructor(
     private readonly leads: LeadsService,
     private readonly interactions: InteractionsService,
+    private readonly crmEvents: CrmEventsService,
   ) {}
 
   async execute(
@@ -78,6 +80,12 @@ export class RegistrarPromesaPagoTool implements AgentTool {
         `Promesa de pago${monto ? ` por ${monto}` : ''} para ${fecha}` +
         `${nota ? ` — ${nota}` : ''}.`,
       agentId: ctx.agentId,
+    });
+    await this.crmEvents.emit({
+      leadId: ctx.lead.id,
+      externalId: ctx.lead.externalId,
+      event: 'lead.promise_to_pay',
+      data: { fecha, monto: monto || undefined, nota: nota || undefined },
     });
     return {
       content: `Promesa de pago registrada para ${fecha}. El sistema hará el seguimiento ese día. Confírmale a la persona.`,
