@@ -10,7 +10,12 @@ function build(existing: unknown) {
     create: jest.fn().mockResolvedValue({}),
     update: jest.fn().mockResolvedValue({}),
   };
-  const prisma = { db: { integration } } as unknown as PrismaService;
+  // `get`/`getByCompanyId` leen de `raw` (companyId explícito, sin
+  // TenantContext); `upsert`/`status` siguen usando `db` (tenant-scoped).
+  const prisma = {
+    db: { integration },
+    raw: { integration },
+  } as unknown as PrismaService;
   const crypto = {
     encrypt: jest.fn((s: string) => `enc(${s})`),
     decrypt: jest.fn((s: string) => s.replace(/^enc\(|\)$/g, '')),
@@ -61,17 +66,69 @@ describe('CredentialsService', () => {
     expect(c?.provider).toBe('ycloud');
   });
 
-  it('status NO expone el secreto', async () => {
+  it('get/getByCompanyId también descifran el secreto de firma de webhook', async () => {
+    const { svc, integration } = build({
+      provider: 'ycloud',
+      config: {},
+      secretEnc: 'enc(api-key)',
+      webhookSecretEnc: 'enc(wh-secret)',
+      isActive: true,
+    });
+    const c = await svc.getByCompanyId('c1', 'whatsapp');
+    expect(c?.secret).toBe('api-key');
+    expect(c?.webhookSecret).toBe('wh-secret');
+    expect(integration.findFirst).toHaveBeenCalledWith({
+      where: { companyId: 'c1', channel: 'whatsapp' },
+    });
+  });
+
+  it('getByCompanyId sin webhookSecretEnc guardado: webhookSecret queda undefined', async () => {
+    const { svc } = build({
+      provider: 'retell',
+      config: {},
+      secretEnc: 'enc(api-key)',
+      webhookSecretEnc: null,
+      isActive: true,
+    });
+    const c = await svc.getByCompanyId('c1', 'voice');
+    expect(c?.webhookSecret).toBeUndefined();
+  });
+
+  it('upsert cifra el webhookSecret cuando viene', async () => {
+    const { svc, integration, crypto } = build(null);
+    await run(() =>
+      svc.upsert('whatsapp', {
+        provider: 'ycloud',
+        secret: 'api-key',
+        webhookSecret: 'wh-secret',
+      }),
+    );
+    expect(crypto.encrypt).toHaveBeenCalledWith('wh-secret');
+    const data = (integration.create as jest.Mock).mock.calls[0][0].data;
+    expect(data.webhookSecretEnc).toBe('enc(wh-secret)');
+  });
+
+  it('upsert sin webhookSecret al actualizar: no lo pisa', async () => {
+    const { svc, integration } = build({ id: 'i1' });
+    await run(() =>
+      svc.upsert('whatsapp', { provider: 'ycloud', secret: 'k' }),
+    );
+    const data = (integration.update as jest.Mock).mock.calls[0][0].data;
+    expect(data.webhookSecretEnc).toBeUndefined();
+  });
+
+  it('status NO expone los secretos, solo si están configurados', async () => {
     const { svc } = build({
       channel: 'whatsapp',
       provider: 'ycloud',
       config: { from: '+56' },
       secretEnc: 'enc(x)',
+      webhookSecretEnc: 'enc(y)',
       isActive: true,
     });
     const list = await run(() => svc.status());
     expect(list[0].configured).toBe(true);
-    expect(JSON.stringify(list[0])).not.toContain('secret');
+    expect(list[0].webhookSecretConfigured).toBe(true);
     expect(JSON.stringify(list[0])).not.toContain('enc(');
   });
 });

@@ -25,6 +25,14 @@ interface Schema {
   providers: { value: string; label: string }[];
   secretLabel: string;
   fields: Record<string, FieldDef[]>;
+  /**
+   * Proveedores que firman sus webhooks con un secreto DISTINTO de la API key
+   * (p. ej. YCloud, al crear el endpoint de webhook). Si el proveedor elegido
+   * está en esta lista, se muestra un campo extra para pegarlo.
+   */
+  webhookSecretProviders?: string[];
+  webhookSecretLabel?: string;
+  webhookSecretHint?: string;
 }
 
 const SCHEMAS: Schema[] = [
@@ -44,6 +52,12 @@ const SCHEMAS: Schema[] = [
       ],
       meta: [{ key: 'phoneNumberId', label: 'Phone Number ID' }],
     },
+    webhookSecretProviders: ['ycloud'],
+    webhookSecretLabel: 'Secreto de firma del webhook',
+    webhookSecretHint:
+      'Distinto de la API Key. Créalo en YCloud al configurar el endpoint de ' +
+      'webhook (Webhook Endpoints → Create) y pega el "secret" que te den. ' +
+      'Sin esto, los mensajes entrantes se aceptan sin verificar su firma.',
   },
   {
     channel: 'email',
@@ -93,6 +107,7 @@ interface Status {
   provider: string;
   config: Record<string, unknown>;
   configured: boolean;
+  webhookSecretConfigured: boolean;
   isActive: boolean;
 }
 
@@ -110,6 +125,7 @@ function ChannelCard({
   );
   const [config, setConfig] = useState<Record<string, string>>({});
   const [secret, setSecret] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -140,9 +156,11 @@ function ChannelCard({
         provider,
         config,
         ...(secret.trim() ? { secret: secret.trim() } : {}),
+        ...(webhookSecret.trim() ? { webhookSecret: webhookSecret.trim() } : {}),
         isActive: true,
       });
       setSecret('');
+      setWebhookSecret('');
       setMsg('Guardado.');
       setTestResult(null);
       onSaved();
@@ -219,6 +237,31 @@ function ChannelCard({
             autoComplete="new-password"
           />
         </Field>
+
+        {schema.webhookSecretProviders?.includes(provider) && (
+          <Field
+            label={schema.webhookSecretLabel ?? 'Secreto de firma del webhook'}
+            hint={schema.webhookSecretHint}
+          >
+            <div className="mb-2 flex items-center gap-2">
+              {status?.webhookSecretConfigured ? (
+                <Badge tone="green">Firma verificada</Badge>
+              ) : (
+                <Badge tone="amber">Sin verificar</Badge>
+              )}
+            </div>
+            <Input
+              type="password"
+              value={webhookSecret}
+              onChange={(e) => setWebhookSecret(e.target.value)}
+              placeholder={
+                status?.webhookSecretConfigured ? '•••••••• (guardado)' : ''
+              }
+              className="font-mono text-xs"
+              autoComplete="new-password"
+            />
+          </Field>
+        )}
 
         {msg && <p className="text-sm text-slate-600">{msg}</p>}
         {testResult && (

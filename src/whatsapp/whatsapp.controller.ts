@@ -5,16 +5,23 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
+  Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { CompanyAuthGuard } from '../common/tenant/company-auth.guard';
+import { CredentialsService } from '../integrations/credentials.service';
+import { verifyYCloudSignature } from '../common/webhook-signature';
 import { WhatsappInboundService } from './whatsapp-inbound.service';
 import { SimulateInboundDto } from './dto/simulate-inbound.dto';
 
@@ -27,10 +34,13 @@ interface ParsedInbound {
 
 @Controller('whatsapp')
 export class WhatsappController {
+  private readonly logger = new Logger(WhatsappController.name);
+
   constructor(
     private readonly inbound: WhatsappInboundService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService<EnvVars, true>,
+    private readonly credentials: CredentialsService,
   ) {}
 
   /**
@@ -99,12 +109,20 @@ export class WhatsappController {
    * `channelsConfig.whatsapp.phoneNumber` y despierta al agente.
    * Doc: https://docs.ycloud.com/reference/whatsapp-inbound-message-webhook-examples
    *
-   * NOTA: la verificación de firma del webhook de YCloud queda pendiente para
-   * producción (igual que en el webhook de Meta).
+   * Verifica la firma (`YCloud-Signature`) contra el secreto del endpoint de
+   * webhook de esa empresa (Integraciones → WhatsApp → "Secreto de firma del
+   * webhook"; se genera al crear el webhook endpoint en YCloud, es DISTINTO de
+   * la API key). Es un dato nuevo que la empresa debe configurar aparte, así
+   * que mientras no lo haga, se acepta sin verificar (con warning en logs) para
+   * no cortar el WhatsApp entrante de quienes aún no lo migraron; en cuanto lo
+   * configura, la firma pasa a ser obligatoria.
    */
   @Post('ycloud/webhook')
   @HttpCode(HttpStatus.OK)
-  async ycloudWebhook(@Body() body: unknown): Promise<{ received: true }> {
+  async ycloudWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Body() body: unknown,
+  ): Promise<{ received: true }> {
     if (this.pickString(body, 'type') !== 'whatsapp.inbound_message.received') {
       return { received: true }; // otros eventos (status, etc.): ignorar
     }
@@ -127,12 +145,33 @@ export class WhatsappController {
       },
       select: { id: true },
     });
-    if (company) {
-      await TenantContext.run(
-        { companyId: company.id, correlationId: randomUUID() },
-        () => this.inbound.handleIncoming(from, text),
+    if (!company) {
+      return { received: true };
+    }
+
+    const cred = await this.credentials.getByCompanyId(company.id, 'whatsapp');
+    if (cred?.provider === 'ycloud' && cred.webhookSecret) {
+      if (
+        !verifyYCloudSignature(
+          req.rawBody ?? Buffer.from(''),
+          this.header(req, 'ycloud-signature'),
+          cred.webhookSecret,
+        )
+      ) {
+        throw new UnauthorizedException('Firma de YCloud inválida');
+      }
+    } else {
+      this.logger.warn(
+        `WhatsApp (YCloud) sin secreto de firma configurado para companyId=` +
+          `${company.id}: mensaje aceptado SIN verificar. Configúralo en ` +
+          'Integraciones → WhatsApp para cerrar este hueco.',
       );
     }
+
+    await TenantContext.run(
+      { companyId: company.id, correlationId: randomUUID() },
+      () => this.inbound.handleIncoming(from, text),
+    );
     return { received: true };
   }
 
@@ -171,6 +210,11 @@ export class WhatsappController {
   private pickString(obj: unknown, key: string): string | undefined {
     const value = this.pick(obj, key);
     return typeof value === 'string' ? value : undefined;
+  }
+
+  private header(req: Request, name: string): string | undefined {
+    const value = req.headers[name];
+    return Array.isArray(value) ? value[0] : value;
   }
 
   private asArray(value: unknown): unknown[] {

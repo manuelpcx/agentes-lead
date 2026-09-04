@@ -131,6 +131,9 @@ model Integration {
   config    Json    @default("{}")
   /// Secreto (API key/token) cifrado con CryptoService. Nunca se expone.
   secretEnc String?
+  /// Secreto de firma de webhooks (distinto de secretEnc en proveedores que lo
+  /// separan, p. ej. YCloud), cifrado con CryptoService. Nunca se expone.
+  webhookSecretEnc String?
   isActive  Boolean @default(true)
 
   createdAt DateTime @default(now())

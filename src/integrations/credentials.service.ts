@@ -7,28 +7,35 @@ import { TenantContext } from '../common/tenant/tenant-context';
 /** Canales que pueden tener credenciales propias por empresa. */
 export type IntegrationChannel = 'whatsapp' | 'email' | 'voice';
 
-/** Credencial resuelta (secreto YA descifrado). Solo para uso interno del backend. */
+/** Credencial resuelta (secretos YA descifrados). Solo para uso interno del backend. */
 export interface ResolvedCredential {
   provider: string;
   config: Record<string, unknown>;
   secret?: string;
+  /** Secreto de firma de webhooks (si el proveedor lo separa del secreto de API). */
+  webhookSecret?: string;
   isActive: boolean;
 }
 
-/** Estado de una integración para el panel (SIN el secreto). */
+/** Estado de una integración para el panel (SIN los secretos). */
 export interface IntegrationStatus {
   channel: string;
   provider: string;
   config: Record<string, unknown>;
   configured: boolean;
+  webhookSecretConfigured: boolean;
   isActive: boolean;
 }
 
-/** Datos para guardar una integración. `secret` opcional: si no viene, se conserva. */
+/**
+ * Datos para guardar una integración. `secret`/`webhookSecret` opcionales: si
+ * no vienen, se conserva lo ya guardado.
+ */
 export interface UpsertCredential {
   provider: string;
   config?: Record<string, unknown>;
   secret?: string;
+  webhookSecret?: string;
   isActive?: boolean;
 }
 
@@ -44,10 +51,23 @@ export class CredentialsService {
     private readonly crypto: CryptoService,
   ) {}
 
-  /** Resuelve la credencial (con secreto descifrado) de la empresa activa. */
+  /** Resuelve la credencial (con secretos descifrados) de la empresa activa. */
   async get(channel: IntegrationChannel): Promise<ResolvedCredential | null> {
-    const it = await this.prisma.db.integration.findFirst({
-      where: { channel },
+    return this.getByCompanyId(TenantContext.requireCompanyId(), channel);
+  }
+
+  /**
+   * Igual que `get`, pero con `companyId` explícito en vez del `TenantContext`.
+   * La usan los guards/controllers de webhook: necesitan resolver el secreto de
+   * la empresa (para verificar la firma) ANTES de poder abrir su TenantContext
+   * (que depende de que ese companyId ya esté confirmado).
+   */
+  async getByCompanyId(
+    companyId: string,
+    channel: IntegrationChannel,
+  ): Promise<ResolvedCredential | null> {
+    const it = await this.prisma.raw.integration.findFirst({
+      where: { companyId, channel },
     });
     if (!it) {
       return null;
@@ -56,11 +76,14 @@ export class CredentialsService {
       provider: it.provider,
       config: (it.config ?? {}) as Record<string, unknown>,
       secret: it.secretEnc ? this.crypto.decrypt(it.secretEnc) : undefined,
+      webhookSecret: it.webhookSecretEnc
+        ? this.crypto.decrypt(it.webhookSecretEnc)
+        : undefined,
       isActive: it.isActive,
     };
   }
 
-  /** Guarda/actualiza la credencial. Cifra el secreto si viene. */
+  /** Guarda/actualiza la credencial. Cifra los secretos que vengan. */
   async upsert(channel: IntegrationChannel, dto: UpsertCredential) {
     const companyId = TenantContext.requireCompanyId();
     const existing = await this.prisma.db.integration.findFirst({
@@ -73,6 +96,9 @@ export class CredentialsService {
         : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
       ...(dto.secret ? { secretEnc: this.crypto.encrypt(dto.secret) } : {}),
+      ...(dto.webhookSecret
+        ? { webhookSecretEnc: this.crypto.encrypt(dto.webhookSecret) }
+        : {}),
     };
     if (existing) {
       await this.prisma.db.integration.update({
@@ -88,6 +114,9 @@ export class CredentialsService {
           config: (dto.config ?? {}) as Prisma.InputJsonValue,
           isActive: dto.isActive ?? true,
           secretEnc: dto.secret ? this.crypto.encrypt(dto.secret) : null,
+          webhookSecretEnc: dto.webhookSecret
+            ? this.crypto.encrypt(dto.webhookSecret)
+            : null,
         },
       });
     }
@@ -102,6 +131,7 @@ export class CredentialsService {
       provider: it.provider,
       config: (it.config ?? {}) as Record<string, unknown>,
       configured: !!it.secretEnc,
+      webhookSecretConfigured: !!it.webhookSecretEnc,
       isActive: it.isActive,
     }));
   }

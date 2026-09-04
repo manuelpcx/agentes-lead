@@ -101,9 +101,10 @@ Mapeo por llamada: `voiceId`/`speed`/`language` → `agent_override.agent`;
 agente base.
 
 ## Notas
-- **Verificación de firma** del webhook (`x-retell-signature`) queda pendiente,
-  igual que en WhatsApp/YCloud. La correlación exige `companyId`+`leadId` en la
-  metadata, que solo nosotros enviamos al iniciar la llamada.
+- **Verificación de firma** del webhook (`x-retell-signature`) implementada:
+  se valida con la API key de Retell de esa empresa (la misma que ya usa para
+  llamar), sin pasos extra. Ver `src/common/webhook-signature.ts`. Vapi (no
+  usado actualmente) queda sin verificar.
 - El backend actúa sobre el evento **`call_analyzed`** (trae transcripción y
   análisis); ignora `call_started`/`call_ended` para no duplicar.
 - Una llamada **sin respuesta** se registra en el hilo pero **no** despierta al

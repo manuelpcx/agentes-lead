@@ -19,6 +19,15 @@ export class UpsertIntegrationDto {
   @IsString()
   secret?: string;
 
+  /**
+   * Secreto de firma de webhooks (algunos proveedores, p. ej. YCloud, lo
+   * generan aparte de la API key al crear el endpoint de webhook). Si se
+   * omite, no se cambia el guardado.
+   */
+  @IsOptional()
+  @IsString()
+  webhookSecret?: string;
+
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

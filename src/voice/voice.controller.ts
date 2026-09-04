@@ -1,6 +1,18 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { TenantContext } from '../common/tenant/tenant-context';
+import { CredentialsService } from '../integrations/credentials.service';
+import { verifyRetellSignature } from '../common/webhook-signature';
 import { VoiceInboundService } from './voice-inbound.service';
 
 /**
@@ -9,14 +21,17 @@ import { VoiceInboundService } from './voice-inbound.service';
  * conversación) se despierta al agente. La empresa y el lead se correlacionan
  * por la metadata que enviamos al iniciar la llamada.
  *
- * NOTA: la verificación de firma de los webhooks (Retell `x-retell-signature`,
- * Vapi) queda pendiente para producción, igual que en WhatsApp/YCloud. La
- * correlación exige companyId+leadId propios en la metadata, así que un POST
- * sin esos datos se ignora.
+ * El webhook de Retell verifica su firma (`x-retell-signature`) contra la API
+ * key de Retell de la empresa (ya la tiene guardada para llamar; cero pasos
+ * extra). El de Vapi (proveedor alternativo, no usado actualmente) queda
+ * pendiente, igual que Meta en WhatsApp — ver whatsapp.controller.ts.
  */
 @Controller('voice')
 export class VoiceController {
-  constructor(private readonly inbound: VoiceInboundService) {}
+  constructor(
+    private readonly inbound: VoiceInboundService,
+    private readonly credentials: CredentialsService,
+  ) {}
 
   /**
    * Webhook de Retell. Procesa `call_analyzed` (trae transcripción + análisis);
@@ -25,7 +40,10 @@ export class VoiceController {
    */
   @Post('retell/webhook')
   @HttpCode(HttpStatus.OK)
-  async retellWebhook(@Body() body: unknown): Promise<{ received: true }> {
+  async retellWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Body() body: unknown,
+  ): Promise<{ received: true }> {
     const event = this.pickString(body, 'event');
     if (event !== 'call_analyzed') {
       return { received: true };
@@ -37,6 +55,25 @@ export class VoiceController {
     if (!companyId || !leadId) {
       return { received: true };
     }
+
+    // Verifica la firma con la API key de Retell de ESA empresa (BYO). Si
+    // alguien forjó el companyId, la firma no calzará con la clave real.
+    const cred = await this.credentials.getByCompanyId(companyId, 'voice');
+    if (cred?.provider !== 'retell' || !cred.secret) {
+      throw new UnauthorizedException(
+        'Voz (Retell) no configurada para esta empresa',
+      );
+    }
+    if (
+      !verifyRetellSignature(
+        req.rawBody ?? Buffer.from(''),
+        this.header(req, 'x-retell-signature'),
+        cred.secret,
+      )
+    ) {
+      throw new UnauthorizedException('Firma de Retell inválida');
+    }
+
     const callId = this.pickString(call, 'call_id') ?? 'desconocido';
     const transcript = this.pickString(call, 'transcript');
     const analysis = this.pick(call, 'call_analysis');
@@ -49,7 +86,11 @@ export class VoiceController {
   }
 
   /**
-   * Webhook de Vapi (proveedor alternativo). Procesa `end-of-call-report`.
+   * Webhook de Vapi (proveedor alternativo, no usado actualmente). Procesa
+   * `end-of-call-report`.
+   *
+   * NOTA: sin verificación de firma — Vapi no está en uso activo (Retell es el
+   * proveedor de voz configurado). Añadir si se activa Vapi en producción.
    */
   @Post('vapi/webhook')
   @HttpCode(HttpStatus.OK)
@@ -86,5 +127,10 @@ export class VoiceController {
   private pickString(obj: unknown, key: string): string | undefined {
     const value = this.pick(obj, key);
     return typeof value === 'string' ? value : undefined;
+  }
+
+  private header(req: Request, name: string): string | undefined {
+    const value = req.headers[name];
+    return Array.isArray(value) ? value[0] : value;
   }
 }
