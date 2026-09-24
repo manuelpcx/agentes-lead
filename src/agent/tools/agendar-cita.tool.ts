@@ -1,9 +1,15 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { AppointmentsService } from '../../appointments/appointments.service';
+import {
+  formatLocalDateTime,
+  parseInZone,
+} from '../../followup/business-hours';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_AGENDAR_CITA } from './tool-names';
 
 const HOUR_MS = 60 * 60 * 1000;
+/** Tolerancia hacia atrás: agendar "ahora mismo" sigue siendo válido. */
+const PAST_GRACE_MS = 5 * 60 * 1000;
 
 /** Agenda una cita con el lead, verificando conflictos de horario. */
 @Injectable()
@@ -21,7 +27,11 @@ export class AgendarCitaTool implements AgentTool {
         titulo: { type: 'string', description: 'Título/motivo de la cita.' },
         inicio: {
           type: 'string',
-          description: 'Fecha y hora de inicio en ISO 8601.',
+          description:
+            'Fecha y hora de inicio en ISO 8601 (ej. "2026-03-14T15:00"). ' +
+            'Se interpreta en la zona horaria del cliente. Usa SIEMPRE el año ' +
+            'y el día de la fecha actual que aparece en tu contexto: debe ser ' +
+            'un horario futuro.',
         },
         fin: {
           type: 'string',
@@ -44,17 +54,34 @@ export class AgendarCitaTool implements AgentTool {
     ctx: ToolContext,
   ): Promise<ToolResult> {
     const titulo = String(input.titulo ?? '').trim();
-    const startAt = new Date(String(input.inicio ?? ''));
-    if (!titulo || Number.isNaN(startAt.getTime())) {
+    const tz = ctx.timezone ?? 'America/Santiago';
+    // Sin zona explícita, la hora es la de la empresa/lead — no la del servidor
+    // (que en producción es UTC y corría las citas varias horas).
+    const startAt = parseInZone(String(input.inicio ?? ''), tz);
+    if (!titulo || !startAt) {
       return {
         content: 'Faltan "titulo" o "inicio" válido (ISO 8601).',
         isError: true,
       };
     }
+
+    // Guarda contra fechas pasadas: el modelo puede equivocarse de año o de día
+    // al convertir un "mañana". Una cita en el pasado no dispara recordatorio y
+    // el cliente se queda esperando.
+    const now = Date.now();
+    if (startAt.getTime() < now - PAST_GRACE_MS) {
+      return {
+        content:
+          `"${String(input.inicio)}" ya pasó (ahora es ${formatLocalDateTime(new Date(), tz)}). ` +
+          'Revisa la fecha y hora actual de tu contexto y agenda un horario futuro.',
+        isError: true,
+      };
+    }
+
     const endAt = input.fin
-      ? new Date(String(input.fin))
+      ? parseInZone(String(input.fin), tz)
       : new Date(startAt.getTime() + HOUR_MS);
-    if (Number.isNaN(endAt.getTime())) {
+    if (!endAt) {
       return { content: '"fin" no es una fecha válida.', isError: true };
     }
 
@@ -68,7 +95,10 @@ export class AgendarCitaTool implements AgentTool {
         agentId: ctx.agentId,
       });
       return {
-        content: `Cita agendada para ${appt.startAt.toISOString()} (id ${appt.id}). Confírmasela al cliente.`,
+        // En hora local: es la que el agente le va a confirmar al cliente.
+        content:
+          `Cita agendada para ${formatLocalDateTime(appt.startAt, tz)} ` +
+          `(hora del cliente, id ${appt.id}). Confírmasela al cliente con esa hora.`,
       };
     } catch (error) {
       if (error instanceof ConflictException) {

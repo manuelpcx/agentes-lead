@@ -249,3 +249,54 @@ describe('LeadsService: eventos hacia el CRM en cambios de estado', () => {
     });
   });
 });
+
+describe('LeadsService.setQualification', () => {
+  function run<T>(fn: () => Promise<T>) {
+    return TenantContext.run(
+      { companyId: 'company-1', correlationId: 'x' },
+      fn,
+    );
+  }
+
+  it('actualiza la calificación, el motivo y avisa al CRM', async () => {
+    const { service, db, crmEvents } = buildHarness();
+    (db.lead.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'lead-1',
+      externalId: 'ext-1',
+    });
+    (db.lead.update as jest.Mock).mockResolvedValueOnce({
+      id: 'lead-1',
+      externalId: 'ext-1',
+      qualification: 'CALIENTE',
+      qualificationReason: 'confirmó presupuesto y plazo',
+    });
+
+    await run(() =>
+      service.setQualification(
+        'lead-1',
+        'CALIENTE' as never,
+        'confirmó presupuesto y plazo',
+      ),
+    );
+
+    expect(db.lead.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'lead-1' },
+        data: expect.objectContaining({
+          qualification: 'CALIENTE',
+          qualificationReason: 'confirmó presupuesto y plazo',
+          qualifiedAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(crmEvents.emit).toHaveBeenCalledWith({
+      leadId: 'lead-1',
+      externalId: 'ext-1',
+      event: 'lead.qualified',
+      data: {
+        qualification: 'CALIENTE',
+        reason: 'confirmó presupuesto y plazo',
+      },
+    });
+  });
+});

@@ -3,9 +3,11 @@ import { Channel, Direction } from '@prisma/client';
 import { WhatsappService } from '../../whatsapp/whatsapp.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
-import { leadFactSources, validateOutgoingMessage } from '../output-validator';
+import { factSourcesFor, validateOutgoingMessage } from '../output-validator';
+import { stripSystemAnnotation } from '../conversation-history';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_ENVIAR_WHATSAPP } from './tool-names';
+import { collectionFloorRefusal, proactiveTag } from './collection-floor.guard';
 
 /**
  * Envía un mensaje al cliente por WhatsApp. Antes de enviar, valida que toda
@@ -43,15 +45,16 @@ export class EnviarWhatsAppTool implements AgentTool {
     input: Record<string, unknown>,
     ctx: ToolContext,
   ): Promise<ToolResult> {
-    const mensaje = String(input.mensaje ?? '').trim();
+    // Se quita una anotacion del historial si el modelo la copio al redactar
+    // ("[WhatsApp - hace 5 min] ..."): eso no es parte del mensaje.
+    const mensaje = stripSystemAnnotation(
+      String(input.mensaje ?? '').trim(),
+    ).trim();
     if (!mensaje) {
       return { content: 'Falta el parámetro "mensaje".', isError: true };
     }
 
-    const validation = validateOutgoingMessage(
-      mensaje,
-      leadFactSources(ctx.recordedFacts, ctx.lead, [ctx.companyWhatsApp]),
-    );
+    const validation = validateOutgoingMessage(mensaje, factSourcesFor(ctx));
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);
       await this.interactions.register({
@@ -81,6 +84,16 @@ export class EnviarWhatsAppTool implements AgentTool {
       };
     }
 
+    // Piso legal de cobranza (topes y horario de gestiones proactivas).
+    const limite = await collectionFloorRefusal(
+      this.interactions,
+      ctx,
+      'mensajeria',
+    );
+    if (limite) {
+      return { content: limite.content, isError: true, stop: limite.stop };
+    }
+
     await this.whatsapp.send(ctx.lead.phone, mensaje);
     await this.interactions.register({
       leadId: ctx.lead.id,
@@ -88,6 +101,7 @@ export class EnviarWhatsAppTool implements AgentTool {
       direction: Direction.outbound,
       content: mensaje,
       agentId: ctx.agentId,
+      metadata: proactiveTag(ctx),
     });
     ctx.messageSent = true;
     return { content: 'Mensaje enviado al cliente por WhatsApp.' };

@@ -1,4 +1,8 @@
-import { leadFactSources, validateOutgoingMessage } from './output-validator';
+import {
+  factSourcesFor,
+  leadFactSources,
+  validateOutgoingMessage,
+} from './output-validator';
 
 describe('validateOutgoingMessage (guardrail)', () => {
   it('permite un mensaje sin cifras', () => {
@@ -83,5 +87,82 @@ describe('validateOutgoingMessage (guardrail)', () => {
     const r = validateOutgoingMessage('El plan cuesta 49990', facts);
     expect(r.allowed).toBe(false);
     expect(r.offending).toContain('49990');
+  });
+});
+
+describe('comparación por fuente (no por pajar)', () => {
+  it('no deja pasar una cifra formada por el cruce de dos fuentes distintas', () => {
+    // "1234" no está en ninguna fuente, pero los dígitos concatenados de las
+    // dos ("...12" + "34...") sí la contenían con el método anterior.
+    const r = validateOutgoingMessage('Son 1234 pesos', [
+      'codigo = A12',
+      'folio = 34B',
+    ]);
+
+    expect(r.allowed).toBe(false);
+    expect(r.offending).toContain('1234');
+  });
+
+  it('sigue permitiendo un fragmento dentro de una misma cifra', () => {
+    const r = validateOutgoingMessage('Te llamo al 2033 7143', [
+      'telefono = +56920337143',
+    ]);
+
+    expect(r.allowed).toBe(true);
+  });
+});
+
+describe('factSourcesFor', () => {
+  const lead = { phone: null, email: null, metadata: {} };
+
+  it('respalda la hora de una cita que el propio agente acaba de agendar', () => {
+    const sources = factSourcesFor({
+      recordedFacts: ['Cita agendada para el 24 de septiembre de 2026, 11:00'],
+      lead,
+    });
+    const r = validateOutgoingMessage(
+      'Listo, te espero el 24 de septiembre de 2026 a las 11:00.',
+      sources,
+    );
+
+    expect(r.allowed).toBe(true);
+  });
+
+  it('respalda un dato que dio el propio cliente', () => {
+    const sources = factSourcesFor({
+      recordedFacts: [],
+      lead,
+      clientMessages: ['mi pedido es el 458812, llegó incompleto'],
+    });
+    const r = validateOutgoingMessage(
+      'Reviso el pedido 458812 y te cuento.',
+      sources,
+    );
+
+    expect(r.allowed).toBe(true);
+  });
+
+  it('NO respalda lo que escribió el agente, solo lo del cliente', () => {
+    const sources = factSourcesFor({
+      recordedFacts: [],
+      lead,
+      clientMessages: ['hola, quiero info'],
+    });
+    const r = validateOutgoingMessage('El plan sale 49990', sources);
+
+    expect(r.allowed).toBe(false);
+    expect(r.offending).toContain('49990');
+  });
+
+  it('incluye el WhatsApp de la empresa', () => {
+    const sources = factSourcesFor({
+      recordedFacts: [],
+      lead,
+      companyWhatsApp: '+56912345678',
+    });
+
+    expect(
+      validateOutgoingMessage('Escríbenos al +569 1234 5678', sources).allowed,
+    ).toBe(true);
   });
 });

@@ -1,8 +1,10 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { Trans, useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useAuth } from '../store/auth';
 import { AuthShell } from '../components/AuthShell';
+import { PasswordInput } from '../components/PasswordInput';
 import { Button, Field, Input } from '../components/ui';
 import type { LoginResponse } from '../types';
 
@@ -12,14 +14,23 @@ interface RegisterResponse extends LoginResponse {
 }
 
 const FIELDS = [
-  ['companyName', 'Nombre de la empresa', 'text'],
-  ['rut', 'RUT', 'text'],
-  ['name', 'Tu nombre', 'text'],
-  ['email', 'Email', 'email'],
-  ['password', 'Contraseña (mín. 8)', 'password'],
+  ['companyName', 'text'],
+  ['rut', 'text'],
+  ['name', 'text'],
+  ['email', 'email'],
+  ['password', 'password'],
 ] as const;
 
+const FIELD_LABEL_KEY: Record<(typeof FIELDS)[number][0], string> = {
+  companyName: 'auth.register.companyName',
+  rut: 'auth.register.rut',
+  name: 'auth.register.yourName',
+  email: 'auth.register.email',
+  password: 'auth.register.password',
+};
+
 export function RegisterPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const setSession = useAuth((s) => s.setSession);
   const [form, setForm] = useState({
@@ -47,8 +58,14 @@ export function RegisterPage() {
       );
       setSession(data);
       setSecret(data.webhookSecret);
-    } catch {
-      setError('No se pudo registrar (¿email o RUT ya usados?)');
+    } catch (err) {
+      const status = (err as { response?: { status?: number } }).response
+        ?.status;
+      setError(
+        status === 409
+          ? t('auth.register.emailTaken')
+          : t('auth.register.error'),
+      );
     } finally {
       setLoading(false);
     }
@@ -59,17 +76,20 @@ export function RegisterPage() {
       <AuthShell>
         <div className="w-full max-w-md space-y-3">
           <h1 className="text-xl font-semibold text-slate-900">
-            ¡Empresa creada! 🎉
+            {t('auth.register.successTitle')}
           </h1>
           <p className="text-sm text-slate-600">
-            Guarda este <strong>webhookSecret</strong> ahora: no volverá a
-            mostrarse. Sirve para firmar la ingesta de leads (n8n) y el webhook.
+            <Trans i18nKey="auth.register.successBody">
+              Guarda este <strong>webhookSecret</strong> ahora: no volverá a
+              mostrarse. Sirve para firmar la ingesta de leads (n8n) y el
+              webhook.
+            </Trans>
           </p>
           <code className="block break-all rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             {secret}
           </code>
           <Button onClick={() => navigate('/config')} className="w-full">
-            Ir al panel
+            {t('auth.register.goToPanel')}
           </Button>
         </div>
       </AuthShell>
@@ -81,21 +101,30 @@ export function RegisterPage() {
       <form onSubmit={submit} className="w-full max-w-sm space-y-4">
         <div className="mb-1">
           <h1 className="text-xl font-semibold text-slate-900">
-            Registrar empresa
+            {t('auth.register.title')}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Crea tu cuenta y tu primer agente en segundos.
+            {t('auth.register.subtitle')}
           </p>
         </div>
 
-        {FIELDS.map(([k, label, type]) => (
-          <Field key={k} label={label}>
-            <Input
-              type={type}
-              value={form[k]}
-              onChange={set(k)}
-              required={k !== 'name'}
-            />
+        {FIELDS.map(([k, type]) => (
+          <Field key={k} label={t(FIELD_LABEL_KEY[k])}>
+            {type === 'password' ? (
+              <PasswordInput
+                value={form[k]}
+                onChange={set(k)}
+                autoComplete="new-password"
+                required
+              />
+            ) : (
+              <Input
+                type={type}
+                value={form[k]}
+                onChange={set(k)}
+                required={k !== 'name'}
+              />
+            )}
           </Field>
         ))}
 
@@ -106,7 +135,7 @@ export function RegisterPage() {
         )}
 
         <Button type="submit" disabled={loading} className="w-full">
-          {loading ? 'Creando…' : 'Crear empresa'}
+          {loading ? t('auth.register.submitting') : t('auth.register.submit')}
         </Button>
 
         <p className="text-center text-sm text-slate-500">
@@ -114,7 +143,7 @@ export function RegisterPage() {
             to="/login"
             className="font-medium text-brand-600 hover:text-brand-700"
           >
-            Ya tengo cuenta
+            {t('auth.register.haveAccount')}
           </Link>
         </p>
       </form>

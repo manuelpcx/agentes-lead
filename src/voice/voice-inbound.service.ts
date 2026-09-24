@@ -41,7 +41,7 @@ export class VoiceInboundService {
     ].filter(Boolean);
     const content = partes.length ? partes.join('\n\n') : '(sin transcripción)';
 
-    await this.interactions.register({
+    const interaction = await this.interactions.register({
       leadId: call.leadId,
       channel: Channel.call,
       direction: Direction.inbound,
@@ -52,11 +52,14 @@ export class VoiceInboundService {
 
     // Despierta al agente para que siga por texto (mandar link, agendar, etc.)
     // solo si hubo conversación real; una no-respuesta no da nada que retomar.
+    // Sin demora (la llamada ya terminó), pero con `inboundAt` para que el
+    // turno se omita si el cliente escribió algo después de colgar.
     if (call.transcript && call.transcript.trim()) {
       await this.agentQueue.add('turn', {
         companyId,
         leadId: call.leadId,
         correlationId,
+        inboundAt: interaction.occurredAt.getTime(),
       });
     }
   }

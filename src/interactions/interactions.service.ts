@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Channel, Direction, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
+import { GESTION_PROACTIVA } from '../followup/collection-floor';
 
 /** Datos mínimos para registrar una interacción. */
 export interface RegisterInteractionInput {
@@ -39,6 +40,44 @@ export class InteractionsService {
         agentId: input.agentId ?? null,
         metadata: input.metadata ?? {},
       },
+    });
+  }
+
+  /**
+   * Última interacción del lead en un canal/dirección desde `since`. Se usa
+   * para no repetir acciones costosas (p. ej. llamar dos veces seguidas).
+   */
+  async findRecent(
+    leadId: string,
+    channel: Channel,
+    direction: Direction,
+    since: Date,
+  ) {
+    return this.prisma.db.interaction.findFirst({
+      where: { leadId, channel, direction, occurredAt: { gte: since } },
+      orderBy: { occurredAt: 'desc' },
+    });
+  }
+
+  /**
+   * Gestiones proactivas del lead desde `since`: salientes por WhatsApp, correo
+   * o llamada marcadas con `metadata.gestion`. Las respuestas a mensajes del
+   * cliente no llevan la marca, así que no cuentan para los topes de cobranza.
+   */
+  async findProactiveSince(
+    leadId: string,
+    since: Date,
+  ): Promise<Array<{ channel: Channel; occurredAt: Date }>> {
+    return this.prisma.db.interaction.findMany({
+      where: {
+        leadId,
+        direction: Direction.outbound,
+        channel: { in: [Channel.whatsapp, Channel.email, Channel.call] },
+        occurredAt: { gte: since },
+        metadata: { path: ['gestion'], equals: GESTION_PROACTIVA },
+      },
+      orderBy: { occurredAt: 'desc' },
+      select: { channel: true, occurredAt: true },
     });
   }
 }

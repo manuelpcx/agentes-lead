@@ -1,12 +1,15 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { useAuth } from '../store/auth';
 import { AuthShell } from '../components/AuthShell';
+import { PasswordInput } from '../components/PasswordInput';
 import { Button, Field, Input } from '../components/ui';
 import type { LoginResponse } from '../types';
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useAuth((s) => s.token);
   const setSession = useAuth((s) => s.setSession);
@@ -31,7 +34,7 @@ export function LoginPage() {
       setSession(data);
       navigate('/');
     } catch {
-      setError('Credenciales inválidas');
+      setError(t('auth.login.error'));
     } finally {
       setLoading(false);
     }
@@ -42,14 +45,14 @@ export function LoginPage() {
       <form onSubmit={submit} className="w-full max-w-sm space-y-4">
         <div className="mb-2">
           <h1 className="text-xl font-semibold text-slate-900">
-            Entrar al panel
+            {t('auth.login.title')}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Gestiona tus agentes y conversaciones.
+            {t('auth.login.subtitle')}
           </p>
         </div>
 
-        <Field label="Email">
+        <Field label={t('auth.login.email')}>
           <Input
             type="email"
             value={email}
@@ -58,11 +61,11 @@ export function LoginPage() {
             autoFocus
           />
         </Field>
-        <Field label="Contraseña">
-          <Input
-            type="password"
+        <Field label={t('auth.login.password')}>
+          <PasswordInput
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
             required
           />
         </Field>
@@ -74,16 +77,25 @@ export function LoginPage() {
         )}
 
         <Button type="submit" disabled={loading} className="w-full">
-          {loading ? 'Entrando…' : 'Entrar'}
+          {loading ? t('auth.login.submitting') : t('auth.login.submit')}
         </Button>
 
+        <p className="text-center text-sm">
+          <Link
+            to="/forgot-password"
+            className="font-medium text-slate-500 hover:text-slate-700"
+          >
+            {t('auth.login.forgotLink')}
+          </Link>
+        </p>
+
         <p className="text-center text-sm text-slate-500">
-          ¿Nueva empresa?{' '}
+          {t('auth.login.noAccount')}{' '}
           <Link
             to="/register"
             className="font-medium text-brand-600 hover:text-brand-700"
           >
-            Regístrate
+            {t('auth.login.registerLink')}
           </Link>
         </p>
       </form>

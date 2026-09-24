@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { signHmacSha256Hex } from '../common/webhook-signature';
+import { assertSafeOutboundUrl } from '../common/safe-url';
 
 const logger = new Logger('CrmQuery');
 /** Recorte del dato devuelto por el CRM antes de meterlo al contexto del LLM. */
@@ -34,6 +35,17 @@ export async function queryCrm(
   req: CrmQueryRequest,
   timeoutMs = 8000,
 ): Promise<CrmQueryResult> {
+  // La URL la configuró el cliente: se valida antes de CADA envío (no solo al
+  // guardarla) porque el DNS puede cambiar después. Apuntada a la red privada
+  // del PaaS o al metadata endpoint de la nube, seríamos un proxy hacia adentro.
+  try {
+    await assertSafeOutboundUrl(url);
+  } catch (e) {
+    const message = `URL del CRM rechazada: ${(e as Error).message}.`;
+    logger.warn(message);
+    return { ok: false, message };
+  }
+
   const payload = {
     event: 'crm.query' as const,
     companyId: req.companyId,
@@ -57,6 +69,8 @@ export async function queryCrm(
       },
       body,
       signal: controller.signal,
+      // Sin seguir redirecciones: una 302 hacia adentro saltaría la validación.
+      redirect: 'manual',
     });
   } catch (e) {
     const timedOut = (e as Error).name === 'AbortError';

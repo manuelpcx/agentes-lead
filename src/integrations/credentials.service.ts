@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { TenantContext } from '../common/tenant/tenant-context';
+import { assertSafeOutboundUrl } from '../common/safe-url';
 
 /** Canales que pueden tener credenciales propias por empresa. */
 export type IntegrationChannel = 'whatsapp' | 'email' | 'voice' | 'crm';
@@ -86,6 +87,9 @@ export class CredentialsService {
   /** Guarda/actualiza la credencial. Cifra los secretos que vengan. */
   async upsert(channel: IntegrationChannel, dto: UpsertCredential) {
     const companyId = TenantContext.requireCompanyId();
+    if (channel === 'crm' && dto.config) {
+      await this.assertCrmUrls(dto.config);
+    }
     const existing = await this.prisma.db.integration.findFirst({
       where: { channel },
     });
@@ -120,7 +124,75 @@ export class CredentialsService {
         },
       });
     }
+    if (channel === 'whatsapp' && dto.config) {
+      await this.syncWhatsappRouting(companyId, dto.provider, dto.config);
+    }
     return { ok: true };
+  }
+
+  /**
+   * Los mensajes entrantes se enrutan a la empresa por
+   * `Company.channelsConfig.whatsapp` (el número de negocio con YCloud, el
+   * Phone Number ID con Meta), que se editaba aparte, en Configuración. Es el
+   * mismo dato que el de esta integración: si faltaba allá, el cliente pegaba
+   * el webhook, todo parecía bien y los mensajes se descartaban en silencio.
+   * Al guardar la integración se copia; el resto de channelsConfig no se toca.
+   */
+  private async syncWhatsappRouting(
+    companyId: string,
+    provider: string,
+    config: Record<string, unknown>,
+  ): Promise<void> {
+    let patch: Record<string, string> | null = null;
+    if (provider === 'ycloud') {
+      const phone = normalizeE164(config.from);
+      patch = phone ? { phoneNumber: phone } : null;
+    } else if (provider === 'meta') {
+      const id =
+        typeof config.phoneNumberId === 'string'
+          ? config.phoneNumberId.trim()
+          : '';
+      patch = id ? { phoneNumberId: id } : null;
+    }
+    if (!patch) {
+      return;
+    }
+
+    const company = await this.prisma.raw.company.findUnique({
+      where: { id: companyId },
+      select: { channelsConfig: true },
+    });
+    const channels = (company?.channelsConfig ?? {}) as Record<string, unknown>;
+    const whatsapp = (channels.whatsapp ?? {}) as Record<string, unknown>;
+    await this.prisma.raw.company.update({
+      where: { id: companyId },
+      data: {
+        channelsConfig: {
+          ...channels,
+          whatsapp: { ...whatsapp, ...patch },
+        } as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  /**
+   * Las URLs del CRM las va a llamar el SERVIDOR, así que se validan al
+   * guardarlas (feedback inmediato en el panel) además de al usarlas.
+   */
+  private async assertCrmUrls(config: Record<string, unknown>): Promise<void> {
+    for (const key of ['url', 'queryUrl']) {
+      const value = config[key];
+      if (typeof value !== 'string' || !value.trim()) {
+        continue;
+      }
+      try {
+        await assertSafeOutboundUrl(value.trim());
+      } catch (e) {
+        throw new BadRequestException(
+          `La URL "${key}" no sirve: ${(e as Error).message}.`,
+        );
+      }
+    }
   }
 
   /** Estado de todas las integraciones de la empresa, SIN secretos. */
@@ -135,4 +207,18 @@ export class CredentialsService {
       isActive: it.isActive,
     }));
   }
+}
+
+/**
+ * Número en E.164 (`+56911111111`) a partir de lo que escribió el cliente
+ * ("+56 9 1111 1111", "56911111111"). YCloud manda el número de destino así,
+ * y el enrutamiento compara texto exacto. Devuelve null si no parece número.
+ */
+export function normalizeE164(raw: unknown): string | null {
+  if (typeof raw !== 'string') {
+    return null;
+  }
+  const compact = raw.replace(/[\s\-().]/g, '');
+  const withPlus = compact.startsWith('+') ? compact : `+${compact}`;
+  return /^\+\d{8,15}$/.test(withPlus) ? withPlus : null;
 }

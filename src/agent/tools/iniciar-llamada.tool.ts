@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Channel, Direction } from '@prisma/client';
+import { AgentType, Channel, Direction } from '@prisma/client';
 import { VoiceService } from '../../voice/voice.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
@@ -9,9 +9,22 @@ import {
   voiceConfigToOverrides,
 } from '../../voice/voice-config';
 import { SCHEDULED_CALL_TYPE } from '../agent.constants';
-import { nextLocalTime } from '../../followup/business-hours';
+import {
+  earliestAllowedTime,
+  formatLocalDateTime,
+  isLegalCollectionTime,
+  nextLocalTime,
+} from '../../followup/business-hours';
+import {
+  collectionFloorRefusal,
+  isProactiveContact,
+  proactiveTag,
+} from './collection-floor.guard';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_INICIAR_LLAMADA } from './tool-names';
+
+/** Ventana en la que una segunda llamada al mismo lead se considera duplicada. */
+const RECENT_CALL_MS = 10 * 60 * 1000;
 
 /**
  * Inicia una llamada de voz al lead (reservada para leads calientes o cuando el
@@ -93,6 +106,28 @@ export class IniciarLlamadaTool implements AgentTool {
       cuando = new Date(Date.now() + minutos * 60_000);
     }
 
+    let movidaPorLey = false;
+    if (cuando && ctx.agentType === AgentType.COBRANZA) {
+      // En cobranza, agendar una llamada por iniciativa propia saltaría el
+      // tope semanal (la llamada agendada no cuenta como proactiva): solo se
+      // agenda si el deudor lo pide en la conversación.
+      if (isProactiveContact(ctx)) {
+        return {
+          content:
+            'En un seguimiento de cobranza no se agendan llamadas por ' +
+            'iniciativa propia: solo si el deudor lo pide. Usa el canal que ' +
+            'indica la instrucción de seguimiento.',
+          isError: true,
+        };
+      }
+      // Y nunca fuera del horario legal: se corre al primer momento permitido.
+      const legal = earliestAllowedTime(cuando, (d) =>
+        isLegalCollectionTime(d, tz),
+      );
+      movidaPorLey = legal.getTime() !== cuando.getTime();
+      cuando = legal;
+    }
+
     if (cuando) {
       await this.leads.scheduleNextAction(
         ctx.lead.id,
@@ -106,11 +141,48 @@ export class IniciarLlamadaTool implements AgentTool {
         content: `Llamada agendada para ${cuando.toISOString()} (${motivo}).`,
         agentId: ctx.agentId,
       });
+      if (movidaPorLey) {
+        return {
+          content:
+            'La hora pedida cae fuera del horario legal de cobranza (lunes a ' +
+            'sábado de 8:00 a 20:00, sin festivos). La llamada quedó agendada ' +
+            `para ${formatLocalDateTime(cuando, tz)}: díselo al deudor por el ` +
+            'canal de texto que corresponda.',
+        };
+      }
       return {
         content:
           'Llamada agendada. Confírmaselo al lead por el canal de texto que ' +
           'corresponda (dile a qué hora lo llamarás).',
       };
+    }
+
+    // Guarda anti-duplicado: si ya se lanzó una llamada hace poco, no se lanza
+    // otra. Sin esto, cada "llámame" del cliente arrancaba una llamada nueva
+    // (dos llamadas reales, dos cobros, y el teléfono sonando dos veces).
+    const reciente = await this.interactions.findRecent(
+      ctx.lead.id,
+      Channel.call,
+      Direction.outbound,
+      new Date(Date.now() - RECENT_CALL_MS),
+    );
+    if (reciente) {
+      return {
+        content:
+          'Ya hay una llamada en curso o recién iniciada para este lead. ' +
+          'No inicies otra: dile al cliente que el teléfono ya está sonando.',
+        isError: true,
+      };
+    }
+
+    // Piso legal de cobranza: horario legal y una llamada proactiva por semana.
+    const limite = await collectionFloorRefusal(
+      this.interactions,
+      ctx,
+      'llamada',
+    );
+    if (limite) {
+      return { content: limite.content, isError: true, stop: limite.stop };
     }
 
     // Llamada inmediata. Aplica la config de voz de la empresa (voz/tono/idioma/
@@ -137,7 +209,7 @@ export class IniciarLlamadaTool implements AgentTool {
       direction: Direction.outbound,
       content: `Llamada iniciada: ${motivo}`,
       agentId: ctx.agentId,
-      metadata: { callId },
+      metadata: { callId, ...proactiveTag(ctx) },
     });
     ctx.messageSent = true;
     return {

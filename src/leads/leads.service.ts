@@ -1,6 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Channel, Direction, Lead, LeadStatus, Prisma } from '@prisma/client';
+import {
+  Channel,
+  Direction,
+  Lead,
+  LeadQualification,
+  LeadStatus,
+  Prisma,
+} from '@prisma/client';
 import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AgentsService } from '../agents/agents.service';
@@ -184,6 +191,35 @@ export class LeadsService {
     return lead;
   }
 
+  /**
+   * Fija la calificación explícita del lead (FRIO/TIBIO/CALIENTE) con su
+   * motivo, y avisa al CRM del cliente si tiene uno conectado. A diferencia
+   * de `status` (etapa del embudo), esto es una evaluación de interés/urgencia
+   * real que el agente actualiza a medida que aprende más en la conversación.
+   */
+  async setQualification(
+    leadId: string,
+    qualification: LeadQualification,
+    reason: string,
+  ): Promise<Lead> {
+    await this.getById(leadId);
+    const lead = await this.prisma.db.lead.update({
+      where: { id: leadId },
+      data: {
+        qualification,
+        qualificationReason: reason,
+        qualifiedAt: new Date(),
+      },
+    });
+    await this.crmEvents.emit({
+      leadId: lead.id,
+      externalId: lead.externalId,
+      event: 'lead.qualified',
+      data: { qualification, reason },
+    });
+    return lead;
+  }
+
   /** Programa la próxima acción de seguimiento (usado desde Fase 4). */
   async scheduleNextAction(
     leadId: string,
@@ -194,6 +230,20 @@ export class LeadsService {
     return this.prisma.db.lead.update({
       where: { id: leadId },
       data: { nextActionAt, nextActionType },
+    });
+  }
+
+  /**
+   * Cancela la próxima acción agendada (llamada o seguimiento). Es la única
+   * forma de limpiarla: `scheduleNextAction` solo puede fijarla, nunca
+   * quitarla, así que sin esto no hay manera de honrar un "no me llames" ni
+   * un "cancela esa llamada" de forma persistente.
+   */
+  async cancelNextAction(leadId: string): Promise<Lead> {
+    await this.getById(leadId);
+    return this.prisma.db.lead.update({
+      where: { id: leadId },
+      data: { nextActionAt: null, nextActionType: null },
     });
   }
 

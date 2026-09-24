@@ -66,28 +66,33 @@ por fases; esta es la **Fase 1 — Cimientos**.
 
 ## Probar el flujo de ingesta
 
-1. **Crear una empresa** (devuelve el `webhookSecret` en claro, una sola vez):
+1. **Registrar una empresa** con su usuario OWNER (devuelve el `webhookSecret`
+   en claro, una sola vez):
 
    ```bash
-   curl -s -X POST http://localhost:3000/companies \
+   curl -s -X POST http://localhost:3000/auth/register-company \
      -H 'Content-Type: application/json' \
-     -d '{"name":"Clínica Demo","rut":"76.123.456-7"}'
+     -d '{"companyName":"Clínica Demo","rut":"76.123.456-7","email":"owner@demo.cl","password":"cambiame-ahora"}'
    ```
 
-   Guarda `company.id` y `webhookSecret`.
+   Guarda `company.id` y `webhookSecret`. (Lo mismo que hace el botón
+   **Regístrate** del panel.)
 
-2. **Enviar un lead firmado**. La firma es el HMAC-SHA256 (hex) del cuerpo
-   crudo con el `webhookSecret`. Helper en Node:
+2. **Enviar un lead firmado**. La firma es el HMAC-SHA256 (hex) de
+   `"<timestamp>." + cuerpo` con el `webhookSecret`, donde `timestamp` son
+   milisegundos Unix (el servidor exige ±5 min). Helper en Node:
 
    ```bash
    COMPANY_ID="<id-de-la-empresa>"
    SECRET="<webhookSecret>"
    BODY='{"externalId":"lead-001","name":"Ana","phone":"+56912345678","source":"landing"}'
-   SIG=$(node -e "console.log(require('crypto').createHmac('sha256', process.argv[1]).update(process.argv[2]).digest('hex'))" "$SECRET" "$BODY")
+   TS=$(node -e "console.log(Date.now())")
+   SIG=$(node -e "console.log(require('crypto').createHmac('sha256', process.argv[1]).update(process.argv[2] + '.' + process.argv[3]).digest('hex'))" "$SECRET" "$TS" "$BODY")
 
    curl -s -X POST http://localhost:3000/webhooks/lead \
      -H 'Content-Type: application/json' \
      -H "X-Company-Id: $COMPANY_ID" \
+     -H "X-Timestamp: $TS" \
      -H "X-Signature: $SIG" \
      -d "$BODY"
    ```
@@ -109,8 +114,13 @@ pnpm build          # compilación a dist/
 pnpm start:prod     # node dist/main
 pnpm lint           # eslint
 pnpm test           # tests unitarios (jest)
+pnpm eval           # banco de evaluaciones del agente (necesita ANTHROPIC_API_KEY)
 pnpm prisma:studio  # explorar la BD
 ```
+
+El banco de evaluaciones mide si el agente **responde bien**, corriendo turnos
+reales contra el modelo y calificándolos. Cómo funciona y cómo agregar casos:
+[`src/evals/README.md`](src/evals/README.md).
 
 ## Notas de deploy en Railway
 

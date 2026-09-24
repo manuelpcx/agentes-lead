@@ -5,9 +5,16 @@ import type { EnvVars } from '../common/config/env.validation';
 
 /** Entrada de un turno del modelo: system + historial + herramientas. */
 export interface CreateMessageInput {
-  system: string;
+  /**
+   * Texto plano, o bloques. Con bloques, el primero puede llevar
+   * `cache_control` para que la API reutilice ese prefijo (herramientas
+   * incluidas) en las siguientes iteraciones del turno.
+   */
+  system: string | Anthropic.TextBlockParam[];
   messages: Anthropic.MessageParam[];
   tools: Anthropic.Tool[];
+  /** Por defecto 'auto' (el SDK). Pásalo para forzar el uso de alguna tool. */
+  toolChoice?: Anthropic.ToolChoice;
 }
 
 /**
@@ -80,6 +87,7 @@ export class AnthropicService {
       output_config: { effort: this.effort },
       system: input.system,
       tools: input.tools,
+      tool_choice: input.toolChoice,
       messages: input.messages,
     });
   }

@@ -27,6 +27,13 @@ const envSchema = z
     // Orígenes permitidos por CORS (coma-separados). Vacío = refleja cualquiera
     // (útil en dev). En producción, fija el dominio del panel (Vercel).
     CORS_ORIGIN: z.string().optional(),
+    // URL pública del panel, para los enlaces en correos (recuperar
+    // contraseña). Si falta, se usa el primer origen de CORS_ORIGIN.
+    PANEL_URL: z.string().url().optional(),
+    // URL pública del backend, la que se muestra en Integraciones para que el
+    // cliente la pegue como webhook en YCloud/Meta/Retell/Vapi. Si falta, se
+    // deduce de la petición del panel (sirve tal cual en Railway o Cloud Run).
+    PUBLIC_API_URL: z.string().url().optional(),
 
     // ── Embeddings (base de conocimiento) ──
     // 'local' = embedder determinista sin API key (dev). 'voyage' = Voyage AI.
@@ -48,6 +55,10 @@ const envSchema = z
     // Guardas del bucle de decisión.
     AGENT_MAX_ITERATIONS: z.coerce.number().int().positive().default(6),
     AGENT_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+    // Ventana de agrupacion de mensajes entrantes: el turno espera este tiempo
+    // antes de correr, y si el cliente escribe de nuevo dentro de la ventana se
+    // contesta todo junto (en vez de una respuesta por mensaje). 0 = sin espera.
+    AGENT_TURN_DEBOUNCE_MS: z.coerce.number().int().min(0).default(8000),
 
     // ── WhatsApp (Fase 3) ──
     // 'log' = registra los envíos (dev). 'meta' = Cloud API. 'ycloud' = BSP YCloud.
@@ -66,8 +77,19 @@ const envSchema = z
     // ── Panel / Auth (Fase 7A) ──
     JWT_SECRET: z
       .string()
-      .min(16, 'JWT_SECRET debe tener al menos 16 caracteres'),
+      .min(
+        32,
+        "JWT_SECRET debe tener al menos 32 caracteres. Genera uno con: node -e \"console.log(require('node:crypto').randomBytes(48).toString('base64url'))\"",
+      ),
     JWT_EXPIRES_IN: z.string().default('8h'),
+
+    // Exige `X-Timestamp` en los webhooks firmados de entrada (firma v2, con
+    // protección contra repetición). false mientras migras los flujos de n8n
+    // al esquema nuevo; después, true.
+    WEBHOOK_REQUIRE_TIMESTAMP: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
 
     // ── Seguimiento automático (Fase 4) ──
     // Defaults globales de la empresa; cada Agent puede pisar escalera/delays/

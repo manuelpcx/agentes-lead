@@ -90,4 +90,26 @@ describe('buildFollowUpInstruction', () => {
     expect(txt).toContain('SEGUIMIENTO 2/4 · WHATSAPP');
     expect(txt).toContain('enviarWhatsApp');
   });
+
+  it('en cobranza pide una sola gestión por turno (límite legal)', () => {
+    const txt = buildFollowUpInstruction({
+      channel: 'whatsapp',
+      attempt: 2,
+      maxAttempts: 4,
+      primerContacto: false,
+      cobranza: true,
+    });
+    expect(txt).toContain('Límite legal de cobranza');
+    expect(txt).toContain('no contactes por otros canales');
+  });
+
+  it('fuera de cobranza no agrega el límite legal', () => {
+    const txt = buildFollowUpInstruction({
+      channel: 'whatsapp',
+      attempt: 2,
+      maxAttempts: 4,
+      primerContacto: false,
+    });
+    expect(txt).not.toContain('Límite legal');
+  });
 });

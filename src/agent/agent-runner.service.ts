@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import Anthropic from '@anthropic-ai/sdk';
 import { Channel, Conversation, Direction, Lead, Prisma } from '@prisma/client';
 import type { EnvVars } from '../common/config/env.validation';
@@ -16,6 +18,10 @@ import { ToolContext, ToolResult } from './tools/tool.interface';
 import { FALLBACK_ESCALATION_MESSAGE } from './agent.constants';
 import { VoiceConfig, parseVoiceConfig } from '../voice/voice-config';
 import { formatLocalDateTime } from '../followup/business-hours';
+import { appendSystemInstruction } from './conversation-history';
+import { QUEUE_LEAD_MEMORY } from '../queue/queue.constants';
+import { LeadMemoryService } from '../memory/lead-memory.service';
+import { LeadMemoryJobData } from '../memory/lead-memory.processor';
 
 /** Resultado de un turno (para el planificador de seguimiento). */
 export interface TurnOutcome {
@@ -23,6 +29,15 @@ export interface TurnOutcome {
   escalated: boolean;
   /** El lead se derivó a otro agente (el seguimiento no cuenta un intento). */
   derived: boolean;
+}
+
+/** Opciones de un turno de seguimiento. */
+export interface FollowUpOptions {
+  /**
+   * El seguimiento cumple algo que pidió el propio lead (su llamada agendada):
+   * no es una gestión proactiva para los topes legales de cobranza.
+   */
+  requestedByLead?: boolean;
 }
 
 @Injectable()
@@ -41,6 +56,9 @@ export class AgentRunner {
     private readonly interactions: InteractionsService,
     private readonly leads: LeadsService,
     private readonly agentActions: AgentActionsService,
+    private readonly memory: LeadMemoryService,
+    @InjectQueue(QUEUE_LEAD_MEMORY)
+    private readonly memoryQueue: Queue<LeadMemoryJobData>,
   ) {
     this.maxIterations = config.get('AGENT_MAX_ITERATIONS', { infer: true });
     this.timeoutMs = config.get('AGENT_TIMEOUT_MS', { infer: true });
@@ -56,8 +74,12 @@ export class AgentRunner {
    * mensaje de re-contacto. Devuelve qué ocurrió para que el planificador
    * reprograme o cierre.
    */
-  async runFollowUp(leadId: string, instruction: string): Promise<TurnOutcome> {
-    return this.execute(leadId, instruction);
+  async runFollowUp(
+    leadId: string,
+    instruction: string,
+    options: FollowUpOptions = {},
+  ): Promise<TurnOutcome> {
+    return this.execute(leadId, instruction, options);
   }
 
   /**
@@ -68,6 +90,7 @@ export class AgentRunner {
   private async execute(
     leadId: string,
     followUpInstruction?: string,
+    options: FollowUpOptions = {},
   ): Promise<TurnOutcome> {
     const followUp = followUpInstruction !== undefined;
     const idle: TurnOutcome = {
@@ -91,9 +114,13 @@ export class AgentRunner {
     }
 
     const conversation = await this.getOpenConversation(lead, agent.id);
-    const messages = await this.contextBuilder.buildMessages(leadId);
+    // La zona horaria se resuelve antes del historial: las anotaciones de cada
+    // mensaje ("hace 2 días", fechas) van en la hora del cliente, no del servidor.
+    const company = await this.resolveCompanyInfo();
+    const timezone = lead.timezone ?? company.timezone ?? 'America/Santiago';
+    const messages = await this.contextBuilder.buildMessages(leadId, timezone);
     if (followUpInstruction !== undefined) {
-      messages.push({ role: 'user', content: followUpInstruction });
+      appendSystemInstruction(messages, followUpInstruction);
     }
     if (messages.length === 0) {
       return idle; // modo respuesta: no hay mensaje del cliente al que responder
@@ -108,14 +135,13 @@ export class AgentRunner {
       return { messageSent: false, escalated: true, derived: false };
     }
 
-    const company = await this.resolveCompanyInfo();
-    const timezone = lead.timezone ?? company.timezone ?? 'America/Santiago';
     const nowText = formatLocalDateTime(new Date(), timezone);
     const system = await this.contextBuilder.buildSystem(
       agent,
       lead,
       company.whatsapp,
       nowText,
+      timezone,
     );
     const tools = this.toolRegistry.forAgent(agent.enabledTools);
     const toolDefs: Anthropic.Tool[] = tools.map((t) => t.definition);
@@ -125,11 +151,19 @@ export class AgentRunner {
       agentId: agent.id,
       conversationId: conversation.id,
       recordedFacts: [],
+      // Lo que dijo el cliente respalda al guardrail: si él dio su RUT o el
+      // número de su pedido, el agente puede repetírselo sin que se bloquee.
+      // Solo sus mensajes (rol `user`), nunca los del agente.
+      clientMessages: messages
+        .filter((m) => m.role === 'user' && typeof m.content === 'string')
+        .map((m) => m.content as string),
       companyWhatsApp: company.whatsapp,
       companyName: company.name,
       companyVoice: company.voice,
       timezone,
       followUp,
+      requestedByLead: followUp && options.requestedByLead === true,
+      agentType: agent.type,
       escalated: false,
       derived: false,
       messageSent: false,
@@ -144,10 +178,20 @@ export class AgentRunner {
         break;
       }
 
+      // Mientras el turno no esté resuelto (nada enviado/escalado/derivado
+      // todavía), se fuerza el uso de ALGUNA tool: el texto suelto nunca le
+      // llega al cliente, así que dejar que el modelo termine en texto en
+      // este punto es sinónimo de dejarlo sin respuesta (el bug real detrás
+      // de varios silencios que vimos — el modelo pedía un dato con una tool
+      // y después no lo relayaba con enviarWhatsApp). Una vez resuelto, se
+      // vuelve a 'auto' para permitir que el turno cierre de forma natural.
+      const resolved =
+        ctx.messageSent || ctx.escalated || (ctx.derived ?? false);
       const response = await this.anthropic.createMessage({
         system,
         messages: convo,
         tools: toolDefs,
+        toolChoice: resolved ? undefined : { type: 'any' },
       });
 
       if (response.stop_reason !== 'tool_use') {
@@ -164,6 +208,12 @@ export class AgentRunner {
           continue;
         }
         const result = await this.executeTool(tools, block, ctx);
+        // El resultado de CUALQUIER herramienta respalda al guardrail: es un
+        // dato de nuestros sistemas, no una cifra que el modelo sacó de la
+        // manga. Antes solo respaldaban tres herramientas de consulta, así que
+        // el agente se bloqueaba a sí mismo al confirmar la hora de una cita
+        // que él acababa de agendar.
+        ctx.recordedFacts.push(result.content);
         await this.agentActions.record({
           agentId: ctx.agentId,
           leadId: ctx.lead.id,
@@ -190,6 +240,18 @@ export class AgentRunner {
       }
     }
 
+    // Red de seguridad: si el modelo respondió a un mensaje del cliente sin
+    // usar ninguna herramienta (texto suelto, que es interno y no le llega a
+    // nadie), sin esto el cliente se queda sin respuesta y sin ningún rastro
+    // en el historial — el peor resultado posible, peor que un error visible.
+    if (!followUp && !ctx.messageSent && !ctx.escalated && !ctx.derived) {
+      await this.fallbackToHuman(lead, agent.id);
+      ctx.escalated = true;
+      ctx.messageSent = true;
+    }
+
+    await this.scheduleMemoryRefresh(leadId);
+
     this.logger.log(
       `Turno completado (leadId=${leadId} seguimiento=${followUp} ` +
         `enviado=${ctx.messageSent} escalado=${ctx.escalated})`,
@@ -202,6 +264,36 @@ export class AgentRunner {
   }
 
   // ─────────────────────── privados ───────────────────────
+
+  /**
+   * Encola el refresco del resumen del lead cuando ya se acumularon bastantes
+   * mensajes nuevos. Va a una cola aparte y no dentro del turno: es otra
+   * llamada al modelo, y el cliente no tiene por qué esperarla. El `jobId`
+   * determinista evita encolar dos refrescos del mismo lead a la vez.
+   *
+   * Nunca hace fallar el turno: la memoria es una mejora, la respuesta no.
+   */
+  private async scheduleMemoryRefresh(leadId: string): Promise<void> {
+    try {
+      if (!(await this.memory.needsRefresh(leadId))) {
+        return;
+      }
+      await this.memoryQueue.add(
+        'refresh',
+        {
+          companyId: TenantContext.requireCompanyId(),
+          leadId,
+          correlationId: TenantContext.get()?.correlationId,
+        },
+        { jobId: `memory-${leadId}`, removeOnComplete: true },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `No se pudo programar el refresco de memoria (leadId=${leadId}): ` +
+          `${(error as Error).message}`,
+      );
+    }
+  }
 
   private async executeTool(
     tools: ReturnType<ToolRegistry['forAgent']>,
@@ -226,6 +318,36 @@ export class AgentRunner {
         isError: true,
       };
     }
+  }
+
+  /**
+   * Escala a humano y avisa al cliente cuando el modelo terminó el turno sin
+   * usar ninguna herramienta (respuesta en texto suelto, que nunca le llega
+   * al cliente). Evita el silencio total: mismo mensaje de respaldo que la
+   * degradación sin LLM, pero registrado con motivo distinto.
+   */
+  private async fallbackToHuman(lead: Lead, agentId: string): Promise<void> {
+    await this.leads.escalateToHuman(lead.id);
+    await this.interactions.register({
+      leadId: lead.id,
+      channel: Channel.system,
+      direction: Direction.outbound,
+      content:
+        'El agente terminó el turno sin responder al cliente (respuesta ' +
+        'sin herramienta). Escalado automático a humano.',
+      agentId,
+    });
+    if (lead.phone) {
+      await this.whatsapp.send(lead.phone, FALLBACK_ESCALATION_MESSAGE);
+      await this.interactions.register({
+        leadId: lead.id,
+        channel: Channel.whatsapp,
+        direction: Direction.outbound,
+        content: FALLBACK_ESCALATION_MESSAGE,
+        agentId,
+      });
+    }
+    this.logger.warn(`Lead ${lead.id} escalado: turno terminó sin respuesta`);
   }
 
   /** Escala a humano y avisa al cliente cuando el agente no puede operar. */

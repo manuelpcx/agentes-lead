@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { KnowledgeGapStatus } from '@prisma/client';
+import { ComplianceIssueStatus, KnowledgeGapStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AnthropicService } from '../llm/anthropic.service';
 import { PromptVersionsService } from './prompt-versions.service';
 
-const PLAYBOOK_SYSTEM = `Eres un experto en prompts de agentes de ventas por chat. Recibes el system prompt actual de un agente y señales de sus conversaciones (vacíos y objeciones recurrentes). Propón una versión mejorada del system prompt que conserve las reglas de seguridad (nunca inventar precios/datos, consultar siempre por herramienta) y aborde mejor esas objeciones. Devuelve SOLO el nuevo system prompt completo, sin explicaciones ni markdown.`;
+const PLAYBOOK_SYSTEM = `Eres un experto en prompts de agentes conversacionales (ventas o cobranza). Recibes el system prompt actual de un agente y señales de sus conversaciones reales: vacíos de conocimiento (preguntas que no supo responder) y fallas de cumplimiento (momentos donde no respetó sus propias reglas, con evidencia). Propón una versión mejorada del system prompt que conserve las reglas de seguridad (nunca inventar precios/datos, consultar siempre por herramienta) y corrija esas fallas de cumplimiento de forma explícita y accionable. Devuelve SOLO el nuevo system prompt completo, sin explicaciones ni markdown.`;
 
 /**
  * Análisis de playbook (Fase 6): propone ajustes al system prompt como una
@@ -38,11 +38,29 @@ export class PlaybookService {
       take: 10,
       select: { question: true, frequency: true },
     });
-    const signal =
+    const gapsSignal =
       gaps.map((g) => `- (${g.frequency}x) ${g.question}`).join('\n') ||
       '(sin vacíos recurrentes)';
 
-    const user = `PROMPT ACTUAL:\n${base}\n\nSEÑALES (vacíos/objeciones recurrentes):\n${signal}`;
+    const issues = await this.prisma.db.complianceIssue.findMany({
+      where: { agentId, status: ComplianceIssueStatus.APROBADO },
+      orderBy: { frequency: 'desc' },
+      take: 10,
+      select: { issue: true, evidence: true, frequency: true },
+    });
+    const complianceSignal =
+      issues
+        .map(
+          (i) =>
+            `- (${i.frequency}x) ${i.issue}` +
+            (i.evidence ? ` — evidencia: "${i.evidence}"` : ''),
+        )
+        .join('\n') || '(sin fallas de cumplimiento confirmadas)';
+
+    const user =
+      `PROMPT ACTUAL:\n${base}\n\n` +
+      `VACÍOS DE CONOCIMIENTO RECURRENTES:\n${gapsSignal}\n\n` +
+      `FALLAS DE CUMPLIMIENTO CONFIRMADAS (el agente no respetó sus propias reglas):\n${complianceSignal}`;
 
     try {
       const proposal = await this.anthropic.complete(PLAYBOOK_SYSTEM, user);

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import { ApiKeysCard } from '../components/ApiKeysCard';
+import { WebhookSetup, type WebhookInfo } from '../components/WebhookSetup';
 import {
   Badge,
   Button,
@@ -12,18 +15,21 @@ import {
 
 type Channel = 'whatsapp' | 'email' | 'voice' | 'crm';
 
+/** Canales que reciben webhooks del proveedor (y muestran cómo conectarlos). */
+const WEBHOOK_CHANNELS: Channel[] = ['whatsapp', 'voice'];
+
 interface FieldDef {
   key: string;
-  label: string;
+  /** Ruta i18n a `integrations.schemas.<channel>.fields.<key>`. */
+  labelKey: string;
   ph?: string;
 }
 
 interface Schema {
   channel: Channel;
-  label: string;
-  hint: string;
+  /** Prefijo i18n: `integrations.schemas.<channel>`. */
+  i18nKey: string;
   providers: { value: string; label: string }[];
-  secretLabel: string;
   fields: Record<string, FieldDef[]>;
   /**
    * Proveedores que firman sus webhooks con un secreto DISTINTO de la API key
@@ -31,97 +37,77 @@ interface Schema {
    * está en esta lista, se muestra un campo extra para pegarlo.
    */
   webhookSecretProviders?: string[];
-  webhookSecretLabel?: string;
-  webhookSecretHint?: string;
 }
 
 const SCHEMAS: Schema[] = [
   {
     channel: 'whatsapp',
-    label: 'WhatsApp',
-    hint: 'Tu cuenta de YCloud (o Meta) y tu número. Necesario para enviar/recibir WhatsApp y crear plantillas.',
+    i18nKey: 'whatsapp',
     providers: [
       { value: 'ycloud', label: 'YCloud' },
       { value: 'meta', label: 'Meta Cloud API' },
     ],
-    secretLabel: 'API Key / Token',
     fields: {
       ycloud: [
-        { key: 'from', label: 'Número de negocio (E.164)', ph: '+56911111111' },
-        { key: 'wabaId', label: 'WABA ID (para plantillas)' },
+        { key: 'from', labelKey: 'from', ph: '+56911111111' },
+        { key: 'wabaId', labelKey: 'wabaId' },
       ],
-      meta: [{ key: 'phoneNumberId', label: 'Phone Number ID' }],
+      meta: [{ key: 'phoneNumberId', labelKey: 'phoneNumberId' }],
     },
-    webhookSecretProviders: ['ycloud'],
-    webhookSecretLabel: 'Secreto de firma del webhook',
-    webhookSecretHint:
-      'Distinto de la API Key. Créalo en YCloud al configurar el endpoint de ' +
-      'webhook (Webhook Endpoints → Create) y pega el "secret" que te den. ' +
-      'Sin esto, los mensajes entrantes se aceptan sin verificar su firma.',
+    webhookSecretProviders: ['ycloud', 'meta'],
   },
   {
     channel: 'email',
-    label: 'Correo',
-    hint: 'Tu cuenta de Resend (o SMTP) para enviar correos.',
+    i18nKey: 'email',
     providers: [
       { value: 'resend', label: 'Resend' },
       { value: 'smtp', label: 'SMTP' },
     ],
-    secretLabel: 'API Key / Contraseña',
     fields: {
       resend: [
-        { key: 'from', label: 'Remitente', ph: 'Tu Empresa <no-reply@tu.cl>' },
+        { key: 'from', labelKey: 'from', ph: 'Tu Empresa <no-reply@tu.cl>' },
       ],
       smtp: [
-        { key: 'host', label: 'Host' },
-        { key: 'port', label: 'Puerto', ph: '587' },
-        { key: 'user', label: 'Usuario' },
-        { key: 'from', label: 'Remitente' },
+        { key: 'host', labelKey: 'host' },
+        { key: 'port', labelKey: 'port', ph: '587' },
+        { key: 'user', labelKey: 'user' },
+        { key: 'from', labelKey: 'from' },
       ],
     },
   },
   {
     channel: 'voice',
-    label: 'Voz (llamadas)',
-    hint: 'Tu cuenta de Retell (o Vapi) y tu número para las llamadas.',
+    i18nKey: 'voice',
     providers: [
       { value: 'retell', label: 'Retell' },
       { value: 'vapi', label: 'Vapi' },
     ],
-    secretLabel: 'API Key',
     fields: {
       retell: [
-        { key: 'fromNumber', label: 'Número (E.164)', ph: '+56911111111' },
-        { key: 'agentId', label: 'Agent ID de Retell' },
+        { key: 'fromNumber', labelKey: 'fromNumber', ph: '+56911111111' },
+        { key: 'agentId', labelKey: 'agentId' },
       ],
       vapi: [
-        { key: 'phoneNumberId', label: 'Phone Number ID' },
-        { key: 'assistantId', label: 'Assistant ID' },
+        { key: 'phoneNumberId', labelKey: 'phoneNumberId' },
+        { key: 'assistantId', labelKey: 'assistantId' },
       ],
     },
+    webhookSecretProviders: ['vapi'],
   },
   {
     channel: 'crm',
-    label: 'CRM',
-    hint:
-      'Conecta tu CRM (HubSpot, Pipedrive, Salesforce, el que sea) vía un webhook ' +
-      '— normalmente el disparador de un flujo de n8n/Zapier que mapea el evento a ' +
-      'tu CRM. El agente avisa cambios de estado, citas agendadas y promesas de pago; ' +
-      'opcionalmente, puede consultarle datos en vivo durante la conversación.',
-    providers: [
-      { value: 'webhook', label: 'Webhook (n8n / Zapier / URL propia)' },
-    ],
-    secretLabel: 'Secreto de firma (lo defines tú)',
+    i18nKey: 'crm',
+    providers: [{ value: 'webhook', label: '' }],
     fields: {
       webhook: [
         {
           key: 'url',
-          label: 'URL de eventos (salientes)',
+          labelKey: 'url',
           ph: 'https://tu-n8n.cl/webhook/crm-eventos',
         },
         {
           key: 'queryUrl',
-          label: 'URL de consulta en vivo (opcional)',
+          labelKey: 'queryUrl',
           ph: 'https://tu-n8n.cl/webhook/crm-consulta',
         },
       ],
@@ -141,12 +127,21 @@ interface Status {
 function ChannelCard({
   schema,
   status,
+  webhooks,
+  webhooksFailed,
+  onRetryWebhooks,
   onSaved,
 }: {
   schema: Schema;
   status?: Status;
+  /** URLs de webhook de este backend (null mientras cargan o si no aplican). */
+  webhooks: WebhookInfo | null;
+  webhooksFailed: boolean;
+  onRetryWebhooks: () => void;
   onSaved: () => void;
 }) {
+  const { t } = useTranslation();
+  const s = `integrations.schemas.${schema.i18nKey}`;
   const [provider, setProvider] = useState(
     status?.provider || schema.providers[0].value,
   );
@@ -174,6 +169,8 @@ function ChannelCard({
   }, [status]);
 
   const fields = schema.fields[provider] ?? [];
+  const providerLabel =
+    schema.providers.find((p) => p.value === provider)?.label ?? provider;
 
   const save = async () => {
     setMsg(null);
@@ -188,11 +185,11 @@ function ChannelCard({
       });
       setSecret('');
       setWebhookSecret('');
-      setMsg('Guardado.');
+      setMsg(t('integrations.saved'));
       setTestResult(null);
       onSaved();
     } catch {
-      setMsg('No se pudo guardar.');
+      setMsg(t('integrations.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -205,7 +202,7 @@ function ChannelCard({
       const r = await api.post(`/panel/integrations/${schema.channel}/test`);
       setTestResult(r.data);
     } catch {
-      setTestResult({ ok: false, message: 'No se pudo probar la conexión.' });
+      setTestResult({ ok: false, message: t('integrations.testFailed') });
     } finally {
       setTesting(false);
     }
@@ -214,28 +211,49 @@ function ChannelCard({
   return (
     <Card className="p-6">
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800">{schema.label}</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{t(`${s}.label`)}</h3>
         {status?.configured ? (
-          <Badge tone="green">Configurado</Badge>
+          <Badge tone="green">{t('integrations.configured')}</Badge>
         ) : (
-          <Badge tone="slate">Sin configurar</Badge>
+          <Badge tone="slate">{t('integrations.notConfigured')}</Badge>
         )}
       </div>
-      <p className="mb-4 text-xs text-slate-500">{schema.hint}</p>
+      <p className="mb-4 text-xs text-slate-500">{t(`${s}.hint`)}</p>
 
       <div className="space-y-4">
-        <Field label="Proveedor">
+        <Field label={t('integrations.providerLabel')}>
           <Select value={provider} onChange={(e) => setProvider(e.target.value)}>
             {schema.providers.map((p) => (
               <option key={p.value} value={p.value}>
-                {p.label}
+                {p.label || t(`${s}.providerWebhook`)}
               </option>
             ))}
           </Select>
         </Field>
 
+        {webhooks && (
+          <WebhookSetup
+            channel={schema.channel}
+            provider={provider}
+            providerLabel={providerLabel}
+            info={webhooks}
+          />
+        )}
+        {webhooksFailed && WEBHOOK_CHANNELS.includes(schema.channel) && (
+          <p className="text-xs text-rose-600">
+            {t('integrations.webhook.loadFailed')}{' '}
+            <button
+              type="button"
+              onClick={onRetryWebhooks}
+              className="font-medium underline"
+            >
+              {t('common.retry')}
+            </button>
+          </p>
+        )}
+
         {fields.map((f) => (
-          <Field key={f.key} label={f.label}>
+          <Field key={f.key} label={t(`${s}.fields.${f.labelKey}`)}>
             <Input
               value={config[f.key] ?? ''}
               onChange={(e) =>
@@ -248,11 +266,11 @@ function ChannelCard({
         ))}
 
         <Field
-          label={schema.secretLabel}
+          label={t(`${s}.secretLabel`)}
           hint={
             status?.configured
-              ? 'Ya hay un secreto guardado. Escribe uno nuevo solo si quieres reemplazarlo.'
-              : 'Se guarda cifrado; nunca se muestra de vuelta.'
+              ? t('integrations.secretHintExisting')
+              : t('integrations.secretHintNew')
           }
         >
           <Input
@@ -267,14 +285,14 @@ function ChannelCard({
 
         {schema.webhookSecretProviders?.includes(provider) && (
           <Field
-            label={schema.webhookSecretLabel ?? 'Secreto de firma del webhook'}
-            hint={schema.webhookSecretHint}
+            label={t(`${s}.webhookSecretLabel`)}
+            hint={t(`${s}.webhookSecretHint`)}
           >
             <div className="mb-2 flex items-center gap-2">
               {status?.webhookSecretConfigured ? (
-                <Badge tone="green">Firma verificada</Badge>
+                <Badge tone="green">{t('integrations.signatureVerified')}</Badge>
               ) : (
-                <Badge tone="amber">Sin verificar</Badge>
+                <Badge tone="amber">{t('integrations.signatureUnverified')}</Badge>
               )}
             </div>
             <Input
@@ -305,19 +323,19 @@ function ChannelCard({
         )}
         <div className="flex gap-2">
           <Button onClick={save} disabled={saving}>
-            {saving ? 'Guardando…' : 'Guardar'}
+            {saving ? t('integrations.saving') : t('integrations.save')}
           </Button>
           <Button
             variant="secondary"
             onClick={test}
             disabled={testing || !status?.configured}
           >
-            {testing ? 'Probando…' : 'Probar conexión'}
+            {testing ? t('integrations.testing') : t('integrations.testConnection')}
           </Button>
         </div>
         {!status?.configured && (
           <p className="text-xs text-slate-400">
-            Guarda las credenciales para poder probar la conexión.
+            {t('integrations.needCredentialsHint')}
           </p>
         )}
       </div>
@@ -326,7 +344,10 @@ function ChannelCard({
 }
 
 export function IntegrationsPage() {
+  const { t } = useTranslation();
   const [statuses, setStatuses] = useState<Status[]>([]);
+  const [webhooks, setWebhooks] = useState<WebhookInfo | null>(null);
+  const [webhooksFailed, setWebhooksFailed] = useState(false);
 
   const load = () => {
     api
@@ -335,24 +356,41 @@ export function IntegrationsPage() {
       .catch(() => setStatuses([]));
   };
   useEffect(load, []);
+  // Las URLs no cambian al guardar: se piden una vez.
+  const loadWebhooks = () => {
+    setWebhooksFailed(false);
+    api
+      .get<WebhookInfo>('/panel/integrations/webhooks')
+      .then((r) => setWebhooks(r.data))
+      .catch((e: { response?: { status?: number } }) => {
+        // 403: solo el dueño configura integraciones; los demás no ven la guía.
+        setWebhooksFailed(e.response?.status !== 403);
+      });
+  };
+  useEffect(loadWebhooks, []);
 
   const byChannel = (c: Channel) => statuses.find((s) => s.channel === c);
 
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
-      <PageHeader
-        title="Integraciones"
-        subtitle="Conecta tus propias cuentas de WhatsApp, correo y voz. Los secretos se guardan cifrados y nunca se muestran."
-      />
+      <PageHeader title={t('integrations.title')} subtitle={t('integrations.subtitle')} />
       <div className="grid gap-6 md:grid-cols-2">
         {SCHEMAS.map((s) => (
           <ChannelCard
             key={s.channel}
             schema={s}
             status={byChannel(s.channel)}
+            webhooks={webhooks}
+            webhooksFailed={webhooksFailed}
+            onRetryWebhooks={loadWebhooks}
             onSaved={load}
           />
         ))}
+      </div>
+
+      {/* Acceso por llave de API: lo usa el servidor MCP (ver `mcp/`). */}
+      <div className="mt-6">
+        <ApiKeysCard />
       </div>
     </div>
   );

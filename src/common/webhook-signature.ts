@@ -81,3 +81,96 @@ export function verifyYCloudSignature(
     .digest('hex');
   return safeEquals(sig, expected);
 }
+
+/**
+ * Verifica la firma de un webhook de Meta (WhatsApp Cloud API):
+ * header `X-Hub-Signature-256` = "sha256={hmac_sha256_hex}" sobre el cuerpo
+ * crudo, con el **App Secret** de la app de Meta como clave (no el token de
+ * acceso). Doc: https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verification-requests
+ */
+export function verifyMetaSignature(
+  rawBody: Buffer,
+  header: string | undefined,
+  appSecret: string,
+): boolean {
+  if (!header) {
+    return false;
+  }
+  const match = /^sha256=([0-9a-f]+)$/i.exec(header.trim());
+  if (!match) {
+    return false;
+  }
+  const expected = createHmac('sha256', appSecret)
+    .update(rawBody)
+    .digest('hex');
+  return safeEquals(match[1].toLowerCase(), expected);
+}
+
+/**
+ * Verifica un secreto compartido enviado tal cual en un header (Vapi manda
+ * el "Server URL Secret" en `x-vapi-secret`). Comparación en tiempo constante.
+ */
+export function verifySharedSecret(
+  header: string | undefined,
+  secret: string,
+): boolean {
+  if (!header || !secret) {
+    return false;
+  }
+  return safeEquals(header.trim(), secret);
+}
+
+/**
+ * Firma de entrada **v1** (webhooks del cliente hacia nosotros, esquema
+ * original): HMAC-SHA256 hex del cuerpo crudo. Sin timestamp, una petición
+ * capturada sirve para siempre. Se mantiene por compatibilidad mientras
+ * `WEBHOOK_REQUIRE_TIMESTAMP` sea false.
+ */
+export function verifyCompanySignatureV1(
+  rawBody: Buffer,
+  signature: string,
+  secret: string,
+): boolean {
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+  return safeEquals(signature.trim().toLowerCase(), expected);
+}
+
+/** Firma de entrada **v2**: HMAC-SHA256 hex de `"<timestampMs>." + cuerpo`. */
+export function signCompanyPayload(
+  secret: string,
+  timestampMs: string | number,
+  rawBody: Buffer | string,
+): string {
+  return createHmac('sha256', secret)
+    .update(`${timestampMs}.`)
+    .update(rawBody)
+    .digest('hex');
+}
+
+/**
+ * Verifica la firma v2 y que `X-Timestamp` (ms Unix) esté dentro de ±5 min.
+ * Como el timestamp entra en la firma, no se puede cambiar sin invalidarla:
+ * una petición capturada deja de servir cuando vence la ventana.
+ */
+export function verifyCompanySignatureV2(
+  rawBody: Buffer,
+  signature: string,
+  timestamp: string,
+  secret: string,
+): boolean {
+  const ts = timestamp.trim();
+  if (!/^\d{1,16}$/.test(ts)) {
+    return false;
+  }
+  const tsMs = Number(ts);
+  if (
+    !Number.isFinite(tsMs) ||
+    Math.abs(Date.now() - tsMs) > MAX_CLOCK_SKEW_MS
+  ) {
+    return false;
+  }
+  return safeEquals(
+    signature.trim().toLowerCase(),
+    signCompanyPayload(secret, ts, rawBody),
+  );
+}

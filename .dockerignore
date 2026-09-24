@@ -19,7 +19,7 @@ frontend
 .idea
 .DS_Store
 
-# Docs / infra local.
-docs
+# Infra local. `docs/` SI entra: el asistente de ayuda la lee en runtime
+# (ver src/help/help.service.ts). Sin ella responde sin documentacion.
 docker-compose.yml
 uploads

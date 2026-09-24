@@ -3,11 +3,13 @@ import { CredentialsService } from '../integrations/credentials.service';
 import { TemplateCategory } from './dto/create-template.dto';
 
 /** Mockea CredentialsService.get('whatsapp') con (o sin) cuenta de YCloud. */
-function build(cred: {
-  provider?: string;
-  secret?: string;
-  wabaId?: string;
-} | null) {
+function build(
+  cred: {
+    provider?: string;
+    secret?: string;
+    wabaId?: string;
+  } | null,
+) {
   const credentials = {
     get: jest.fn().mockResolvedValue(
       cred

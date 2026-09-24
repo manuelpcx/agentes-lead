@@ -9,6 +9,7 @@ import {
   QUEUE_CRM_EVENTS,
   QUEUE_LEAD_FOLLOWUP,
   QUEUE_LEAD_INGESTION,
+  QUEUE_LEAD_MEMORY,
 } from './queue.constants';
 
 /**
@@ -38,6 +39,7 @@ import {
     BullModule.registerQueue({ name: QUEUE_AGENT_TURN }),
     BullModule.registerQueue({ name: QUEUE_LEAD_FOLLOWUP }),
     BullModule.registerQueue({ name: QUEUE_CRM_EVENTS }),
+    BullModule.registerQueue({ name: QUEUE_LEAD_MEMORY }),
   ],
   exports: [BullModule],
 })

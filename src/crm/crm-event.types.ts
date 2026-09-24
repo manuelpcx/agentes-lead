@@ -3,6 +3,8 @@ export type CrmEventType =
   | 'lead.status_changed'
   | 'lead.promise_to_pay'
   | 'lead.appointment_scheduled'
+  | 'lead.appointment_updated'
+  | 'lead.qualified'
   | 'test.ping';
 
 /** Datos que viajan en la cola para entregar un evento (job de BullMQ). */

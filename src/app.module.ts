@@ -6,12 +6,14 @@ import { validateEnv, EnvVars } from './common/config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { CommonModule } from './common/common.module';
+import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { TenantContext } from './common/tenant/tenant-context';
 import { TenantContextMiddleware } from './common/tenant/tenant-context.middleware';
 import { QueueModule } from './queue/queue.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { LlmModule } from './llm/llm.module';
 import { PromptsModule } from './prompts/prompts.module';
+import { MemoryModule } from './memory/memory.module';
 import { CompaniesModule } from './companies/companies.module';
 import { AgentsModule } from './agents/agents.module';
 import { InteractionsModule } from './interactions/interactions.module';
@@ -28,10 +30,15 @@ import { IntegrationsModule } from './integrations/integrations.module';
 import { CrmEventsModule } from './crm/crm-events.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { ImprovementModule } from './improvement/improvement.module';
+import { HelpModule } from './help/help.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { PanelModule } from './panel/panel.module';
 import { PanelAdminModule } from './panel-admin/panel-admin.module';
+import { PlatformModule } from './platform/platform.module';
+import { ImportModule } from './import/import.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+import { ApiModule } from './api/api.module';
 import { HealthModule } from './health/health.module';
 
 @Module({
@@ -51,6 +58,20 @@ import { HealthModule } from './health/health.module';
       useFactory: (config: ConfigService<EnvVars, true>) => ({
         pinoHttp: {
           level: config.get('LOG_LEVEL'),
+          // pino-http serializa los headers de cada request: sin esto, los JWT
+          // del panel, las llaves de API y las firmas HMAC quedarían en los
+          // logs del PaaS en claro.
+          redact: {
+            paths: [
+              'req.headers.authorization',
+              'req.headers.cookie',
+              'req.headers["x-api-key"]',
+              'req.headers["x-signature"]',
+              'req.headers["x-retell-signature"]',
+              'req.headers["ycloud-signature"]',
+            ],
+            censor: '[redactado]',
+          },
           transport:
             config.get('NODE_ENV') === 'development'
               ? { target: 'pino-pretty', options: { singleLine: true } }
@@ -76,10 +97,13 @@ import { HealthModule } from './health/health.module';
     PrismaModule,
     CryptoModule,
     CommonModule,
+    // Limitación de tasa global (solo actúa en rutas con @RateLimit).
+    RateLimitModule,
     QueueModule,
     EmbeddingsModule,
     LlmModule,
     PromptsModule,
+    MemoryModule,
     EmailModule,
     VoiceModule,
     IntegrationsModule,
@@ -108,12 +132,19 @@ import { HealthModule } from './health/health.module';
 
     // Fase 6: mejora continua (con aprobación humana).
     ImprovementModule,
+    HelpModule,
 
     // Fase 7A: panel mínimo (auth + API del panel).
     AuditModule,
     AuthModule,
     PanelModule,
     PanelAdminModule,
+    PlatformModule,
+    ImportModule,
+
+    // Acceso de integraciones sin usuario humano (servidor MCP).
+    ApiKeysModule,
+    ApiModule,
 
     HealthModule,
   ],

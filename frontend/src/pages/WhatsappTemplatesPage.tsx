@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import {
   Badge,
@@ -41,7 +42,10 @@ function statusTone(status: string): 'green' | 'amber' | 'rose' | 'slate' {
   return 'slate';
 }
 
+const VAR_EXAMPLE = { v1: '{{1}}', v2: '{{2}}' };
+
 export function WhatsappTemplatesPage() {
+  const { t } = useTranslation();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState('');
@@ -86,7 +90,7 @@ export function WhatsappTemplatesPage() {
         examples: examples.map((x) => x.trim()),
         footer: footer.trim() || undefined,
       });
-      setMsg('Plantilla enviada a aprobación de Meta. Aparecerá como PENDING.');
+      setMsg(t('templates.successMsg'));
       setName('');
       setBody('');
       setExamples([]);
@@ -95,7 +99,7 @@ export function WhatsappTemplatesPage() {
     } catch (err) {
       const detail =
         (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? 'No se pudo crear la plantilla.';
+          ?.message ?? t('templates.errorMsg');
       setMsg(Array.isArray(detail) ? detail.join(' ') : String(detail));
     } finally {
       setSaving(false);
@@ -104,22 +108,16 @@ export function WhatsappTemplatesPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
-      <PageHeader
-        title="Plantillas de WhatsApp"
-        subtitle="Crea plantillas y envíalas a aprobación de Meta. Se usan para contactar fuera de la ventana de 24h."
-      />
+      <PageHeader title={t('templates.title')} subtitle={t('templates.subtitle')} />
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Crear */}
         <Card className="p-6">
           <h3 className="mb-4 text-sm font-semibold text-slate-800">
-            Nueva plantilla
+            {t('templates.newTemplateTitle')}
           </h3>
           <form onSubmit={submit} className="space-y-4">
-            <Field
-              label="Nombre"
-              hint="Solo minúsculas, números y guion bajo. Ej: recordatorio_pago."
-            >
+            <Field label={t('templates.nameLabel')} hint={t('templates.nameHint')}>
               <Input
                 value={name}
                 onChange={(e) =>
@@ -131,45 +129,47 @@ export function WhatsappTemplatesPage() {
             </Field>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Categoría" hint="Re-enganche/promo = Marketing.">
+              <Field label={t('templates.categoryLabel')} hint={t('templates.categoryHint')}>
                 <Select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                 >
-                  <option value="MARKETING">Marketing</option>
-                  <option value="UTILITY">Utility</option>
-                  <option value="AUTHENTICATION">Authentication</option>
+                  <option value="MARKETING">{t('templates.categoryMarketing')}</option>
+                  <option value="UTILITY">{t('templates.categoryUtility')}</option>
+                  <option value="AUTHENTICATION">
+                    {t('templates.categoryAuthentication')}
+                  </option>
                 </Select>
               </Field>
-              <Field label="Idioma">
+              <Field label={t('templates.languageLabel')}>
                 <Select
                   value={language}
                   onChange={(e) => setLanguage(e.target.value)}
                 >
-                  <option value="es_CL">Español (CHL)</option>
-                  <option value="es_419">Español (LatAm)</option>
-                  <option value="es_ES">Español (España)</option>
-                  <option value="es">Español</option>
+                  <option value="es_CL">{t('templates.languageChile')}</option>
+                  <option value="es_419">{t('templates.languageLatam')}</option>
+                  <option value="es_ES">{t('templates.languageSpain')}</option>
+                  <option value="es">{t('templates.languageGeneric')}</option>
                 </Select>
               </Field>
             </div>
 
             <Field
-              label="Cuerpo"
-              hint="Usa {{1}}, {{2}}, … para las variables. Ej: Hola {{1}}, te contactamos de {{2}}."
+              label={t('templates.bodyLabel')}
+              hint={t('templates.bodyHint', VAR_EXAMPLE)}
             >
               <Textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 className="h-28"
-                placeholder="Hola {{1}}, te contactamos de {{2}} por tu solicitud."
+                placeholder={t('templates.bodyPlaceholder', VAR_EXAMPLE)}
               />
             </Field>
 
             {nVars > 0 && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="mb-2 text-xs font-medium text-slate-600">
-                  Ejemplos (Meta los exige para revisar):
+                  {t('templates.examplesHint')}
                 </p>
                 <div className="space-y-2">
                   {examples.map((ex, i) => (
@@ -184,7 +184,11 @@ export function WhatsappTemplatesPage() {
                           next[i] = e.target.value;
                           setExamples(next);
                         }}
-                        placeholder={i === 0 ? 'Jesús' : 'Ejemplo'}
+                        placeholder={
+                          i === 0
+                            ? t('templates.examplePlaceholderFirst')
+                            : t('templates.examplePlaceholder')
+                        }
                       />
                     </div>
                   ))}
@@ -192,17 +196,17 @@ export function WhatsappTemplatesPage() {
               </div>
             )}
 
-            <Field label="Pie (opcional)" hint="Texto fijo al final, sin variables.">
+            <Field label={t('templates.footerLabel')} hint={t('templates.footerHint')}>
               <Input
                 value={footer}
                 onChange={(e) => setFooter(e.target.value)}
-                placeholder="Equipo de Cobranza"
+                placeholder={t('templates.footerPlaceholder')}
               />
             </Field>
 
             {msg && <p className="text-sm text-slate-600">{msg}</p>}
             <Button type="submit" disabled={saving}>
-              {saving ? 'Enviando…' : 'Crear y enviar a aprobación'}
+              {saving ? t('templates.submitting') : t('templates.submit')}
             </Button>
           </form>
         </Card>
@@ -211,52 +215,46 @@ export function WhatsappTemplatesPage() {
         <Card className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-slate-800">
-              Plantillas y estado
+              {t('templates.listTitle')}
             </h3>
             <Button variant="ghost" onClick={load}>
-              Actualizar
+              {t('templates.refresh')}
             </Button>
           </div>
 
           {loading ? (
-            <p className="text-sm text-slate-500">Cargando…</p>
+            <p className="text-sm text-slate-500">{t('templates.loadingList')}</p>
           ) : templates.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              Aún no hay plantillas (o falta configurar YCloud). Crea una a la
-              izquierda.
-            </p>
+            <p className="text-sm text-slate-500">{t('templates.emptyList')}</p>
           ) : (
             <div className="space-y-3">
-              {templates.map((t) => (
+              {templates.map((t2) => (
                 <div
-                  key={`${t.name}-${t.language}`}
+                  key={`${t2.name}-${t2.language}`}
                   className="rounded-lg border border-slate-200 p-3"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-xs text-slate-700">
-                      {t.name}
+                      {t2.name}
                     </span>
-                    <Badge tone={statusTone(t.status)}>{t.status}</Badge>
+                    <Badge tone={statusTone(t2.status)}>{t2.status}</Badge>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    {t.category} · {t.language}
+                    {t2.category} · {t2.language}
                   </p>
-                  {t.body && (
-                    <p className="mt-2 text-xs text-slate-600">{t.body}</p>
+                  {t2.body && (
+                    <p className="mt-2 text-xs text-slate-600">{t2.body}</p>
                   )}
-                  {t.reason && (
+                  {t2.reason && (
                     <p className="mt-2 text-xs text-rose-600">
-                      Rechazo: {t.reason}
+                      {t('templates.rejectionReason', { reason: t2.reason })}
                     </p>
                   )}
                 </div>
               ))}
             </div>
           )}
-          <p className="mt-4 text-xs text-slate-400">
-            La aprobación la decide Meta (suele tardar de minutos a ~24h). Usa
-            “Actualizar” para ver el estado.
-          </p>
+          <p className="mt-4 text-xs text-slate-400">{t('templates.approvalHint')}</p>
         </Card>
       </div>
     </div>

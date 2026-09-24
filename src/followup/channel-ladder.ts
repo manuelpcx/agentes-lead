@@ -98,21 +98,32 @@ export function buildFollowUpInstruction(params: {
   maxAttempts: number;
   primerContacto: boolean;
   source?: string | null;
+  /** Agente de cobranza: cada contacto proactivo es una gestión con tope legal. */
+  cobranza?: boolean;
 }): string {
-  const { channel, attempt, maxAttempts, primerContacto, source } = params;
+  const { channel, attempt, maxAttempts, primerContacto, source, cobranza } =
+    params;
   const m = CHANNEL_META[channel];
+  // Un segundo envío en el mismo turno sería otra gestión: el sistema lo
+  // bloquearía igual, pero es mejor que el agente ni lo intente.
+  const limiteLegal = cobranza
+    ? ` Límite legal de cobranza: haz solo ${m.accion} en este turno y no ` +
+      `contactes por otros canales.`
+    : '';
   if (primerContacto) {
     return (
       `[PRIMER CONTACTO · ${m.label}] Este lead (origen: ${source ?? 'desconocido'}) ` +
       `aún no ha conversado contigo. Preséntate de forma breve y cálida enviando ${m.accion} ` +
       `(usa la herramienta ${m.tool}) y ofrece ayuda para iniciar la conversación. No seas ` +
-      `invasivo. Respalda cualquier dato con tus herramientas.`
+      `invasivo. Respalda cualquier dato con tus herramientas.` +
+      limiteLegal
     );
   }
   return (
     `[SEGUIMIENTO ${attempt}/${maxAttempts} · ${m.label}] El cliente no ha respondido a tu ` +
     `último mensaje. Retoma el contacto enviando ${m.accion} breve (usa la herramienta ${m.tool}). ` +
     `Si ya no tiene sentido insistir, no envíes nada (el sistema lo cerrará más adelante). ` +
-    `Respalda cualquier dato con tus herramientas.`
+    `Respalda cualquier dato con tus herramientas.` +
+    limiteLegal
   );
 }

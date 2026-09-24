@@ -1,0 +1,16 @@
+{
+  "name": "agentes-lead-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Servidor MCP de agentes-lead: expone leads, agenda, agentes y métricas a un cliente MCP.",
+  "type": "module",
+  "bin": {
+    "agentes-lead-mcp": "./server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

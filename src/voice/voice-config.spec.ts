@@ -27,7 +27,9 @@ describe('parseVoiceConfig', () => {
   });
 
   it('ignora speed no numérico o no positivo', () => {
-    expect(parseVoiceConfig({ voice: { speed: 'rapido' } }).speed).toBeUndefined();
+    expect(
+      parseVoiceConfig({ voice: { speed: 'rapido' } }).speed,
+    ).toBeUndefined();
     expect(parseVoiceConfig({ voice: { speed: 0 } }).speed).toBeUndefined();
   });
 });

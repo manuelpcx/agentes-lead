@@ -1,9 +1,13 @@
-import { CredentialsService } from './credentials.service';
+import { CredentialsService, normalizeE164 } from './credentials.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CryptoService } from '../common/crypto/crypto.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 
-function build(existing: unknown) {
+function build(existing: unknown, channelsConfig: unknown = {}) {
+  const company = {
+    findUnique: jest.fn().mockResolvedValue({ channelsConfig }),
+    update: jest.fn().mockResolvedValue({}),
+  };
   const integration = {
     findFirst: jest.fn().mockResolvedValue(existing),
     findMany: jest.fn().mockResolvedValue(existing ? [existing] : []),
@@ -14,13 +18,18 @@ function build(existing: unknown) {
   // TenantContext); `upsert`/`status` siguen usando `db` (tenant-scoped).
   const prisma = {
     db: { integration },
-    raw: { integration },
+    raw: { integration, company },
   } as unknown as PrismaService;
   const crypto = {
     encrypt: jest.fn((s: string) => `enc(${s})`),
     decrypt: jest.fn((s: string) => s.replace(/^enc\(|\)$/g, '')),
   } as unknown as CryptoService;
-  return { svc: new CredentialsService(prisma, crypto), integration, crypto };
+  return {
+    svc: new CredentialsService(prisma, crypto),
+    integration,
+    crypto,
+    company,
+  };
 }
 
 function run<T>(fn: () => Promise<T>) {
@@ -130,5 +139,87 @@ describe('CredentialsService', () => {
     expect(list[0].configured).toBe(true);
     expect(list[0].webhookSecretConfigured).toBe(true);
     expect(JSON.stringify(list[0])).not.toContain('enc(');
+  });
+});
+
+/**
+ * La entrada de WhatsApp se enruta por `Company.channelsConfig.whatsapp`. Al
+ * guardar la integración se copia ahí el número, para que el cliente no tenga
+ * que repetirlo en Configuración (si faltaba, los mensajes se perdían).
+ */
+describe('CredentialsService — número de WhatsApp para enrutar la entrada', () => {
+  it('YCloud: copia el número de negocio normalizado, sin tocar lo demás', async () => {
+    const { svc, company } = build(null, {
+      voice: { voiceId: 'v1' },
+      whatsapp: { phoneNumber: '+56900000000', otra: 'x' },
+    });
+
+    await run(() =>
+      svc.upsert('whatsapp', {
+        provider: 'ycloud',
+        config: { from: '+56 9 1111 1111', wabaId: 'w1' },
+      }),
+    );
+
+    expect(company.update).toHaveBeenCalledWith({
+      where: { id: 'c1' },
+      data: {
+        channelsConfig: {
+          voice: { voiceId: 'v1' },
+          whatsapp: { phoneNumber: '+56911111111', otra: 'x' },
+        },
+      },
+    });
+  });
+
+  it('Meta: copia el Phone Number ID', async () => {
+    const { svc, company } = build(null);
+
+    await run(() =>
+      svc.upsert('whatsapp', {
+        provider: 'meta',
+        config: { phoneNumberId: ' 1234567890 ' },
+      }),
+    );
+
+    expect(company.update).toHaveBeenCalledWith({
+      where: { id: 'c1' },
+      data: { channelsConfig: { whatsapp: { phoneNumberId: '1234567890' } } },
+    });
+  });
+
+  it('un número que no es E.164 no pisa el que ya estaba', async () => {
+    const { svc, company } = build(null);
+
+    await run(() =>
+      svc.upsert('whatsapp', { provider: 'ycloud', config: { from: 'abc' } }),
+    );
+
+    expect(company.update).not.toHaveBeenCalled();
+  });
+
+  it('otros canales no tocan la configuración de WhatsApp', async () => {
+    const { svc, company } = build(null);
+
+    await run(() =>
+      svc.upsert('email', { provider: 'resend', config: { from: 'a@b.cl' } }),
+    );
+
+    expect(company.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('normalizeE164', () => {
+  it('acepta los formatos que escribe la gente', () => {
+    expect(normalizeE164('+56 9 1111 1111')).toBe('+56911111111');
+    expect(normalizeE164('56911111111')).toBe('+56911111111');
+    expect(normalizeE164('+56-9-(1111)-1111')).toBe('+56911111111');
+  });
+
+  it('rechaza lo que no es un número', () => {
+    expect(normalizeE164('')).toBeNull();
+    expect(normalizeE164('+569')).toBeNull();
+    expect(normalizeE164('llámame')).toBeNull();
+    expect(normalizeE164(undefined)).toBeNull();
   });
 });

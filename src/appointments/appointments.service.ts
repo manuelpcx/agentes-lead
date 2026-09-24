@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   Appointment,
@@ -30,6 +31,21 @@ export interface ScheduleInput {
   agentId?: string;
   createdBy?: string;
 }
+
+/** Campos editables de una cita ya creada. */
+export interface UpdateInput {
+  title?: string;
+  startAt?: Date;
+  endAt?: Date;
+  location?: string;
+  notes?: string;
+  status?: AppointmentStatus;
+}
+
+/** Cita con lo mínimo del lead para pintarla en el calendario. */
+export type AppointmentWithLead = Appointment & {
+  lead: { id: string; name: string | null; phone: string | null };
+};
 
 @Injectable()
 export class AppointmentsService {
@@ -138,5 +154,121 @@ export class AppointmentsService {
       where: { leadId },
       orderBy: { startAt: 'asc' },
     });
+  }
+
+  /**
+   * Citas que caen dentro del rango visible del calendario, con el nombre del
+   * lead para poder pintarlas sin una consulta por cita.
+   */
+  async listInRange(from: Date, to: Date): Promise<AppointmentWithLead[]> {
+    if (to <= from) {
+      throw new BadRequestException(
+        'El rango debe terminar después de empezar',
+      );
+    }
+    return this.prisma.db.appointment.findMany({
+      where: { startAt: { gte: from, lt: to } },
+      orderBy: { startAt: 'asc' },
+      include: {
+        lead: { select: { id: true, name: true, phone: true } },
+      },
+    });
+  }
+
+  /**
+   * Edita una cita: reagendar, cambiar datos o marcar estado
+   * (confirmada/cancelada/completada). Al mover el horario vuelve a verificar
+   * solapes, y avisa al CRM del cliente para que no se desincronice.
+   */
+  async update(
+    appointmentId: string,
+    patch: UpdateInput,
+    userId?: string,
+  ): Promise<Appointment> {
+    const current = await this.prisma.db.appointment.findFirst({
+      where: { id: appointmentId },
+    });
+    if (!current) {
+      throw new NotFoundException('Cita no encontrada');
+    }
+
+    const startAt = patch.startAt ?? current.startAt;
+    const endAt = patch.endAt ?? current.endAt;
+    const moved =
+      startAt.getTime() !== current.startAt.getTime() ||
+      endAt.getTime() !== current.endAt.getTime();
+
+    if (moved) {
+      if (endAt <= startAt) {
+        throw new BadRequestException(
+          'La hora de fin debe ser posterior al inicio',
+        );
+      }
+      const overlap = await this.prisma.db.appointment.findFirst({
+        where: {
+          id: { not: appointmentId },
+          status: { not: AppointmentStatus.CANCELADA },
+          startAt: { lt: endAt },
+          endAt: { gt: startAt },
+        },
+        select: { id: true, startAt: true },
+      });
+      if (overlap) {
+        throw new ConflictException(
+          `Ya existe una cita que se solapa con ese horario (${overlap.startAt.toISOString()})`,
+        );
+      }
+    }
+
+    const updated = await this.prisma.db.appointment.update({
+      where: { id: appointmentId },
+      data: {
+        title: patch.title,
+        startAt: patch.startAt,
+        endAt: patch.endAt,
+        location: patch.location,
+        notes: patch.notes,
+        status: patch.status,
+        // Reagendar invalida el recordatorio ya enviado: hay que volver a avisar.
+        ...(moved ? { reminderSentAt: null } : {}),
+      },
+    });
+
+    const changes: string[] = [];
+    if (moved) {
+      changes.push(`reagendada para ${updated.startAt.toISOString()}`);
+    }
+    if (patch.status && patch.status !== current.status) {
+      changes.push(`estado: ${patch.status.toLowerCase()}`);
+    }
+    if (changes.length > 0) {
+      await this.interactions.register({
+        leadId: current.leadId,
+        channel: Channel.system,
+        direction: Direction.outbound,
+        content: `Cita "${updated.title}" ${changes.join(' · ')}`,
+        agentId: null,
+        metadata: { appointmentId: updated.id, byUserId: userId ?? null },
+      });
+
+      const lead = await this.leads.getById(current.leadId);
+      await this.crmEvents.emit({
+        leadId: current.leadId,
+        externalId: lead.externalId,
+        event: 'lead.appointment_updated',
+        data: {
+          title: updated.title,
+          startAt: updated.startAt.toISOString(),
+          endAt: updated.endAt.toISOString(),
+          location: updated.location,
+          status: updated.status,
+        },
+      });
+    }
+
+    this.logger.log(
+      `Cita actualizada (appointmentId=${updated.id} status=${updated.status})`,
+    );
+    return updated;
   }
 }

@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { QUEUE_AGENT_TURN } from '../queue/queue.constants';
+import { QUEUE_AGENT_TURN, QUEUE_LEAD_MEMORY } from '../queue/queue.constants';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { LeadsModule } from '../leads/leads.module';
 import { InteractionsModule } from '../interactions/interactions.module';
@@ -21,10 +21,14 @@ import { IniciarLlamadaTool } from './tools/iniciar-llamada.tool';
 import { DerivarAAgenteTool } from './tools/derivar-a-agente.tool';
 import { RegistrarPromesaPagoTool } from './tools/registrar-promesa-pago.tool';
 import { ConsultarCrmTool } from './tools/consultar-crm.tool';
+import { CancelarSeguimientoTool } from './tools/cancelar-seguimiento.tool';
+import { CalificarLeadTool } from './tools/calificar-lead.tool';
+import { GuardarEnMemoriaTool } from './tools/guardar-en-memoria.tool';
 import { ToolRegistry } from './tools/tool-registry.service';
 import { ContextBuilder } from './context-builder.service';
 import { AgentRunner } from './agent-runner.service';
 import { AgentTurnProcessor } from './agent-turn.processor';
+import { TurnLockService } from './turn-lock.service';
 
 /**
  * El agente vivo (Fase 3): bucle de decisión contra Anthropic, herramientas,
@@ -34,6 +38,7 @@ import { AgentTurnProcessor } from './agent-turn.processor';
 @Module({
   imports: [
     BullModule.registerQueue({ name: QUEUE_AGENT_TURN }),
+    BullModule.registerQueue({ name: QUEUE_LEAD_MEMORY }),
     KnowledgeModule,
     LeadsModule,
     InteractionsModule,
@@ -55,6 +60,9 @@ import { AgentTurnProcessor } from './agent-turn.processor';
     DerivarAAgenteTool,
     RegistrarPromesaPagoTool,
     ConsultarCrmTool,
+    CancelarSeguimientoTool,
+    CalificarLeadTool,
+    GuardarEnMemoriaTool,
     {
       provide: AGENT_TOOLS,
       inject: [
@@ -69,12 +77,16 @@ import { AgentTurnProcessor } from './agent-turn.processor';
         DerivarAAgenteTool,
         RegistrarPromesaPagoTool,
         ConsultarCrmTool,
+        CancelarSeguimientoTool,
+        CalificarLeadTool,
+        GuardarEnMemoriaTool,
       ],
       useFactory: (...tools: AgentTool[]): AgentTool[] => tools,
     },
     ToolRegistry,
     ContextBuilder,
     AgentRunner,
+    TurnLockService,
     AgentTurnProcessor,
   ],
   exports: [AgentRunner],

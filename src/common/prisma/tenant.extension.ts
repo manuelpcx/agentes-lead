@@ -9,6 +9,8 @@ import { TenantContext } from '../tenant/tenant-context';
 export const TENANT_SCOPED_MODELS = new Set<string>([
   'Agent',
   'Lead',
+  'LeadNote',
+  'LeadMemory',
   'Interaction',
   'Conversation',
   'KnowledgeDocument',
@@ -21,6 +23,11 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'KnowledgeGap',
   'ExampleLibrary',
   'AgentMetric',
+  'ApiKey',
+  // Credenciales BYO por empresa. Sin esto, `findFirst({ where: { channel } })`
+  // devolvía la integración de CUALQUIER empresa y el `update` la pisaba.
+  'Integration',
+  'ComplianceIssue',
 ]);
 
 /** Operaciones de escritura donde el `companyId` va en `data`. */

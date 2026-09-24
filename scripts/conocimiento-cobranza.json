@@ -1,6 +1,10 @@
 {
-  "_instrucciones": "Base de conocimiento de COBRANZA. Reemplaza los valores REEMPLAZAR_* con los datos reales de la empresa. 'policies' se vuelven datos consultables (consultarDato) por su 'key'; 'faqs' y 'objections' se indexan para búsqueda semántica (buscarConocimiento). Borra este campo _instrucciones antes de cargar si quieres (el backend ignora campos extra igualmente).",
-
+  "_instrucciones": "Base de conocimiento de COBRANZA lista para cargar, sin valores por completar. Tiene dos bloques de 'policies'. Las que empiezan con 'ley_' son normas chilenas vigentes que aplican a toda empresa de cobranza: están verificadas contra el texto oficial (ver _fuentes) y no se tocan. El resto es la operación de la empresa (cuotas, descuentos, plazos, horarios): son valores concretos y coherentes entre sí, pensados para una demo; para un cliente real deben ser SUS condiciones, porque el agente se las dirá a deudores reales como un hecho. 'policies' se vuelven datos consultables (consultarDato, clave 'politica_<key>'); 'faqs' y 'objections' se indexan para búsqueda (buscarConocimiento). Toda cifra de las políticas se repite en las FAQ a propósito: es la vía por la que el agente las encuentra más fácil, y así quedan respaldadas para el guardrail.",
+  "_fuentes": [
+    "Ley 19.496, artículo 37 (gastos de cobranza extrajudicial, información obligatoria, frecuencia de contacto, prohibiciones), artículo 39 (tasa máxima convencional) y artículo 39 B (pago directo al acreedor): https://www.bcn.cl/leychile/navegar?idNorma=61438",
+    "Código de Procedimiento Civil, artículo 59 (días y horas hábiles), al que remite el artículo 37 de la Ley 19.496 para llamados y visitas: https://www.bcn.cl/leychile/navegar?idNorma=22740",
+    "Borrador de Reglamento sobre Procedimiento de Cobranza Extrajudicial, Ministerio de Economía (en consulta, decreto sin número): confirma que WhatsApp y la mensajería instantánea cuentan como gestión de cobranza. No es norma vigente; se usa solo como referencia. https://pac.economia.gob.cl/wp-content/uploads/2025/09/Reglamento-Cobranza-Extrajudicial.pdf"
+  ],
   "businessHours": {
     "days": {
       "mon": [{ "start": "09:00", "end": "19:00" }],
@@ -12,107 +16,175 @@
       "sun": []
     }
   },
-
-  "toneOfVoice": "Empático, respetuoso y resolutivo. El objetivo es ayudar a la persona a regularizar, no presionarla. Nunca amenazar, avergonzar ni presionar de forma abusiva. Facilitar el pago y ofrecer alternativas.",
-
+  "toneOfVoice": "Empático, respetuoso y resolutivo. El objetivo es ayudar a la persona a regularizar su deuda, no presionarla. Nunca amenazar, avergonzar, apurar ni insinuar consecuencias. Frases cortas, una idea por mensaje. Siempre ofrecer una salida concreta: el link de pago, un convenio o hablar con un ejecutivo. Si la persona está pasando un mal momento, reconocerlo antes de hablar de montos.",
   "policies": [
     {
+      "key": "ley_gastos_cobranza",
+      "description": "Por ley (artículo 37 de la Ley 19.496), los gastos de cobranza extrajudicial tienen un tope, calculado sobre el monto de la deuda vencida con una escala progresiva: 9% sobre la parte de la deuda de hasta 10 UF; 6% sobre la parte que exceda 10 UF y hasta 50 UF; 3% sobre la parte que exceda 50 UF. Solo se pueden cobrar después de los primeros 20 días de atraso. No se cobran sobre montos a los que ya se les aplicaron, no generan un interés superior al corriente y no se pueden capitalizar. Además, dentro de los primeros 15 días de cada vencimiento impago se debe hacer al menos una gestión gratuita para avisar de la mora; si no se hace, el máximo de gastos se reduce en 0,2 UF."
+    },
+    {
+      "key": "ley_horario_contacto",
+      "description": "Por ley (artículo 37 de la Ley 19.496, que remite al artículo 59 del Código de Procedimiento Civil), las llamadas telefónicas y las visitas de cobranza solo pueden hacerse en días hábiles, es decir, nunca en domingo ni festivo, y entre las 8:00 y las 20:00. Esta empresa aplica ese mismo horario a WhatsApp y correo."
+    },
+    {
+      "key": "ley_frecuencia_contacto",
+      "description": "Por ley (artículo 37 de la Ley 19.496), se puede hacer como máximo 1 llamada telefónica o visita de cobranza por semana. Por otros medios, como WhatsApp, mensajes de texto o correo electrónico, como máximo 2 gestiones por semana, con al menos 2 días de separación entre una y otra. Responder cuando la persona escribe no cuenta como una nueva gestión."
+    },
+    {
+      "key": "ley_prohibiciones",
+      "description": "Por ley (artículo 37 de la Ley 19.496), en la cobranza extrajudicial está prohibido: mencionar consecuencias de juicios que no se han iniciado; mencionar registros o bancos de datos comerciales, financieros o económicos; enviar documentos o mensajes que sean, parezcan o hagan referencia a un escrito o actuación judicial; comunicarle a terceros ajenos a la deuda que la persona está en mora; y cualquier conducta que afecte la privacidad del hogar, la convivencia de su familia o su situación laboral. Toda la información de la deuda es solo para el titular."
+    },
+    {
+      "key": "ley_informacion_obligatoria",
+      "description": "Por ley (artículo 37 de la Ley 19.496), al iniciar la cobranza se debe informar: quién cobra y por encargo de quién; el contrato, su fecha, la fecha de vencimiento o de mora y el monto adeudado; si se cobran intereses, las tasas aplicadas, el tipo de interés y el período; si hay gastos de cobranza, su monto, causa y origen; las formas de pago disponibles; el derecho a pedir toda esta información por escrito; y los medios de contacto. Si la persona no dice nada, pasados 15 días desde que se le entregó la información, la empresa debe enviársela por escrito. También hay que aclarar que la cobranza extrajudicial no es un procedimiento que persiga la ejecución de sus bienes."
+    },
+    {
+      "key": "ley_pago_directo_acreedor",
+      "description": "Por ley (artículo 39 B de la Ley 19.496), la persona siempre puede pagarle directamente al acreedor original el total de la deuda vencida o de las cuotas impagas, incluidos los gastos de cobranza que correspondan, aunque la deuda esté encargada a una empresa de cobranza."
+    },
+    {
+      "key": "ley_fin_cobranza_extrajudicial",
+      "description": "Por ley (artículo 37 de la Ley 19.496), la cobranza extrajudicial debe terminar de inmediato cuando la persona es notificada de una demanda de cobro o cuando se inicia un procedimiento concursal a su respecto. Si la persona dice que ya fue notificada, el agente no insiste y deriva a un ejecutivo."
+    },
+    {
+      "key": "ley_tasa_maxima",
+      "description": "Por ley (artículo 39 de la Ley 19.496, en relación con la Ley 18.010), ningún interés puede superar la tasa máxima convencional. Esa tasa la publica la Comisión para el Mercado Financiero y cambia periódicamente, así que el agente nunca cita un valor de memoria."
+    },
+    {
       "key": "medios_de_pago",
-      "description": "REEMPLAZAR: medios de pago disponibles. Ej: transferencia bancaria, link de pago en línea (Webpay/Flow/Khipu), pago en oficina."
+      "description": "Pago en línea con el link personal que se le envía a cada persona, con tarjeta de débito o crédito, disponible las 24 horas. También puede pagar directamente al acreedor original, que es su derecho por ley."
     },
     {
       "key": "datos_transferencia",
-      "description": "REEMPLAZAR: datos para transferencia. Banco, tipo de cuenta, número de cuenta, RUT, titular y correo para enviar el comprobante."
+      "description": "Por seguridad, esta empresa no envía números de cuenta por WhatsApp ni pide transferencias a cuentas personales. Los pagos se hacen solo con el link personal o directamente al acreedor original. Si alguien pide transferir a una cuenta personal o de otra empresa a nombre de esta cobranza, la persona no debe hacerlo y debe avisar por este mismo chat."
     },
     {
       "key": "convenio_cuotas",
-      "description": "REEMPLAZAR: condiciones de convenio. Ej: hasta 6 cuotas, con abono inicial mínimo de 30% del total. Fuera de esas condiciones, se deriva a un ejecutivo."
+      "description": "Se puede pagar en hasta 6 cuotas mensuales, sin interés adicional por el convenio, con un pie mínimo del 20% del total adeudado y una cuota mínima de $10.000. Convenios de 7 a 12 cuotas, o sin pie, no los aprueba el agente: los evalúa un ejecutivo."
     },
     {
       "key": "descuento_pronto_pago",
-      "description": "REEMPLAZAR: descuento por pago pronto, si existe. Ej: pagando el total dentro de 5 días, se condona el 50% de los intereses por mora. Si no hay descuento, indícalo explícitamente."
+      "description": "Si la persona paga el total en una sola cuota dentro de 5 días hábiles desde el primer contacto, se condona el 100% de los intereses por mora y de los gastos de cobranza: paga solo el capital adeudado. El descuento no aplica a convenios en cuotas."
     },
     {
       "key": "recargos_mora",
-      "description": "REEMPLAZAR: recargos o intereses por mora aplicables, si corresponde. Si no aplican, indícalo."
+      "description": "Los intereses por mora son los pactados en el contrato original y nunca superan la tasa máxima convencional. Los gastos de cobranza siguen la escala legal y solo se cobran desde el día 21 de atraso."
     },
     {
       "key": "comprobante_pago",
-      "description": "REEMPLAZAR: cómo enviar el comprobante de pago. Ej: responder por este mismo canal con la foto/PDF, o enviarlo a pagos@empresa.cl."
+      "description": "El pago con el link personal se registra solo, en menos de 1 hora hábil, y la cobranza se detiene. Si la persona pagó por otra vía, debe enviar una foto o PDF del comprobante por este mismo chat; se valida en un máximo de 2 días hábiles."
     },
     {
       "key": "proceso_reclamo",
-      "description": "REEMPLAZAR: qué hacer si la persona no reconoce la deuda o dice que ya pagó. Ej: se registra el reclamo y se deriva a un ejecutivo que revisa en 24-48h; pedir comprobante o antecedentes."
+      "description": "Si la persona no reconoce la deuda o dice que ya pagó, se suspende la cobranza de esa deuda mientras se revisa, se registra el reclamo y un ejecutivo lo responde en un máximo de 3 días hábiles. Se le pide el comprobante o los antecedentes que tenga."
     },
     {
-      "key": "horario_pagos",
-      "description": "REEMPLAZAR: horario de atención para gestionar pagos, convenios o dudas con una persona."
+      "key": "detalle_por_escrito",
+      "description": "La persona puede pedir el detalle de su deuda por escrito: capital, intereses con sus tasas, gastos de cobranza y cómo se calcularon, y el contrato de origen. Se le envía por correo en un máximo de 2 días hábiles. Es su derecho por ley."
+    },
+    {
+      "key": "horario_ejecutivos",
+      "description": "Los ejecutivos atienden de lunes a viernes, de 9:00 a 18:00. El link de pago funciona las 24 horas, todos los días."
     },
     {
       "key": "contacto_ejecutivo",
-      "description": "REEMPLAZAR: canal/correo/teléfono del área de cobranza para casos que requieren una persona."
+      "description": "Para hablar con una persona del equipo basta pedirlo en este mismo chat: el agente deriva la conversación a un ejecutivo, que la retoma en horario de atención."
     }
   ],
-
   "faqs": [
     {
       "question": "¿Cómo puedo pagar mi deuda?",
-      "answer": "REEMPLAZAR con los medios reales (ver medios_de_pago). Explica brevemente cada opción y facilita el link de pago si está disponible."
+      "answer": "Con el link personal que te enviamos: pagas con tarjeta de débito o crédito, a cualquier hora. También puedes pagarle directamente al acreedor original, que es tu derecho por ley. Por seguridad, nunca te pediremos transferir a una cuenta personal."
     },
     {
       "question": "¿Puedo pagar en cuotas o hacer un convenio?",
-      "answer": "REEMPLAZAR: sí, dentro de las condiciones de convenio_cuotas (ej. hasta N cuotas con abono inicial). Casos especiales se derivan a un ejecutivo."
+      "answer": "Sí. Puedes pagar en hasta 6 cuotas mensuales, sin interés adicional por el convenio, con un pie mínimo del 20% del total y una cuota mínima de $10.000. Si necesitas entre 7 y 12 cuotas, o no puedes dar pie, lo evalúa un ejecutivo."
     },
     {
       "question": "¿Tengo algún descuento si pago ahora?",
-      "answer": "REEMPLAZAR según descuento_pronto_pago. Si no hay descuento, dilo con transparencia y ofrece facilidades de convenio."
+      "answer": "Sí. Si pagas el total en una sola cuota dentro de 5 días hábiles desde que te contactamos, te condonamos el 100% de los intereses por mora y de los gastos de cobranza: pagas solo el capital. El descuento no aplica a convenios en cuotas."
+    },
+    {
+      "question": "¿Por qué me cobran gastos de cobranza y cuánto me pueden cobrar?",
+      "answer": "La ley los permite, con un tope que se calcula sobre la deuda vencida: 9% sobre la parte de hasta 10 UF, 6% sobre la parte entre 10 y 50 UF, y 3% sobre la parte que pase de 50 UF. Solo se cobran después de los primeros 20 días de atraso. Si pagas el total dentro de 5 días hábiles desde el primer contacto, te los condonamos."
     },
     {
       "question": "¿Dónde veo el detalle de mi deuda?",
-      "answer": "El agente indica el monto y el folio del contexto del caso. Para el detalle completo o histórico, se envía por correo o se deriva a un ejecutivo (ver contacto_ejecutivo)."
+      "answer": "Puedes pedirlo por escrito y te lo enviamos por correo en un máximo de 2 días hábiles: capital, intereses con sus tasas, gastos de cobranza y cómo se calcularon, y el contrato de origen. Es tu derecho por ley."
+    },
+    {
+      "question": "¿Puedo pagarle directo a la empresa con la que tengo la deuda?",
+      "answer": "Sí, siempre. La ley te permite pagarle directamente al acreedor original el total de lo que debes, aunque la cobranza esté encargada a nosotros."
     },
     {
       "question": "Ya pagué, ¿por qué me siguen contactando?",
-      "answer": "Ofrecemos disculpas y pedimos el comprobante de pago (ver comprobante_pago). Se registra y se deriva a un ejecutivo para regularizar el estado; no insistir con el cobro."
+      "answer": "Si pagaste con el link, se registra solo en menos de 1 hora hábil y dejamos de contactarte. Si pagaste por otra vía, envíanos una foto o PDF del comprobante por este mismo chat: lo validamos en un máximo de 2 días hábiles y, mientras tanto, suspendemos la cobranza."
     },
     {
       "question": "No reconozco esta deuda, ¿qué hago?",
-      "answer": "No se discute. Se registra el reclamo y se deriva a un ejecutivo según proceso_reclamo, pidiendo antecedentes si corresponde."
+      "answer": "Cuéntanos qué no te cuadra y envíanos los antecedentes que tengas. Suspendemos la cobranza de esa deuda mientras la revisamos, y un ejecutivo te responde en un máximo de 3 días hábiles."
+    },
+    {
+      "question": "¿Cuántas veces me pueden contactar?",
+      "answer": "Por ley, como máximo 1 llamada por semana y, por WhatsApp o correo, como máximo 2 mensajes por semana, con al menos 2 días entre uno y otro. Solo en días hábiles, entre las 8:00 y las 20:00. Si respondes o nos escribes tú, eso no cuenta como un nuevo contacto."
+    },
+    {
+      "question": "¿Me van a embargar o demandar?",
+      "answer": "Esta es una gestión de cobranza extrajudicial: no es un procedimiento que persiga tus bienes. Nuestro objetivo es ayudarte a encontrar una forma de pago que te acomode."
     },
     {
       "question": "Estoy pasando por un momento difícil y no puedo pagar todo, ¿qué opciones tengo?",
-      "answer": "Con empatía, se ofrece un convenio o un abono parcial dentro de convenio_cuotas, y se agenda un seguimiento. El objetivo es ayudar a regularizar."
+      "answer": "Lo entendemos. Puedes pagar en hasta 6 cuotas con un pie del 20%, y si eso no te alcanza, un ejecutivo puede evaluar hasta 12 cuotas o un convenio sin pie. Cuéntanos cuánto podrías pagar al mes y lo vemos."
     },
     {
       "question": "¿Con quién hablo si tengo dudas?",
-      "answer": "REEMPLAZAR: con el área de cobranza (ver contacto_ejecutivo) en el horario indicado (horario_pagos). El agente también puede agendar una llamada."
+      "answer": "Pídelo aquí mismo y te comunicamos con un ejecutivo. Atienden de lunes a viernes, de 9:00 a 18:00. El link de pago funciona las 24 horas."
+    },
+    {
+      "question": "¿Por qué tienen mis datos y quiénes son?",
+      "answer": "Somos la empresa de cobranza que gestiona esta deuda por encargo del acreedor original. En el detalle por escrito de tu deuda figuran el acreedor, el contrato y sus fechas; te lo enviamos en un máximo de 2 días hábiles."
     }
   ],
-
   "objections": [
     {
       "objection": "No tengo plata ahora / no puedo pagar",
-      "response": "Mostrar empatía, no presionar. Ofrecer un convenio o un abono parcial (convenio_cuotas) y agendar un seguimiento para una fecha que le acomode."
+      "response": "Reconocer la situación sin presionar. Ofrecer el convenio de hasta 6 cuotas con pie del 20% y cuota mínima de $10.000, y si no alcanza, derivar a un ejecutivo para evaluar hasta 12 cuotas o un convenio sin pie. Preguntar cuánto podría pagar al mes."
     },
     {
       "objection": "Ya pagué",
-      "response": "No discutir. Disculparse, pedir el comprobante (comprobante_pago), registrar y derivar a un ejecutivo."
+      "response": "No discutir. Si fue con el link, se registra solo en menos de 1 hora hábil. Si fue por otra vía, pedir foto o PDF del comprobante por este chat, informar que se valida en un máximo de 2 días hábiles y que mientras tanto se suspende la cobranza. Registrar el caso y derivar a un ejecutivo."
     },
     {
       "objection": "No reconozco la deuda",
-      "response": "No discutir. Registrar el reclamo y derivar según proceso_reclamo."
+      "response": "No discutir ni insistir con el cobro. Pedir los antecedentes que tenga, informar que se suspende la cobranza de esa deuda mientras se revisa y que un ejecutivo responde en un máximo de 3 días hábiles. Ofrecer el detalle por escrito de la deuda. Derivar con escalarAHumano."
     },
     {
-      "objection": "Estoy pasando por un mal momento",
-      "response": "Empatía genuina y trato humano. Ofrecer facilidades (convenio/abono) y flexibilidad en la fecha. Nunca presionar."
+      "objection": "¿Me van a meter a DICOM? / ¿Me van a embargar?",
+      "response": "La ley prohíbe mencionar registros comerciales y consecuencias de juicios que no se han iniciado, así que no se habla de eso. Aclarar que es una cobranza extrajudicial y que no es un procedimiento que persiga sus bienes. Volver a lo útil: ofrecer el link de pago o un convenio."
     },
     {
-      "objection": "Llámame / escríbeme más tarde",
-      "response": "Acordar y agendar el contacto a la hora que la persona indique (el agente puede programar una llamada o un seguimiento). Confirmar la hora."
+      "objection": "Me están acosando / me contactan demasiado",
+      "response": "Pedir disculpas, sin justificarse. Informar los límites legales: máximo 1 llamada y 2 mensajes por semana, solo en días hábiles entre 8:00 y 20:00. Preguntar por qué canal y en qué horario prefiere que le escribamos, y respetarlo. Si hubo un exceso, derivar a un ejecutivo para revisarlo."
+    },
+    {
+      "objection": "Este no es mi teléfono / no soy el titular",
+      "response": "No revelar ningún detalle de la deuda, ni que existe una deuda: esa información es solo para el titular. Disculparse, pedir que si conoce al titular le deje un mensaje para que se comunique, y registrar el caso para no volver a escribir a ese número."
+    },
+    {
+      "objection": "Ya me notificaron de una demanda",
+      "response": "La cobranza extrajudicial termina por ley cuando la persona es notificada de una demanda de cobro. No insistir ni hablar de montos: registrar el caso y derivar a un ejecutivo de inmediato con escalarAHumano."
+    },
+    {
+      "objection": "Escríbeme o llámame más tarde",
+      "response": "Aceptar y preguntar qué día y hora le acomoda, dentro de días hábiles entre 8:00 y 20:00. Si da una fecha concreta, agendar el seguimiento para ese momento. No insistir en el mismo contacto."
     },
     {
       "objection": "No me contacten más",
-      "response": "Respetar el tono, no insistir de forma abusiva. Informar de forma clara y breve el canal para regularizar cuando pueda, dejar el registro y derivar si insiste."
+      "response": "Respetarlo sin discutir: cancelar las llamadas agendadas con cancelarSeguimiento y no volver a llamar. Ofrecer seguir solo por escrito si lo prefiere, y dejar claro que puede escribir por este chat cuando quiera regularizar. No agregar presión."
+    },
+    {
+      "objection": "Voy a hablar con un abogado / los voy a demandar",
+      "response": "No discutir ni ponerse a la defensiva. Reconocer su derecho a asesorarse, ofrecer el detalle por escrito de la deuda para que lo revise con quien quiera, y derivar a un ejecutivo."
     }
   ]
 }

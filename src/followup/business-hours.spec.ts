@@ -1,8 +1,49 @@
 import {
+  earliestAllowedTime,
+  formatLocalDateTime,
+  hasHolidayCalendar,
+  isChileanHoliday,
+  isLegalCollectionTime,
   isWithinBusinessHours,
   nextAllowedTime,
   nextLocalTime,
+  parseInZone,
+  startOfCalendarWeek,
 } from './business-hours';
+
+describe('formatLocalDateTime', () => {
+  it('incluye el año — sin él el modelo lo inventa y agenda en otro año', () => {
+    const texto = formatLocalDateTime(
+      new Date('2026-09-16T14:32:00Z'),
+      'America/Santiago',
+    );
+    expect(texto).toContain('2026');
+    expect(texto).toContain('septiembre');
+  });
+});
+
+describe('parseInZone', () => {
+  it('ancla una hora sin zona a la zona del cliente, no a la del servidor', () => {
+    // 12:00 en Ciudad de México (UTC-6) = 18:00 UTC.
+    const d = parseInZone('2026-09-17T12:00:00', 'America/Mexico_City');
+    expect(d?.toISOString()).toBe('2026-09-17T18:00:00.000Z');
+  });
+
+  it('respeta la zona explícita si viene en el texto', () => {
+    const d = parseInZone('2026-09-17T12:00:00Z', 'America/Mexico_City');
+    expect(d?.toISOString()).toBe('2026-09-17T12:00:00.000Z');
+  });
+
+  it('respeta un offset explícito', () => {
+    const d = parseInZone('2026-09-17T12:00:00-03:00', 'America/Mexico_City');
+    expect(d?.toISOString()).toBe('2026-09-17T15:00:00.000Z');
+  });
+
+  it('devuelve null si el texto no es una fecha', () => {
+    expect(parseInZone('mañana a las 12', 'America/Santiago')).toBeNull();
+    expect(parseInZone('', 'America/Santiago')).toBeNull();
+  });
+});
 
 describe('nextLocalTime', () => {
   const tz = 'America/Santiago';
@@ -101,5 +142,152 @@ describe('nextAllowedTime', () => {
     const next = nextAllowedTime(ALL_DAYS_9_18, 'UTC', from);
     expect(next.getTime()).toBeGreaterThan(from.getTime());
     expect(isWithinBusinessHours(ALL_DAYS_9_18, 'UTC', next)).toBe(true);
+  });
+});
+
+const OPEN_24_7 = {
+  days: {
+    mon: [{ start: '00:00', end: '23:59' }],
+    tue: [{ start: '00:00', end: '23:59' }],
+    wed: [{ start: '00:00', end: '23:59' }],
+    thu: [{ start: '00:00', end: '23:59' }],
+    fri: [{ start: '00:00', end: '23:59' }],
+    sat: [{ start: '00:00', end: '23:59' }],
+    sun: [{ start: '00:00', end: '23:59' }],
+  },
+};
+
+describe('isLegalCollectionTime (Ley 19.496, art. 37)', () => {
+  // Miércoles 23 de septiembre de 2026: día hábil común.
+  it('permite de 8:00 a 20:00 (20:00 ya no)', () => {
+    expect(isLegalCollectionTime(new Date('2026-09-23T07:59:00Z'), 'UTC')).toBe(
+      false,
+    );
+    expect(isLegalCollectionTime(new Date('2026-09-23T08:00:00Z'), 'UTC')).toBe(
+      true,
+    );
+    expect(isLegalCollectionTime(new Date('2026-09-23T19:59:00Z'), 'UTC')).toBe(
+      true,
+    );
+    expect(isLegalCollectionTime(new Date('2026-09-23T20:00:00Z'), 'UTC')).toBe(
+      false,
+    );
+  });
+
+  it('el sábado se puede, el domingo no', () => {
+    expect(isLegalCollectionTime(new Date('2026-09-26T12:00:00Z'), 'UTC')).toBe(
+      true,
+    );
+    expect(isLegalCollectionTime(new Date('2026-09-27T12:00:00Z'), 'UTC')).toBe(
+      false,
+    );
+  });
+
+  it('los feriados no son hábiles, aunque caigan lunes a sábado', () => {
+    // Lunes 12 de octubre de 2026 (Encuentro de Dos Mundos) y viernes 18 de
+    // septiembre de 2026 (Independencia).
+    expect(isLegalCollectionTime(new Date('2026-10-12T12:00:00Z'), 'UTC')).toBe(
+      false,
+    );
+    expect(isLegalCollectionTime(new Date('2026-09-18T12:00:00Z'), 'UTC')).toBe(
+      false,
+    );
+  });
+
+  it('se mide en la hora del lead, no en la del servidor', () => {
+    // 10:30 UTC = 07:30 en Santiago (UTC-3 en septiembre): aún no se puede.
+    const d = new Date('2026-09-23T10:30:00Z');
+    expect(isLegalCollectionTime(d, 'UTC')).toBe(true);
+    expect(isLegalCollectionTime(d, 'America/Santiago')).toBe(false);
+  });
+});
+
+describe('feriados de Chile', () => {
+  it('hay calendario cargado para el año en curso (agregar el año nuevo si falla)', () => {
+    expect(hasHolidayCalendar(new Date().getFullYear())).toBe(true);
+  });
+
+  it('aplica los traslados del año (Ley 19.668 y Ley 20.983)', () => {
+    expect(isChileanHoliday('2027-06-28')).toBe(true); // San Pedro, al lunes
+    expect(isChileanHoliday('2027-06-29')).toBe(false);
+    expect(isChileanHoliday('2027-09-17')).toBe(true); // 18 y 19 en fin de semana
+  });
+
+  it('en un año sin calendario respeta al menos los de fecha fija', () => {
+    expect(isChileanHoliday('2031-09-18')).toBe(true);
+    expect(isChileanHoliday('2031-12-25')).toBe(true);
+    expect(isChileanHoliday('2031-09-23')).toBe(false);
+  });
+});
+
+describe('startOfCalendarWeek', () => {
+  it('devuelve el lunes 00:00 de la semana', () => {
+    expect(
+      startOfCalendarWeek(
+        new Date('2026-09-23T15:00:00Z'),
+        'UTC',
+      ).toISOString(),
+    ).toBe('2026-09-21T00:00:00.000Z');
+  });
+
+  it('el domingo pertenece a la semana que empezó el lunes anterior', () => {
+    expect(
+      startOfCalendarWeek(
+        new Date('2026-09-27T12:00:00Z'),
+        'UTC',
+      ).toISOString(),
+    ).toBe('2026-09-21T00:00:00.000Z');
+  });
+
+  it('con weeksAhead devuelve el lunes siguiente', () => {
+    expect(
+      startOfCalendarWeek(
+        new Date('2026-09-23T15:00:00Z'),
+        'UTC',
+        1,
+      ).toISOString(),
+    ).toBe('2026-09-28T00:00:00.000Z');
+  });
+
+  it('usa el calendario local del lead', () => {
+    // 02:00 UTC del lunes 21 = domingo 20 a las 23:00 en Santiago: todavía es
+    // la semana del lunes 14 (00:00 local = 03:00 UTC).
+    expect(
+      startOfCalendarWeek(
+        new Date('2026-09-21T02:00:00Z'),
+        'America/Santiago',
+      ).toISOString(),
+    ).toBe('2026-09-14T03:00:00.000Z');
+  });
+});
+
+describe('earliestAllowedTime', () => {
+  const legal = (d: Date) => isLegalCollectionTime(d, 'UTC');
+
+  it('si el instante ya sirve, lo devuelve tal cual', () => {
+    const d = new Date('2026-09-23T10:00:00Z');
+    expect(earliestAllowedTime(d, legal)).toBe(d);
+  });
+
+  it('si no, avanza al primer instante permitido', () => {
+    expect(
+      earliestAllowedTime(
+        new Date('2026-09-23T21:00:00Z'),
+        legal,
+      ).toISOString(),
+    ).toBe('2026-09-24T08:00:00.000Z');
+  });
+});
+
+describe('nextAllowedTime con horario legal de cobranza', () => {
+  it('el horario legal manda aunque la empresa atienda 24/7 y domingos', () => {
+    // Sábado 26 a las 20:00: el domingo no se puede → lunes 28 a las 8:00.
+    const next = nextAllowedTime(
+      OPEN_24_7,
+      'UTC',
+      new Date('2026-09-26T20:00:00Z'),
+      (d) => isLegalCollectionTime(d, 'UTC'),
+    );
+    expect(next.toISOString()).toBe('2026-09-28T08:00:00.000Z');
   });
 });

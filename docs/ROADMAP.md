@@ -41,10 +41,10 @@ Este documento prioriza lo que sigue. Notación: **Impacto** (alto/medio/bajo) �
 | # | Feature | Impacto | Esf. | Notas |
 |---|---|---|---|---|
 | 2.1 ⭐ | **Clasificador de enrutamiento por embeddings** (sin llamar al LLM en cada mensaje) | Alto | M | Más barato y rápido que el clasificador LLM actual; cae al LLM solo en empate. |
-| 2.2 | **Evaluaciones automáticas** de calidad de respuesta (rúbricas, regresión de prompts) | Alto | L | Antes de activar una versión de prompt propuesta. |
+| 2.2 ✅ | **Evaluaciones automáticas** de calidad de respuesta | Alto | L | **Hecho**: banco en `src/evals` (`npm run eval`). Corre el turno real y lo califica un juez. Falta ampliarlo a voz, CRM y derivación. |
 | 2.3 | **A/B testing de prompts** con métricas por variante | Alto | M | Hoy se activa una sola versión; medir cuál convierte más. |
-| 2.4 ⭐ | **Guardrails ampliados**: PII, tono, verificación de que toda cifra citada venga de un `tool` | Alto | S | Extiende `output-validator`; refuerza el principio "no inventar". |
-| 2.5 | **Memoria/resumen persistente por lead** (perfil vivo, no solo historial) | Medio | M | Mejora continuidad entre sesiones y canales. |
+| 2.4 ⭐ | **Guardrails ampliados**: PII y tono | Alto | S | La parte de cifras está hecha: todo resultado de herramienta y lo que dijo el cliente respaldan; la comparación es por fuente. Falta PII y tono. |
+| 2.5 ✅ | **Memoria/resumen persistente por lead** | Medio | M | **Hecho**: `LeadMemory` + herramienta `guardarEnMemoria` + resumen en segundo plano, editable en el panel. |
 | 2.6 | **Reglas de enrutamiento avanzadas**: por horario, por campaña, por idioma | Medio | M | Amplía `AgentRouterService`. |
 | 2.7 | **Handoff bidireccional con SLA**: si el agente receptor no resuelve, devuelve con motivo | Medio | S | Cierra el ciclo del multi-agente. |
 

@@ -1,3 +1,16 @@
+import { Channel } from '@prisma/client';
+
+/**
+ * Canales que forman la conversación real con el cliente. El canal `system` es
+ * la bitácora interna (derivaciones, escalamientos, cierres) y no se le muestra
+ * al modelo como parte del diálogo.
+ */
+export const CONVERSATION_CHANNELS: Channel[] = [
+  Channel.whatsapp,
+  Channel.email,
+  Channel.call,
+];
+
 /** Mensaje de respaldo cuando el agente no puede operar (sin LLM). */
 export const FALLBACK_ESCALATION_MESSAGE =
   'Gracias por tu mensaje. En un momento te contacta una persona del equipo.';

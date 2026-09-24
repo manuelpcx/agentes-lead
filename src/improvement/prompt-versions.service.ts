@@ -3,6 +3,7 @@ import { PromptVersion } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { AuditService } from '../audit/audit.service';
+import { getDefaultPrompt } from '../prompts/default-prompts';
 
 @Injectable()
 export class PromptVersionsService {
@@ -42,6 +43,56 @@ export class PromptVersionsService {
         createdBy: 'analisis',
       },
     });
+  }
+
+  /**
+   * Crea una versión con el prompt por defecto ACTUAL del código (el que
+   * devuelve `getDefaultPrompt` según el tipo del agente) y la activa de
+   * inmediato. Útil cuando se corrige el prompt por defecto en el código
+   * después de que un agente ya fue creado — el seed original solo corre una
+   * vez, así que sin esto el agente se queda con el prompt viejo para siempre.
+   */
+  async resetToDefault(
+    agentId: string,
+    userId: string,
+  ): Promise<PromptVersion> {
+    const agent = await this.prisma.db.agent.findFirst({
+      where: { id: agentId },
+    });
+    if (!agent) {
+      throw new NotFoundException('Agente no encontrado');
+    }
+    const proposal = await this.createProposal(
+      agentId,
+      getDefaultPrompt(agent.type),
+      'Restablecido al prompt por defecto actual del código',
+    );
+    return this.activate(proposal.id, userId);
+  }
+
+  /**
+   * Guarda una edición manual del prompt (hecha por el dueño desde el panel)
+   * como nueva versión y la activa de inmediato — a diferencia de una
+   * propuesta del playbook, el dueño ya decidió al escribirla, así que no
+   * tiene sentido pedirle que "apruebe" su propia edición en un segundo paso.
+   */
+  async saveEdit(
+    agentId: string,
+    content: string,
+    userId: string,
+  ): Promise<PromptVersion> {
+    const agent = await this.prisma.db.agent.findFirst({
+      where: { id: agentId },
+    });
+    if (!agent) {
+      throw new NotFoundException('Agente no encontrado');
+    }
+    const proposal = await this.createProposal(
+      agentId,
+      content,
+      'Editado manualmente desde el panel',
+    );
+    return this.activate(proposal.id, userId);
   }
 
   /** Activa una versión (desactiva las demás del agente). Reversible. */

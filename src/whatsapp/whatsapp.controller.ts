@@ -21,8 +21,12 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { CompanyAuthGuard } from '../common/tenant/company-auth.guard';
 import { CredentialsService } from '../integrations/credentials.service';
-import { verifyYCloudSignature } from '../common/webhook-signature';
+import {
+  verifyMetaSignature,
+  verifyYCloudSignature,
+} from '../common/webhook-signature';
 import { WhatsappInboundService } from './whatsapp-inbound.service';
+import { parseInboundMessage } from './inbound-message';
 import { SimulateInboundDto } from './dto/simulate-inbound.dto';
 
 /** Mensaje entrante normalizado desde el payload de Meta. */
@@ -30,6 +34,8 @@ interface ParsedInbound {
   phoneNumberId: string;
   from: string;
   text: string;
+  /** false = se registra en el historial pero no dispara un turno (reacciones). */
+  wakeAgent: boolean;
 }
 
 @Controller('whatsapp')
@@ -72,15 +78,24 @@ export class WhatsappController {
 
   /**
    * Webhook de mensajes entrantes de Meta. Responde 200 de inmediato; por cada
-   * mensaje resuelve la empresa por `phone_number_id` y despierta al agente
-   * dentro de su `TenantContext`.
+   * mensaje resuelve la empresa por `phone_number_id`, verifica la firma
+   * (`X-Hub-Signature-256`, HMAC con el **App Secret** de la app de Meta de
+   * ESA empresa) y despierta al agente dentro de su `TenantContext`.
    *
-   * NOTA: la verificación de firma (X-Hub-Signature-256 con el App Secret) se
-   * añade al conectar credenciales reales de Meta (pendiente para producción).
+   * Sin App Secret configurado el mensaje se rechaza: aceptar sin firma
+   * significaba que cualquiera que conociera el `phone_number_id` podía
+   * "hablar" como un cliente y hacer que el agente le respondiera por el
+   * WhatsApp de la empresa al número que quisiera.
    */
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
-  async metaWebhook(@Body() body: unknown): Promise<{ received: true }> {
+  async metaWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Body() body: unknown,
+  ): Promise<{ received: true }> {
+    // Una entrega puede traer varios mensajes de la misma empresa: la firma se
+    // verifica una vez por empresa y se recuerda para el resto del lote.
+    const verificadas = new Set<string>();
     for (const msg of this.parseMetaPayload(body)) {
       const company = await this.prisma.raw.company.findFirst({
         where: {
@@ -95,12 +110,46 @@ export class WhatsappController {
       if (!company) {
         continue; // sin empresa mapeada a ese número: ignorar
       }
+      if (!verificadas.has(company.id)) {
+        await this.assertMetaSignature(req, company.id);
+        verificadas.add(company.id);
+      }
       await TenantContext.run(
         { companyId: company.id, correlationId: randomUUID() },
-        () => this.inbound.handleIncoming(`+${msg.from}`, msg.text),
+        () =>
+          this.inbound.handleIncoming(`+${msg.from}`, msg.text, {
+            wakeAgent: msg.wakeAgent,
+          }),
       );
     }
     return { received: true };
+  }
+
+  /** Lanza 401 si la firma de Meta no calza con el App Secret de la empresa. */
+  private async assertMetaSignature(
+    req: RawBodyRequest<Request>,
+    companyId: string,
+  ): Promise<void> {
+    const cred = await this.credentials.getByCompanyId(companyId, 'whatsapp');
+    if (cred?.provider !== 'meta' || !cred.webhookSecret) {
+      this.logger.warn(
+        `WhatsApp (Meta) sin App Secret configurado para companyId=${companyId}: ` +
+          'mensaje RECHAZADO. Configúralo en Integraciones → WhatsApp → ' +
+          '"Secreto de firma del webhook".',
+      );
+      throw new UnauthorizedException(
+        'WhatsApp (Meta) sin App Secret configurado para esta empresa',
+      );
+    }
+    if (
+      !verifyMetaSignature(
+        req.rawBody ?? Buffer.from(''),
+        this.header(req, 'x-hub-signature-256'),
+        cred.webhookSecret,
+      )
+    ) {
+      throw new UnauthorizedException('Firma de Meta inválida');
+    }
   }
 
   /**
@@ -112,10 +161,10 @@ export class WhatsappController {
    * Verifica la firma (`YCloud-Signature`) contra el secreto del endpoint de
    * webhook de esa empresa (Integraciones → WhatsApp → "Secreto de firma del
    * webhook"; se genera al crear el webhook endpoint en YCloud, es DISTINTO de
-   * la API key). Es un dato nuevo que la empresa debe configurar aparte, así
-   * que mientras no lo haga, se acepta sin verificar (con warning en logs) para
-   * no cortar el WhatsApp entrante de quienes aún no lo migraron; en cuanto lo
-   * configura, la firma pasa a ser obligatoria.
+   * la API key). Es **obligatorio**: sin secreto configurado el mensaje se
+   * rechaza con 401 y queda avisado en los logs. Antes se aceptaba sin
+   * verificar "para no cortar a quien no había migrado", y eso dejaba el
+   * WhatsApp de esas empresas abierto a mensajes forjados.
    */
   @Post('ycloud/webhook')
   @HttpCode(HttpStatus.OK)
@@ -127,13 +176,10 @@ export class WhatsappController {
       return { received: true }; // otros eventos (status, etc.): ignorar
     }
     const msg = this.pick(body, 'whatsappInboundMessage');
-    if (this.pickString(msg, 'type') !== 'text') {
-      return { received: true }; // por ahora solo texto
-    }
     const rawFrom = this.pickString(msg, 'from');
     const to = this.pickString(msg, 'to');
-    const text = this.pickString(this.pick(msg, 'text'), 'body');
-    if (!rawFrom || !to || !text) {
+    const parsed = parseInboundMessage(msg);
+    if (!rawFrom || !to || !parsed) {
       return { received: true };
     }
     const from = rawFrom.startsWith('+') ? rawFrom : `+${rawFrom}`;
@@ -150,32 +196,40 @@ export class WhatsappController {
     }
 
     const cred = await this.credentials.getByCompanyId(company.id, 'whatsapp');
-    if (cred?.provider === 'ycloud' && cred.webhookSecret) {
-      if (
-        !verifyYCloudSignature(
-          req.rawBody ?? Buffer.from(''),
-          this.header(req, 'ycloud-signature'),
-          cred.webhookSecret,
-        )
-      ) {
-        throw new UnauthorizedException('Firma de YCloud inválida');
-      }
-    } else {
+    if (cred?.provider !== 'ycloud' || !cred.webhookSecret) {
       this.logger.warn(
         `WhatsApp (YCloud) sin secreto de firma configurado para companyId=` +
-          `${company.id}: mensaje aceptado SIN verificar. Configúralo en ` +
-          'Integraciones → WhatsApp para cerrar este hueco.',
+          `${company.id}: mensaje RECHAZADO. Configúralo en Integraciones → ` +
+          'WhatsApp → "Secreto de firma del webhook".',
       );
+      throw new UnauthorizedException(
+        'WhatsApp (YCloud) sin secreto de firma configurado para esta empresa',
+      );
+    }
+    if (
+      !verifyYCloudSignature(
+        req.rawBody ?? Buffer.from(''),
+        this.header(req, 'ycloud-signature'),
+        cred.webhookSecret,
+      )
+    ) {
+      throw new UnauthorizedException('Firma de YCloud inválida');
     }
 
     await TenantContext.run(
       { companyId: company.id, correlationId: randomUUID() },
-      () => this.inbound.handleIncoming(from, text),
+      () =>
+        this.inbound.handleIncoming(from, parsed.text, {
+          wakeAgent: parsed.wakeAgent,
+        }),
     );
     return { received: true };
   }
 
-  /** Extrae mensajes de texto del payload de Meta de forma segura. */
+  /**
+   * Extrae los mensajes del payload de Meta de forma segura. Los que no son
+   * texto (audios, fotos, botones) se normalizan en `parseInboundMessage`.
+   */
   private parseMetaPayload(body: unknown): ParsedInbound[] {
     const out: ParsedInbound[] = [];
     const entries = this.asArray(this.pick(body, 'entry'));
@@ -191,9 +245,9 @@ export class WhatsappController {
         }
         for (const message of this.asArray(this.pick(value, 'messages'))) {
           const from = this.pickString(message, 'from');
-          const text = this.pickString(this.pick(message, 'text'), 'body');
-          if (from && text) {
-            out.push({ phoneNumberId, from, text });
+          const parsed = parseInboundMessage(message);
+          if (from && parsed) {
+            out.push({ phoneNumberId, from, ...parsed });
           }
         }
       }

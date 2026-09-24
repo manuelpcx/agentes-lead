@@ -10,7 +10,11 @@ import { AgentActionsService } from '../agent-actions/agent-actions.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { AgentTool, ToolContext } from './tools/tool.interface';
+import { factSourcesFor, validateOutgoingMessage } from './output-validator';
 import type { EnvVars } from '../common/config/env.validation';
+import type { Queue } from 'bullmq';
+import { LeadMemoryService } from '../memory/lead-memory.service';
+import { LeadMemoryJobData } from '../memory/lead-memory.processor';
 
 /** Corre `fn` dentro de un contexto de tenant (como el processor de la cola). */
 function inTenant<T>(fn: () => Promise<T>): Promise<T> {
@@ -147,6 +151,14 @@ function buildHarness(configured = true) {
     record: jest.fn().mockResolvedValue(undefined),
   } as unknown as AgentActionsService;
 
+  // La memoria no se refresca en estos tests: `needsRefresh` devuelve false.
+  const memory = {
+    needsRefresh: jest.fn().mockResolvedValue(false),
+  } as unknown as LeadMemoryService;
+  const memoryQueue = {
+    add: jest.fn().mockResolvedValue(undefined),
+  } as unknown as Queue<LeadMemoryJobData>;
+
   const runner = new AgentRunner(
     config,
     prisma,
@@ -157,10 +169,15 @@ function buildHarness(configured = true) {
     interactions,
     leads,
     agentActions,
+    memory,
+    memoryQueue,
   );
 
   return {
     runner,
+    memory,
+    memoryQueue,
+    contextBuilder,
     createMessage,
     consultar,
     enviar,
@@ -186,6 +203,17 @@ describe('AgentRunner.runTurn', () => {
     expect(h.createMessage).toHaveBeenCalledTimes(3);
     expect(h.consultar.execute).toHaveBeenCalledTimes(1);
     expect(h.enviar.execute).toHaveBeenCalledTimes(1);
+
+    // Mientras no se ha enviado nada, se fuerza el uso de alguna tool (evita
+    // que el modelo se quede con el dato de consultarDato y no lo relaye).
+    // Una vez enviado el WhatsApp, el turno puede cerrar en 'auto'.
+    expect(h.createMessage.mock.calls[0][0].toolChoice).toEqual({
+      type: 'any',
+    });
+    expect(h.createMessage.mock.calls[1][0].toolChoice).toEqual({
+      type: 'any',
+    });
+    expect(h.createMessage.mock.calls[2][0].toolChoice).toBeUndefined();
   });
 
   it('corta el bucle cuando una herramienta pide stop (escalamiento)', async () => {
@@ -212,6 +240,33 @@ describe('AgentRunner.runTurn', () => {
     expect(h.whatsapp.send).toHaveBeenCalled();
   });
 
+  it('escala y avisa al cliente si el modelo responde en texto suelto sin usar ninguna herramienta', async () => {
+    const h = buildHarness();
+    h.createMessage.mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(h.leads.escalateToHuman).toHaveBeenCalledWith('lead-1');
+    expect(h.whatsapp.send).toHaveBeenCalledWith(
+      '+56911111111',
+      expect.any(String),
+    );
+  });
+
+  it('no aplica el respaldo de silencio en turnos de seguimiento proactivo', async () => {
+    const h = buildHarness();
+    h.createMessage.mockResolvedValueOnce(endTurn());
+
+    const outcome = await inTenant(() =>
+      h.runner.runFollowUp('lead-1', 'reintenta el contacto'),
+    );
+
+    expect(h.leads.escalateToHuman).not.toHaveBeenCalled();
+    expect(h.whatsapp.send).not.toHaveBeenCalled();
+    expect(outcome.messageSent).toBe(false);
+    expect(outcome.escalated).toBe(false);
+  });
+
   it('no actúa si el lead está en control humano', async () => {
     const h = buildHarness();
     (h.leads.getById as jest.Mock).mockResolvedValueOnce({
@@ -222,5 +277,97 @@ describe('AgentRunner.runTurn', () => {
     await inTenant(() => h.runner.runTurn('lead-1'));
 
     expect(h.createMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('AgentRunner y la memoria del lead', () => {
+  it('no encola nada si todavía no toca refrescar', async () => {
+    const h = buildHarness();
+    h.createMessage
+      .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'hola' }))
+      .mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(h.memoryQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('encola el refresco cuando se acumularon mensajes nuevos', async () => {
+    const h = buildHarness();
+    (h.memory.needsRefresh as jest.Mock).mockResolvedValue(true);
+    h.createMessage
+      .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'hola' }))
+      .mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(h.memoryQueue.add).toHaveBeenCalledWith(
+      'refresh',
+      expect.objectContaining({ leadId: 'lead-1', companyId: 'company-1' }),
+      expect.objectContaining({ jobId: 'memory-lead-1' }),
+    );
+  });
+
+  it('un fallo al encolar no hace fallar el turno', async () => {
+    const h = buildHarness();
+    (h.memory.needsRefresh as jest.Mock).mockRejectedValue(
+      new Error('Redis caído'),
+    );
+    h.createMessage
+      .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'hola' }))
+      .mockResolvedValueOnce(endTurn());
+
+    await expect(
+      inTenant(() => h.runner.runTurn('lead-1')),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('AgentRunner y el respaldo del guardrail', () => {
+  it('el resultado de una herramienta respalda el mensaje del mismo turno', async () => {
+    const h = buildHarness();
+    let respaldos: string[] = [];
+    (h.enviar.execute as jest.Mock).mockImplementation(
+      async (_input: unknown, ctx: ToolContext) => {
+        respaldos = factSourcesFor(ctx);
+        ctx.messageSent = true;
+        return { content: 'enviado' };
+      },
+    );
+    h.createMessage
+      .mockResolvedValueOnce(toolUse('consultarDato', { clave: 'precio' }))
+      .mockResolvedValueOnce(
+        toolUse('enviarWhatsApp', { mensaje: 'son 25000' }),
+      )
+      .mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(respaldos).toContain('dato');
+    expect(validateOutgoingMessage('son 25000', respaldos).allowed).toBe(true);
+  });
+
+  it('lo que escribió el cliente también respalda', async () => {
+    const h = buildHarness();
+    let respaldos: string[] = [];
+    (h.enviar.execute as jest.Mock).mockImplementation(
+      async (_input: unknown, ctx: ToolContext) => {
+        respaldos = factSourcesFor(ctx);
+        ctx.messageSent = true;
+        return { content: 'enviado' };
+      },
+    );
+    (h.contextBuilder.buildMessages as jest.Mock).mockResolvedValue([
+      { role: 'user', content: 'mi pedido es el 458812' },
+    ]);
+    h.createMessage
+      .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'x' }))
+      .mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(
+      validateOutgoingMessage('Reviso el pedido 458812', respaldos).allowed,
+    ).toBe(true);
   });
 });

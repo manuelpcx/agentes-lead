@@ -4,6 +4,7 @@ import {
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
+  useEffect,
 } from 'react';
 
 /** Une clases condicionales (helper mínimo, sin dependencias). */
@@ -44,7 +45,7 @@ export function Button({
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition',
+        'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl font-medium transition',
         'focus:outline-none focus-visible:ring-2 disabled:opacity-50 disabled:pointer-events-none',
         BUTTON_VARIANTS[variant],
         BUTTON_SIZES[size],
@@ -67,7 +68,7 @@ export function Card({
   return (
     <div
       className={cn(
-        'rounded-xl border border-slate-200/80 bg-white shadow-card',
+        'rounded-2xl border border-slate-200/80 bg-white shadow-card',
         className,
       )}
     >
@@ -124,7 +125,7 @@ export function Badge({
 // ─────────────────────────── Inputs ───────────────────────────
 
 const FIELD_BASE =
-  'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 ' +
+  'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 ' +
   'placeholder:text-slate-400 transition focus:border-brand-500 focus:outline-none ' +
   'focus:ring-2 focus:ring-brand-200';
 
@@ -167,6 +168,75 @@ export function Field({
       {children}
       {hint && <span className="mt-1 block text-xs text-slate-400">{hint}</span>}
     </label>
+  );
+}
+
+// ─────────────────────────── Modal ───────────────────────────
+
+/**
+ * Diálogo centrado sobre un velo. Se cierra con Escape o clic fuera; el
+ * contenido se desplaza solo si no cabe, para no empujar la página.
+ */
+export function Modal({
+  title,
+  onClose,
+  children,
+  wide = false,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 p-4 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={cn(
+          'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft',
+          wide ? 'max-w-2xl' : 'max-w-md',
+        )}
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            aria-label={title}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            >
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto scrollbar-slim p-5">
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
 

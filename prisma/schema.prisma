@@ -33,6 +33,15 @@ enum LeadStatus {
   ESCALADO_HUMANO
 }
 
+/// Calificación explícita del lead (interés/urgencia real), a diferencia de
+/// `LeadStatus` que es la etapa del embudo. Nula hasta que el agente tenga
+/// señales suficientes para calificarlo.
+enum LeadQualification {
+  FRIO
+  TIBIO
+  CALIENTE
+}
+
 enum Channel {
   whatsapp
   email
@@ -81,6 +90,13 @@ enum KnowledgeGapStatus {
   RECHAZADO
 }
 
+/// Estado de una falla de cumplimiento en la cola de aprobación.
+enum ComplianceIssueStatus {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
 // ─────────────────────────── Modelos ───────────────────────────
 
 /// Raíz del multi-tenancy. Toda entidad de negocio cuelga de aquí.
@@ -110,9 +126,13 @@ model Company {
   auditLogs          AuditLog[]
   appointments       Appointment[]
   knowledgeGaps      KnowledgeGap[]
+  complianceIssues   ComplianceIssue[]
   examples           ExampleLibrary[]
   metrics            AgentMetric[]
   integrations       Integration[]
+  leadNotes          LeadNote[]
+  leadMemories       LeadMemory[]
+  apiKeys            ApiKey[]
 
   @@index([isActive])
 }
@@ -121,20 +141,20 @@ model Company {
 // cuenta de WhatsApp/correo/voz). El secreto (API key/token) va cifrado en
 // reposo (app-layer, CryptoService). Tenant-scoped por `companyId`.
 model Integration {
-  id        String  @id @default(uuid()) @db.Uuid
-  companyId String  @db.Uuid
+  id               String  @id @default(uuid()) @db.Uuid
+  companyId        String  @db.Uuid
   /// Canal: 'whatsapp' | 'email' | 'voice'.
-  channel   String
+  channel          String
   /// Proveedor: 'ycloud' | 'meta' | 'resend' | 'retell'.
-  provider  String
+  provider         String
   /// Datos NO secretos del proveedor (from, wabaId, agentId, etc.).
-  config    Json    @default("{}")
+  config           Json    @default("{}")
   /// Secreto (API key/token) cifrado con CryptoService. Nunca se expone.
-  secretEnc String?
+  secretEnc        String?
   /// Secreto de firma de webhooks (distinto de secretEnc en proveedores que lo
   /// separan, p. ej. YCloud), cifrado con CryptoService. Nunca se expone.
   webhookSecretEnc String?
-  isActive  Boolean @default(true)
+  isActive         Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -142,6 +162,36 @@ model Integration {
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, channel])
+  @@index([companyId])
+}
+
+/// Llave de API por empresa. La usa el servidor MCP (y cualquier integración
+/// que necesite entrar sin un usuario humano detrás). Se guarda solo el hash:
+/// la llave en claro se muestra UNA vez, al crearla.
+model ApiKey {
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
+
+  /// Nombre para reconocerla en el panel ("Claude de escritorio", "n8n").
+  name   String
+  /// Primeros caracteres de la llave, para identificarla sin revelarla.
+  prefix String
+  /// SHA-256 de la llave completa. Nunca guardamos la llave en claro.
+  hash   String @unique
+
+  /// Permisos de la llave. Por defecto solo lectura.
+  role PanelRole @default(SOLO_LECTURA)
+
+  /// Usuario que la emitió: queda como responsable de lo que la llave haga.
+  createdById String? @db.Uuid
+
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([companyId])
 }
 
@@ -175,11 +225,12 @@ model Agent {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  leads          Lead[]
-  interactions   Interaction[]
-  conversations  Conversation[]
-  promptVersions PromptVersion[]
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  leads            Lead[]
+  interactions     Interaction[]
+  conversations    Conversation[]
+  promptVersions   PromptVersion[]
+  complianceIssues ComplianceIssue[]
 
   @@index([companyId, isActive])
 }
@@ -203,6 +254,13 @@ model Lead {
 
   status LeadStatus @default(NUEVO)
 
+  /// Calificación de interés/urgencia real, distinta del estado del embudo.
+  /// Nula hasta que el agente tenga señales suficientes (ver tool `calificarLead`).
+  qualification       LeadQualification?
+  /// Motivo breve de la calificación actual, para transparencia y auditoría.
+  qualificationReason String?
+  qualifiedAt         DateTime?
+
   nextActionAt    DateTime?
   nextActionType  String?
   contactAttempts Int       @default(0)
@@ -223,6 +281,8 @@ model Lead {
   conversations Conversation[]
   agentActions  AgentAction[]
   appointments  Appointment[]
+  notes         LeadNote[]
+  memory        LeadMemory?
 
   @@unique([companyId, externalId])
   @@index([nextActionAt])
@@ -299,14 +359,14 @@ model KnowledgeDocument {
 /// es `Unsupported`: se inserta y se consulta por SQL crudo (Prisma no maneja el
 /// tipo `vector`). El índice HNSW se crea en la migración.
 model KnowledgeChunk {
-  id         String                @id @default(uuid()) @db.Uuid
-  companyId  String                @db.Uuid
-  documentId String                @db.Uuid
+  id         String                      @id @default(uuid()) @db.Uuid
+  companyId  String                      @db.Uuid
+  documentId String                      @db.Uuid
   content    String
   embedding  Unsupported("vector(1024)")
   chunkIndex Int
-  metadata   Json                  @default("{}")
-  createdAt  DateTime              @default(now())
+  metadata   Json                        @default("{}")
+  createdAt  DateTime                    @default(now())
 
   company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -317,13 +377,26 @@ model KnowledgeChunk {
 
 /// Usuario del panel (auth-plane, transversal a empresas).
 model User {
-  id           String   @id @default(uuid()) @db.Uuid
-  email        String   @unique
-  passwordHash String
-  name         String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                     String    @id @default(uuid()) @db.Uuid
+  email                  String    @unique
+  passwordHash           String
+  name                   String?
+  isActive               Boolean   @default(true)
+  /// Última vez que cambió la contraseña: los JWT emitidos antes dejan de valer.
+  passwordChangedAt      DateTime?
+  /// Administrador de la PLATAFORMA (nosotros), no de una empresa. Ve el
+  /// listado de clientes y crea cuentas de demo. Cruza el aislamiento
+  /// multi-tenant a propósito, así que se marca a mano por SQL.
+  isPlatformAdmin        Boolean   @default(false)
+  /// Cuándo terminó (o saltó) el tour de bienvenida. Null = nunca lo vio.
+  /// Va en el usuario y no en el navegador: quien ya lo hizo no debería
+  /// verlo otra vez por entrar desde otro equipo.
+  onboardingCompletedAt  DateTime?
+  /// Huella SHA-256 del token de recuperación vigente (el token va por correo).
+  passwordResetTokenHash String?   @unique
+  passwordResetExpiresAt DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   memberships Membership[]
 }
@@ -384,34 +457,60 @@ model AuditLog {
 /// Vacío de conocimiento detectado por el análisis (Fase 6). Se agrupa por
 /// pregunta y se cuenta la frecuencia; nada entra a la base sin aprobación.
 model KnowledgeGap {
-  id              String             @id @default(uuid()) @db.Uuid
-  companyId       String             @db.Uuid
-  conversationId  String?            @db.Uuid
-  question        String
-  suggestedAnswer String?
-  frequency       Int                @default(1)
-  status          KnowledgeGapStatus @default(PENDIENTE)
-  resolvedByUserId String?           @db.Uuid
-  resolvedAt      DateTime?
-  detectedAt      DateTime           @default(now())
+  id               String             @id @default(uuid()) @db.Uuid
+  companyId        String             @db.Uuid
+  conversationId   String?            @db.Uuid
+  question         String
+  suggestedAnswer  String?
+  frequency        Int                @default(1)
+  status           KnowledgeGapStatus @default(PENDIENTE)
+  resolvedByUserId String?            @db.Uuid
+  resolvedAt       DateTime?
+  detectedAt       DateTime           @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, status, frequency])
 }
 
+/// Falla de cumplimiento detectada en una conversación real: el agente no
+/// respetó una de SUS PROPIAS reglas (las de su prompt activo — por eso es
+/// distinto por agente/tipo, a diferencia de los vacíos de conocimiento que
+/// son a nivel empresa). Ej.: ignoró un "no me llames", repitió una acción ya
+/// hecha, no usó la herramienta que correspondía.
+model ComplianceIssue {
+  id               String                @id @default(uuid()) @db.Uuid
+  companyId        String                @db.Uuid
+  agentId          String                @db.Uuid
+  conversationId   String?               @db.Uuid
+  /// Regla incumplida, en una frase (ej. "Siguió ofreciendo llamar después de que el cliente pidió que no lo llamaran").
+  issue            String
+  /// Cita textual del agente en la transcripción que evidencia la falla.
+  evidence         String?
+  frequency        Int                   @default(1)
+  status           ComplianceIssueStatus @default(PENDIENTE)
+  resolvedByUserId String?               @db.Uuid
+  resolvedAt       DateTime?
+  detectedAt       DateTime              @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent   Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, agentId, status, frequency])
+}
+
 /// Biblioteca de ejemplos de buenas respuestas (Fase 6). Con embedding para
 /// recuperar los más similares e inyectarlos como few-shot en tiempo de ejecución.
 model ExampleLibrary {
-  id            String   @id @default(uuid()) @db.Uuid
-  companyId     String   @db.Uuid
+  id            String                      @id @default(uuid()) @db.Uuid
+  companyId     String                      @db.Uuid
   situation     String
   agentResponse String
   outcome       String
   embedding     Unsupported("vector(1024)")
-  isApproved    Boolean  @default(false)
-  usageCount    Int      @default(0)
-  createdAt     DateTime @default(now())
+  isApproved    Boolean                     @default(false)
+  usageCount    Int                         @default(0)
+  createdAt     DateTime                    @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -459,6 +558,50 @@ model Appointment {
   @@index([reminderSentAt, startAt])
 }
 
+/// Nota interna que un humano deja sobre un lead (CRM propio del panel).
+/// No entra al contexto del agente: es memoria del equipo, no del modelo.
+/// Memoria viva de un lead: lo que el agente sabe de esa persona mas alla de
+/// la ventana de mensajes reciente. Va en su propia tabla, separada de
+/// `Lead.metadata` (que es de la ingesta y la pisan las sincronizaciones del
+/// CRM) y NO cuenta como respaldo del guardrail de cifras: es contexto que el
+/// agente dedujo de la conversacion, no un dato verificado.
+model LeadMemory {
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
+  leadId    String @unique @db.Uuid
+
+  /// Resumen en prosa de quien es el lead y en que quedo la relacion.
+  summary String?
+  /// `occurredAt` de la interaccion mas nueva incluida en el resumen.
+  summarizedUpto DateTime?
+  /// Hechos clave como lista de `{ clave, valor, registradoEn }`.
+  facts Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId])
+}
+
+model LeadNote {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @db.Uuid
+  leadId    String   @db.Uuid
+  /// Usuario del panel que la escribió (null si la borraron de Membership).
+  authorId  String?  @db.Uuid
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId, createdAt])
+}
+
 /// System prompt versionado por agente. Solo una versión activa por agente.
 /// La gestión/aprobación de versiones se completa en Fase 6; en Fase 3 se
 /// siembra una versión activa por defecto al crear el agente.
@@ -482,16 +625,16 @@ model PromptVersion {
 /// Datos vivos que NO van a RAG sino a consulta directa (precios, horarios,
 /// políticas...). Fuente de verdad; respeta vigencia por fecha.
 model StructuredFact {
-  id        String       @id @default(uuid()) @db.Uuid
-  companyId String       @db.Uuid
-  key       String
-  category  FactCategory
-  value     Json
-  validFrom DateTime     @default(now())
+  id         String       @id @default(uuid()) @db.Uuid
+  companyId  String       @db.Uuid
+  key        String
+  category   FactCategory
+  value      Json
+  validFrom  DateTime     @default(now())
   validUntil DateTime?
-  isActive  Boolean      @default(true)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 

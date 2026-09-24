@@ -71,44 +71,33 @@ Variables mínimas en `.env` (el resto tiene defaults sanos):
 
 Esto crea tu empresa, tu usuario **OWNER** y un **Agente de Ventas** por defecto.
 
-### 3.2 Cargar el conocimiento (menú **Conocimiento**)
+### 3.2 Conocer el panel
 
-El agente solo dice lo que está aquí. Dos tipos:
+El recorrido completo, menú por menú, está en **[`PANEL.md`](PANEL.md)**: qué
+hace cada pantalla, cómo cargar conocimiento, configurar agentes, importar
+leads desde otro CRM, revisar métricas y conectar integraciones. Es la misma
+guía que se ve en la pestaña **Ayuda** de la aplicación.
 
-- **Documentos (RAG)**: textos largos (FAQs, catálogo, objeciones). Se trocean e
-  indexan; el agente los recupera por similitud.
-- **Datos** (precios, horarios, políticas): fuente de verdad exacta. Clave +
-  categoría + **valor JSON**, ej. clave `precio_corte`, categoría `PRECIO`,
-  valor `{"monto":25000,"moneda":"CLP"}`.
+Lo mínimo para tener un agente respondiendo:
 
-Usa **"Pregúntale al conocimiento"** para ver qué recuperaría el agente ante una
-pregunta, antes de exponerlo a clientes.
+1. **Conocimiento** → carga al menos un documento y los datos exactos (precios,
+   horarios). El agente no dice nada que no esté ahí.
+2. **Agentes** → revisa el agente de ventas que se creó solo, o crea el que
+   necesites (el asistente de la pantalla de inicio te guía).
+3. **Integraciones** → conecta WhatsApp y pega el **secreto de firma del
+   webhook**. Sin ese secreto, los mensajes entrantes se rechazan.
+4. **Configuración** → zona horaria, horario hábil y tu número de WhatsApp.
 
-### 3.3 Configurar agentes (menú **Agentes**)
+### 3.3 Conectar la entrada de leads (webhook firmado)
 
-Crea agentes especializados y define **cómo se enrutan** los leads:
-
-- **Canales que atiende** (WhatsApp / correo / llamada). Vacío = cualquiera.
-- **Estados de lead que maneja** (NUEVO, EN_CONVERSACION, ESCALADO_HUMANO…).
-  Vacío = cualquiera.
-- **Prioridad** y **Agente por defecto**: desempatan cuando varios califican.
-
-El enrutamiento decide en este orden: **canal → estado → clasificador (IA)**. Si
-tras filtrar por canal y estado queda un único candidato, se asigna directo; si
-quedan varios y hay `ANTHROPIC_API_KEY`, un clasificador elige por la
-**descripción** de cada agente (por eso vale la pena describirlos bien).
-
-> Regla de oro: **un solo agente a cargo de un lead a la vez** (`Lead.agentId`).
-> Un agente pasa la conversación a otro con la herramienta `derivarAAgente`,
-> dejando un resumen de contexto — lo ves en **Traspasos recientes**.
-
-### 3.4 Conectar la entrada de leads (webhook firmado)
-
-Envía cada lead nuevo a `POST /webhooks/lead` con **firma HMAC-SHA256** del
-cuerpo crudo usando tu `webhookSecret`:
+Envía cada lead nuevo a `POST /webhooks/lead` con **firma HMAC-SHA256** usando
+tu `webhookSecret`:
 
 - Header `X-Company-Id`: el id de tu empresa.
-- Header `X-Signature`: `hmacSHA256(rawBody, webhookSecret)` en hex.
+- Header `X-Timestamp`: la hora actual en **milisegundos Unix** (`Date.now()`).
+- Header `X-Signature`: `hmacSHA256("<X-Timestamp>." + rawBody, webhookSecret)`
+  en hex — el timestamp entra en la firma, y el servidor lo exige dentro de
+  **±5 minutos**. Así una petición capturada no sirve para siempre.
 
 Ejemplo (Node):
 
@@ -123,8 +112,10 @@ const body = JSON.stringify({
   source: 'landing-web',
   preferredChannel: 'whatsapp',
 });
+const timestamp = String(Date.now());
 const signature = crypto
   .createHmac('sha256', WEBHOOK_SECRET)
+  .update(`${timestamp}.`)
   .update(body)
   .digest('hex');
 
@@ -133,46 +124,33 @@ await fetch('http://localhost:3000/webhooks/lead', {
   headers: {
     'Content-Type': 'application/json',
     'X-Company-Id': COMPANY_ID,
+    'X-Timestamp': timestamp,
     'X-Signature': signature,
   },
   body,
 });
 ```
 
-En **n8n**: un nodo *Crypto* (HMAC-SHA256, hex) sobre el JSON y un *HTTP Request*
-con esos headers. La ingesta es **idempotente** por `(empresa, externalId)`: si
+En **n8n**: un nodo *Code* que arme `timestamp = String(Date.now())` y firme
+`` `${timestamp}.${JSON.stringify(body)}` `` con HMAC-SHA256 (hex), y un
+*HTTP Request* con los tres headers.
+
+> **Migración desde el esquema anterior** (firma solo del cuerpo, sin
+> `X-Timestamp`): sigue aceptándose con un aviso en los logs del servidor
+> mientras `WEBHOOK_REQUIRE_TIMESTAMP=false`. Cuando todos tus flujos manden
+> el timestamp, ponlo en `true` y el esquema viejo queda rechazado. La ingesta es **idempotente** por `(empresa, externalId)`: si
 reenvías el mismo lead, se actualiza en vez de duplicarse.
 
-### 3.5 Simular una conversación (dev)
+### 3.4 Simular una conversación (dev)
 
 Para probar sin WhatsApp real, usa `POST /whatsapp/simulate` (también firmado con
 HMAC). Simula un mensaje entrante de un número; el agente responde por el proveedor
 `log` (verás la respuesta en la consola del backend). En producción, el webhook de
 Meta (`/whatsapp/webhook`) reemplaza a la simulación.
 
-### 3.6 Operar la bandeja (menú **Bandeja**)
-
-- Lista de conversaciones en vivo (refresco cada 4 s), filtrable por estado.
-- Entra a un lead para ver el **hilo** (cliente / agente / operador / sistema) y
-  el **log de acciones** del agente (qué herramienta usó y con qué resultado).
-- **Tomar control**: pausas al agente y respondes tú. **Devolver al agente** lo
-  reactiva. (Requiere rol OWNER u OPERADOR.)
-
-### 3.7 Aprobación y mejora continua (menú **Aprobación** / **Prompts**)
-
-El sistema **propone**, tú **apruebas** (el modelo no cambia solo):
-
-- **Vacíos de conocimiento**: preguntas que el agente no supo responder. Editas
-  la respuesta y **Aprobar** → se indexa como FAQ.
-- **Ejemplos**: buenas respuestas detectadas; al aprobarlas se usan como
-  *few-shot*.
-- **Prompts**: el playbook semanal propone nuevas versiones de system prompt
-  como **inactivas**; en **Prompts** revisas y **Activas** la que quieras.
-
-### 3.8 Métricas (menú **Métricas**)
-
-KPIs del rango (leads, citas, mensajes, escalamientos) y detalle por día. En
-**Agentes** tienes además las métricas **comparadas** por agente y los traspasos.
+> El agente espera unos segundos antes de responder (`AGENT_TURN_DEBOUNCE_MS`,
+> 8 s por defecto). Es a propósito: si el cliente manda tres mensajes seguidos,
+> los contesta todos juntos en vez de responder tres veces.
 
 ---
 

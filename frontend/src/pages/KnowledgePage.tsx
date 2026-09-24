@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import {
   Button,
@@ -15,8 +16,10 @@ import type {
 } from '../types';
 
 const CATEGORIES = ['PRECIO', 'SERVICIO', 'HORARIO', 'POLITICA', 'OTRO'];
+const JSON_EXAMPLE = '{"monto":25000}';
 
 export function KnowledgePage() {
+  const { t } = useTranslation();
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
   const [facts, setFacts] = useState<StructuredFactItem[]>([]);
   const [results, setResults] = useState<SearchResultItem[] | null>(null);
@@ -28,6 +31,10 @@ export function KnowledgePage() {
     value: '',
   });
   const [query, setQuery] = useState('');
+  // Lo eliminado se oculta por defecto. La fila no se borra de la base (los
+  // datos guardan su historial de versiones), pero el agente ya no la usa, y
+  // dejarla a la vista llenaba la lista de versiones viejas.
+  const [verEliminados, setVerEliminados] = useState(false);
 
   const load = useCallback(async () => {
     const [d, f] = await Promise.all([
@@ -50,8 +57,15 @@ export function KnowledgePage() {
     load();
   };
 
-  const deleteDoc = async (id: string) => {
+  const deleteDoc = async (id: string, title: string) => {
+    if (!confirm(t('knowledge.confirmDeleteDoc', { title }))) return;
     await api.delete(`/panel/knowledge/documents/${id}`);
+    load();
+  };
+
+  const deleteFact = async (id: string, key: string) => {
+    if (!confirm(t('knowledge.confirmDeleteFact', { key }))) return;
+    await api.delete(`/panel/knowledge/facts/${id}`);
     load();
   };
 
@@ -61,7 +75,7 @@ export function KnowledgePage() {
     try {
       parsed = JSON.parse(factForm.value);
     } catch {
-      alert('El valor debe ser JSON válido, ej: {"monto":25000}');
+      alert(t('knowledge.invalidJson', { example: JSON_EXAMPLE }));
       return;
     }
     await api.post('/panel/knowledge/facts', {
@@ -85,68 +99,81 @@ export function KnowledgePage() {
   return (
     <div className="mx-auto max-w-5xl p-4 md:p-6">
       <PageHeader
-        title="Conocimiento"
-        subtitle="Lo que el agente puede consultar — nunca inventa fuera de esto."
+        title={t('knowledge.title')}
+        subtitle={t('knowledge.subtitle')}
+        actions={
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-500">
+            <input
+              type="checkbox"
+              checked={verEliminados}
+              onChange={(e) => setVerEliminados(e.target.checked)}
+              className="rounded border-slate-300"
+            />
+            {t('knowledge.showDeleted')}
+          </label>
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Documentos */}
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            Documentos (RAG)
+            {t('knowledge.docsTitle')}
           </h2>
           <form onSubmit={createDoc} className="mb-3 space-y-2">
             <Input
-              placeholder="Título"
+              placeholder={t('knowledge.titlePlaceholder')}
               value={docForm.title}
               onChange={(e) => setDocForm({ ...docForm, title: e.target.value })}
             />
             <Textarea
-              placeholder="Contenido (texto/markdown)"
+              placeholder={t('knowledge.contentPlaceholder')}
               value={docForm.content}
               onChange={(e) =>
                 setDocForm({ ...docForm, content: e.target.value })
               }
               className="h-24"
             />
-            <Button size="sm">Indexar documento</Button>
+            <Button size="sm">{t('knowledge.indexBtn')}</Button>
           </form>
           <ul className="space-y-1.5 text-sm">
-            {docs.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-1.5"
-              >
-                <span
-                  className={d.isActive ? '' : 'text-slate-400 line-through'}
+            {docs
+              .filter((d) => verEliminados || d.isActive)
+              .map((d) => (
+                <li
+                  key={d.id}
+                  className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-1.5"
                 >
-                  {d.title}{' '}
-                  <span className="text-xs text-slate-400">
-                    ({d.sourceType} v{d.version})
-                  </span>
-                </span>
-                {d.isActive && (
-                  <button
-                    onClick={() => deleteDoc(d.id)}
-                    className="text-xs text-rose-600 hover:underline"
+                  <span
+                    className={d.isActive ? '' : 'text-slate-400 line-through'}
                   >
-                    desactivar
-                  </button>
-                )}
-              </li>
-            ))}
+                    {d.title}{' '}
+                    <span className="text-xs text-slate-400">
+                      ({d.sourceType} v{d.version})
+                    </span>
+                  </span>
+                  {d.isActive && (
+                    <button
+                      onClick={() => deleteDoc(d.id, d.title)}
+                      className="text-xs text-rose-600 hover:underline"
+                    >
+                      {t('common.delete')}
+                    </button>
+                  )}
+                </li>
+              ))}
           </ul>
         </Card>
 
         {/* Hechos estructurados */}
         <Card className="p-4">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            Datos (precios, horarios…)
+            {t('knowledge.factsTitle')}
           </h2>
           <form onSubmit={createFact} className="mb-3 space-y-2">
             <div className="flex gap-2">
               <Input
-                placeholder="clave (ej. precio_x)"
+                placeholder={t('knowledge.keyPlaceholder')}
                 value={factForm.key}
                 onChange={(e) =>
                   setFactForm({ ...factForm, key: e.target.value })
@@ -160,51 +187,69 @@ export function KnowledgePage() {
                 className="w-auto"
               >
                 {CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {t(`knowledge.categories.${c}`)}
+                  </option>
                 ))}
               </Select>
             </div>
             <Input
-              placeholder='valor JSON, ej. {"monto":25000}'
+              placeholder={t('knowledge.valuePlaceholder', { example: JSON_EXAMPLE })}
               value={factForm.value}
               onChange={(e) =>
                 setFactForm({ ...factForm, value: e.target.value })
               }
             />
-            <Button size="sm">Guardar dato</Button>
+            <Button size="sm">{t('knowledge.saveFactBtn')}</Button>
           </form>
           <ul className="space-y-1.5 text-sm">
-            {facts.map((f) => (
-              <li
-                key={f.id}
-                className="rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-1.5"
-              >
-                <span className="font-mono text-xs text-brand-700">
-                  {f.key}
-                </span>{' '}
-                = {JSON.stringify(f.value)}
-              </li>
-            ))}
+            {facts
+              .filter((f) => verEliminados || f.isActive)
+              .map((f) => (
+                <li
+                  key={f.id}
+                  className="flex items-start justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-1.5"
+                >
+                  <span
+                    className={
+                      f.isActive ? 'min-w-0' : 'min-w-0 text-slate-400 line-through'
+                    }
+                  >
+                    <span className="font-mono text-xs text-brand-700">
+                      {f.key}
+                    </span>{' '}
+                    = {JSON.stringify(f.value)}
+                  </span>
+                  {f.isActive && (
+                    <button
+                      onClick={() => deleteFact(f.id, f.key)}
+                      className="shrink-0 text-xs text-rose-600 hover:underline"
+                    >
+                      {t('common.delete')}
+                    </button>
+                  )}
+                </li>
+              ))}
           </ul>
         </Card>
 
         {/* Buscador de prueba */}
         <Card className="p-4 md:col-span-2">
           <h2 className="mb-3 text-sm font-semibold text-slate-700">
-            Pregúntale al conocimiento
+            {t('knowledge.searchTitle')}
           </h2>
           <form onSubmit={search} className="mb-3 flex gap-2">
             <Input
-              placeholder="¿qué recuperaría el agente?"
+              placeholder={t('knowledge.searchPlaceholder')}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <Button>Buscar</Button>
+            <Button>{t('knowledge.searchBtn')}</Button>
           </form>
           {results && (
             <ul className="space-y-2 text-sm">
               {results.length === 0 && (
-                <li className="text-slate-400">Sin resultados relevantes.</li>
+                <li className="text-slate-400">{t('knowledge.noResults')}</li>
               )}
               {results.map((r) => (
                 <li
@@ -212,7 +257,8 @@ export function KnowledgePage() {
                   className="rounded-lg border border-slate-100 bg-slate-50/60 p-3"
                 >
                   <div className="mb-0.5 text-xs text-slate-400">
-                    {r.documentTitle} · similitud {r.similarity.toFixed(2)}
+                    {r.documentTitle} · {t('knowledge.similarity')}{' '}
+                    {r.similarity.toFixed(2)}
                   </div>
                   {r.content}
                 </li>

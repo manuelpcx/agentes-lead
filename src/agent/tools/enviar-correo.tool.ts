@@ -3,9 +3,11 @@ import { Channel, Direction } from '@prisma/client';
 import { EmailService } from '../../email/email.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
-import { leadFactSources, validateOutgoingMessage } from '../output-validator';
+import { factSourcesFor, validateOutgoingMessage } from '../output-validator';
+import { stripSystemAnnotation } from '../conversation-history';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_ENVIAR_CORREO } from './tool-names';
+import { collectionFloorRefusal, proactiveTag } from './collection-floor.guard';
 
 /**
  * Envía un correo al lead. Aplica el mismo guardrail que WhatsApp: toda cifra
@@ -41,7 +43,9 @@ export class EnviarCorreoTool implements AgentTool {
     ctx: ToolContext,
   ): Promise<ToolResult> {
     const asunto = String(input.asunto ?? '').trim();
-    const cuerpo = String(input.cuerpo ?? '').trim();
+    const cuerpo = stripSystemAnnotation(
+      String(input.cuerpo ?? '').trim(),
+    ).trim();
     if (!asunto || !cuerpo) {
       return { content: 'Faltan "asunto" o "cuerpo".', isError: true };
     }
@@ -49,10 +53,7 @@ export class EnviarCorreoTool implements AgentTool {
       return { content: 'El lead no tiene correo registrado.', isError: true };
     }
 
-    const validation = validateOutgoingMessage(
-      cuerpo,
-      leadFactSources(ctx.recordedFacts, ctx.lead, [ctx.companyWhatsApp]),
-    );
+    const validation = validateOutgoingMessage(cuerpo, factSourcesFor(ctx));
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);
       await this.interactions.register({
@@ -69,6 +70,16 @@ export class EnviarCorreoTool implements AgentTool {
       };
     }
 
+    // Piso legal de cobranza (topes y horario de gestiones proactivas).
+    const limite = await collectionFloorRefusal(
+      this.interactions,
+      ctx,
+      'mensajeria',
+    );
+    if (limite) {
+      return { content: limite.content, isError: true, stop: limite.stop };
+    }
+
     await this.email.send({
       to: ctx.lead.email,
       subject: asunto,
@@ -80,6 +91,7 @@ export class EnviarCorreoTool implements AgentTool {
       direction: Direction.outbound,
       content: `[${asunto}] ${cuerpo}`,
       agentId: ctx.agentId,
+      metadata: proactiveTag(ctx),
     });
     ctx.messageSent = true;
     return { content: 'Correo enviado al lead.' };

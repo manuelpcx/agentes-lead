@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { LeadStatus } from '../types';
 import { Badge } from './ui';
 
@@ -14,5 +15,6 @@ const TONES: Record<LeadStatus, Tone> = {
 };
 
 export function StatusBadge({ status }: { status: LeadStatus }) {
-  return <Badge tone={TONES[status]}>{status.replace(/_/g, ' ')}</Badge>;
+  const { t } = useTranslation();
+  return <Badge tone={TONES[status]}>{t(`leadStatus.${status}`)}</Badge>;
 }

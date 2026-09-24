@@ -44,13 +44,19 @@ if (pendientes) {
 }
 
 const bodyStr = JSON.stringify(dto);
-const signature = createHmac('sha256', SECRET).update(bodyStr).digest('hex');
+// Firma v2: el timestamp entra en la firma (ver docs/GUIA_DE_USO.md §3.3).
+const timestamp = String(Date.now());
+const signature = createHmac('sha256', SECRET)
+  .update(`${timestamp}.`)
+  .update(bodyStr)
+  .digest('hex');
 
 const res = await fetch(`${BACKEND}/onboarding`, {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
     'X-Company-Id': COMPANY_ID,
+    'X-Timestamp': timestamp,
     'X-Signature': signature,
   },
   body: bodyStr,

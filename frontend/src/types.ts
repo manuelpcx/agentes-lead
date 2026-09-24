@@ -10,6 +10,36 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  /** Null si nunca completó ni saltó el tour de bienvenida. */
+  onboardingCompletedAt: string | null;
+  /** Administrador de la plataforma: ve el mantenedor de clientes. */
+  isPlatformAdmin: boolean;
+}
+
+/** Una empresa cliente, como la ve el mantenedor de la plataforma. */
+export interface CompanySummary {
+  id: string;
+  name: string;
+  rut: string;
+  isActive: boolean;
+  createdAt: string;
+  usuarios: number;
+  agentesActivos: number;
+  canales: string[];
+  conocimiento: number;
+  leads: number;
+  leadsRecientes: number;
+  mensajesRecientes: number;
+  ultimaActividad: string | null;
+}
+
+/** Credenciales de una demo recién creada. Se muestran una sola vez. */
+export interface DemoCompanyCreated {
+  companyId: string;
+  companyName: string;
+  email: string;
+  password: string;
+  webhookSecret: string;
 }
 
 export interface LoginResponse {
@@ -27,6 +57,8 @@ export type LeadStatus =
   | 'CERRADO_PERDIDO'
   | 'ESCALADO_HUMANO';
 
+export type LeadQualification = 'FRIO' | 'TIBIO' | 'CALIENTE';
+
 export interface LastMessage {
   content: string;
   channel: string;
@@ -38,10 +70,43 @@ export interface LeadListItem {
   id: string;
   name: string | null;
   phone: string | null;
+  email: string | null;
   status: LeadStatus;
+  qualification: LeadQualification | null;
   isPausedForHuman: boolean;
+  nextActionAt: string | null;
   updatedAt: string;
   lastMessage: LastMessage | null;
+}
+
+export type AppointmentStatus =
+  | 'PROGRAMADA'
+  | 'CONFIRMADA'
+  | 'CANCELADA'
+  | 'COMPLETADA';
+
+export interface Appointment {
+  id: string;
+  leadId: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  location: string | null;
+  notes: string | null;
+  status: AppointmentStatus;
+}
+
+/** Cita del calendario: incluye lo mínimo del lead para pintarla. */
+export interface AppointmentWithLead extends Appointment {
+  lead: { id: string; name: string | null; phone: string | null };
+}
+
+export interface LeadNote {
+  id: string;
+  leadId: string;
+  body: string;
+  authorName: string | null;
+  createdAt: string;
 }
 
 export interface Interaction {
@@ -149,6 +214,14 @@ export interface ExampleItem {
   outcome: string;
 }
 
+export interface ComplianceIssueItem {
+  id: string;
+  agentName: string;
+  issue: string;
+  evidence: string | null;
+  frequency: number;
+}
+
 export interface PromptVersionItem {
   id: string;
   version: number;
@@ -181,12 +254,87 @@ export interface LeadDetail {
     phone: string | null;
     email: string | null;
     status: LeadStatus;
+    qualification: LeadQualification | null;
+    qualificationReason: string | null;
     source: string | null;
     isPausedForHuman: boolean;
     contactAttempts: number;
     nextActionAt: string | null;
     nextActionType: string | null;
+    campaign: string | null;
+    preferredChannel: string | null;
+    timezone: string | null;
   };
   interactions: Interaction[];
   agentActions: AgentAction[];
+  appointments: Appointment[];
+  notes: LeadNote[];
+  memory: LeadMemory;
+}
+
+/** Perfil acumulado del lead: lo que el agente sabe de esa persona. */
+export interface LeadMemory {
+  summary: string | null;
+  facts: LeadMemoryFact[];
+  updatedAt: string | null;
+}
+
+export interface LeadMemoryFact {
+  clave: string;
+  valor: string;
+  registradoEn: string;
+}
+
+// ─────────────────── importación desde otro CRM ───────────────────
+
+/** Campos de la ficha a los que puede apuntar una columna del CSV. */
+export type ImportField =
+  | 'name'
+  | 'phone'
+  | 'email'
+  | 'source'
+  | 'campaign'
+  | 'status'
+  | 'externalId';
+
+/** Lo que devuelve el backend tras leer el archivo, antes de importar nada. */
+export interface ImportPreview {
+  delimiter: string;
+  headers: string[];
+  totalRows: number;
+  sample: string[][];
+  /** Campo propuesto por cabecera; `null` = no reconocida. */
+  mapping: Record<string, ImportField | null>;
+  suggestedPrefix: string;
+  truncated: number;
+}
+
+export interface ImportResult {
+  total: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  errors: { row: number; reason: string }[];
+  truncated: number;
+  scheduledFirstContact: boolean;
+}
+
+// ─────────────────── llaves de API (acceso MCP) ───────────────────
+
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  /** Prefijo visible; no sirve para autenticarse. */
+  prefix: string;
+  role: 'OWNER' | 'OPERADOR' | 'SOLO_LECTURA';
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+/** Solo al crearla: es la única vez que el backend devuelve la llave. */
+export interface CreatedApiKey extends ApiKeySummary {
+  key: string;
 }

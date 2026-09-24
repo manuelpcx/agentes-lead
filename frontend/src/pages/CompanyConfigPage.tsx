@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import {
   Button,
@@ -39,7 +40,11 @@ interface VoiceOption {
   previewUrl?: string;
 }
 
+const HOURS_EXAMPLE = '{"days":{"mon":[{"start":"09:00","end":"18:00"}]}}';
+const GREETING_EXAMPLE = { v1: '{{nombre}}', v2: '{{empresa}}' };
+
 export function CompanyConfigPage() {
+  const { t } = useTranslation();
   const [company, setCompany] = useState<CompanyConfig | null>(null);
   const [name, setName] = useState('');
   const [timezone, setTimezone] = useState('');
@@ -83,7 +88,7 @@ export function CompanyConfigPage() {
     try {
       hours = JSON.parse(businessHours || '{}');
     } catch {
-      setMsg('El horario debe ser JSON válido.');
+      setMsg(t('companyConfig.invalidHours'));
       return;
     }
     const speedNum = Number(voiceSpeed);
@@ -110,32 +115,32 @@ export function CompanyConfigPage() {
       businessHours: hours,
       channelsConfig,
     });
-    setMsg('Guardado.');
+    setMsg(t('companyConfig.saved'));
   };
 
   if (!company) {
-    return <div className="p-6 text-sm text-slate-500">Cargando…</div>;
+    return <div className="p-6 text-sm text-slate-500">{t('common.loading')}</div>;
   }
 
   const selectedVoice = voices.find((v) => v.voiceId === voiceId);
 
   return (
     <div className="mx-auto max-w-2xl p-4 md:p-6">
-      <PageHeader
-        title="Configuración de la empresa"
-        subtitle="Identidad, horario, canal de WhatsApp y voz del agente."
-      />
+      <PageHeader title={t('companyConfig.title')} subtitle={t('companyConfig.subtitle')} />
       <Card className="p-6">
         <form onSubmit={save} className="space-y-4">
-          <Field label="Company ID" hint="Úsalo en el webhook de leads (X-Company-Id).">
+          <Field
+            label={t('companyConfig.companyIdLabel')}
+            hint={t('companyConfig.companyIdHint')}
+          >
             <Input value={company.id} readOnly className="bg-slate-50 font-mono text-xs" />
           </Field>
 
-          <Field label="Nombre">
+          <Field label={t('companyConfig.nameLabel')}>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
 
-          <Field label="Zona horaria (IANA)">
+          <Field label={t('companyConfig.timezoneLabel')}>
             <Input
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
@@ -143,8 +148,8 @@ export function CompanyConfigPage() {
           </Field>
 
           <Field
-            label="WhatsApp número de negocio (E.164)"
-            hint="Tu número de WhatsApp (ej. +56911111111). Lo usa YCloud para enrutar los mensajes entrantes a esta empresa."
+            label={t('companyConfig.whatsappNumberLabel')}
+            hint={t('companyConfig.whatsappNumberHint')}
           >
             <Input
               value={whatsappNumber}
@@ -155,8 +160,8 @@ export function CompanyConfigPage() {
           </Field>
 
           <Field
-            label="WhatsApp Phone Number ID (solo Meta directo)"
-            hint="Solo si usas Meta Cloud API directo. Con YCloud, deja este campo vacío."
+            label={t('companyConfig.whatsappIdLabel')}
+            hint={t('companyConfig.whatsappIdHint')}
           >
             <Input
               value={whatsappId}
@@ -167,8 +172,8 @@ export function CompanyConfigPage() {
           </Field>
 
           <Field
-            label="Horario hábil (JSON)"
-            hint='Ej: {"days":{"mon":[{"start":"09:00","end":"18:00"}]}}'
+            label={t('companyConfig.businessHoursLabel')}
+            hint={t('companyConfig.businessHoursHint', { example: HOURS_EXAMPLE })}
           >
             <Textarea
               value={businessHours}
@@ -180,24 +185,23 @@ export function CompanyConfigPage() {
           {/* ── Voz del agente (llamadas) ── */}
           <div className="border-t border-slate-200 pt-5">
             <h3 className="mb-1 text-sm font-semibold text-slate-800">
-              Voz del agente (llamadas)
+              {t('companyConfig.voiceSectionTitle')}
             </h3>
             <p className="mb-4 text-xs text-slate-500">
-              Define la voz y el tono con que el agente llama a los leads. Se
-              aplica a cada llamada de esta empresa.
+              {t('companyConfig.voiceSectionHint')}
             </p>
 
             <Field
-              label="Voz"
+              label={t('companyConfig.voiceLabel')}
               hint={
                 voices.length
-                  ? 'Elige del catálogo del proveedor de voz.'
-                  : 'Sin voces disponibles (configura la API key de voz para poblar el catálogo). Puedes pegar un voice_id manualmente abajo.'
+                  ? t('companyConfig.voiceHintWithCatalog')
+                  : t('companyConfig.voiceHintWithoutCatalog')
               }
             >
               {voices.length ? (
                 <Select value={voiceId} onChange={(e) => setVoiceId(e.target.value)}>
-                  <option value="">(por defecto del agente)</option>
+                  <option value="">{t('companyConfig.voiceDefaultOption')}</option>
                   {voices.map((v) => (
                     <option key={v.voiceId} value={v.voiceId}>
                       {v.name}
@@ -223,47 +227,44 @@ export function CompanyConfigPage() {
                 src={selectedVoice.previewUrl}
                 className="mb-4 w-full"
               >
-                Tu navegador no soporta audio.
+                {t('companyConfig.voicePreviewUnsupported')}
               </audio>
             )}
 
-            <Field
-              label="Tono / estilo"
-              hint="Cómo debe sonar y comportarse en la llamada. Ej: 'Cercano y directo, frases cortas, sin tecnicismos.'"
-            >
+            <Field label={t('companyConfig.toneLabel')} hint={t('companyConfig.toneHint')}>
               <Textarea
                 value={voiceTone}
                 onChange={(e) => setVoiceTone(e.target.value)}
                 className="h-24"
-                placeholder="Cálido, cercano y profesional. Una idea a la vez."
+                placeholder={t('companyConfig.tonePlaceholder')}
               />
             </Field>
 
             <Field
-              label="Saludo inicial"
-              hint="Primera frase de la llamada. Puedes usar {{nombre}} y {{empresa}}."
+              label={t('companyConfig.greetingLabel')}
+              hint={t('companyConfig.greetingHint', GREETING_EXAMPLE)}
             >
               <Input
                 value={voiceBegin}
                 onChange={(e) => setVoiceBegin(e.target.value)}
-                placeholder="Hola {{nombre}}, te llamo de {{empresa}}. ¿Tienes un minuto?"
+                placeholder={t('companyConfig.greetingPlaceholder', GREETING_EXAMPLE)}
               />
             </Field>
 
             <div className="grid grid-cols-2 gap-4">
-              <Field label="Idioma">
+              <Field label={t('companyConfig.languageLabel')}>
                 <Select
                   value={voiceLang}
                   onChange={(e) => setVoiceLang(e.target.value)}
                 >
-                  <option value="">(por defecto)</option>
-                  <option value="es-419">Español (Latinoamérica)</option>
-                  <option value="es-ES">Español (España)</option>
-                  <option value="multi">Multilingüe</option>
+                  <option value="">{t('companyConfig.languageDefault')}</option>
+                  <option value="es-419">{t('companyConfig.languageLatam')}</option>
+                  <option value="es-ES">{t('companyConfig.languageSpain')}</option>
+                  <option value="multi">{t('companyConfig.languageMulti')}</option>
                 </Select>
               </Field>
 
-              <Field label="Velocidad" hint="1 = normal (0.5–2).">
+              <Field label={t('companyConfig.speedLabel')} hint={t('companyConfig.speedHint')}>
                 <Input
                   type="number"
                   min="0.5"
@@ -277,7 +278,7 @@ export function CompanyConfigPage() {
           </div>
 
           {msg && <p className="text-sm text-slate-600">{msg}</p>}
-          <Button type="submit">Guardar</Button>
+          <Button type="submit">{t('companyConfig.save')}</Button>
         </form>
       </Card>
     </div>

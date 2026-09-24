@@ -78,7 +78,9 @@ export class WhatsappTemplatesService {
     });
     const text = await res.text();
     if (!res.ok) {
-      this.logger.warn(`YCloud create template ${res.status}: ${text.slice(0, 300)}`);
+      this.logger.warn(
+        `YCloud create template ${res.status}: ${text.slice(0, 300)}`,
+      );
       throw new BadRequestException(
         `YCloud rechazó la plantilla (${res.status}): ${text.slice(0, 300)}`,
       );
@@ -101,8 +103,12 @@ export class WhatsappTemplatesService {
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      this.logger.warn(`YCloud list templates ${res.status}: ${detail.slice(0, 200)}`);
-      throw new ServiceUnavailableException('No se pudieron listar las plantillas.');
+      this.logger.warn(
+        `YCloud list templates ${res.status}: ${detail.slice(0, 200)}`,
+      );
+      throw new ServiceUnavailableException(
+        'No se pudieron listar las plantillas.',
+      );
     }
     const json = (await res.json()) as { items?: unknown[] } | unknown[];
     const items = Array.isArray(json) ? json : (json.items ?? []);

@@ -10,9 +10,13 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { FactCategory, PanelRole, Prisma } from '@prisma/client';
+import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { AuditService } from '../audit/audit.service';
@@ -31,7 +35,9 @@ import {
   IntegrationChannel,
 } from '../integrations/credentials.service';
 import { IntegrationTester } from '../integrations/integration-tester.service';
+import { buildWebhookInfo, publicBaseUrl } from '../integrations/webhook-urls';
 import { UpsertIntegrationDto } from './dto/upsert-integration.dto';
+import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { KnowledgeDocumentService } from '../knowledge/knowledge-document.service';
 import { StructuredFactsService } from '../knowledge/structured-facts.service';
 import { SemanticSearchService } from '../knowledge/semantic-search.service';
@@ -65,6 +71,7 @@ export class PanelAdminController {
     private readonly waTemplates: WhatsappTemplatesService,
     private readonly credentials: CredentialsService,
     private readonly tester: IntegrationTester,
+    private readonly config: ConfigService<EnvVars, true>,
   ) {}
 
   // ── Integraciones (credenciales por empresa, BYO) ──
@@ -72,6 +79,20 @@ export class PanelAdminController {
   @Get('integrations')
   listIntegrations() {
     return this.credentials.status();
+  }
+
+  /**
+   * URLs de webhook que la empresa tiene que pegar en su proveedor (YCloud,
+   * Meta, Retell, Vapi). Son rutas de este backend: sin esto, el cliente no
+   * tiene cómo saber cuál usar.
+   */
+  @Get('integrations/webhooks')
+  @Roles(PanelRole.OWNER)
+  integrationWebhooks(@Req() req: Request) {
+    return buildWebhookInfo(
+      publicBaseUrl(this.config.get('PUBLIC_API_URL', { infer: true }), req),
+      this.config.get('WHATSAPP_VERIFY_TOKEN', { infer: true }),
+    );
   }
 
   /** Guarda las credenciales de un canal (whatsapp|email|voice). */
@@ -91,6 +112,9 @@ export class PanelAdminController {
   /** Prueba la conexión con el proveedor usando las credenciales guardadas. */
   @Post('integrations/:channel/test')
   @Roles(PanelRole.OWNER)
+  // Hace una petición saliente a la URL del cliente: no puede ser un botón
+  // para martillar a terceros.
+  @RateLimit({ limit: 10, windowSec: 60, scope: 'auth' })
   testIntegration(@Param('channel') channel: string) {
     const valid: IntegrationChannel[] = ['whatsapp', 'email', 'voice', 'crm'];
     if (!valid.includes(channel as IntegrationChannel)) {

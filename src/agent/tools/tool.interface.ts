@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { Lead } from '@prisma/client';
+import { AgentType, Lead } from '@prisma/client';
 import { VoiceConfig } from '../../voice/voice-config';
 
 /**
@@ -13,6 +13,12 @@ export interface ToolContext {
   conversationId: string;
   /** Textos de resultados de consulta de este turno (para validar salida). */
   recordedFacts: string[];
+  /**
+   * Mensajes que escribió el CLIENTE en el historial visible. Cuentan como
+   * respaldo del guardrail: repetirle un dato que él mismo dio (su RUT, su
+   * dirección, el número de su pedido) no es inventar una cifra.
+   */
+  clientMessages?: string[];
   /**
    * Número de WhatsApp de la empresa (de `channelsConfig.whatsapp.phoneNumber`),
    * si está configurado. Es un dato propio válido: el agente puede citarlo (p.
@@ -33,6 +39,14 @@ export interface ToolContext {
    * turno de respuesta ni avisar al cliente).
    */
   followUp?: boolean;
+  /**
+   * El turno de seguimiento cumple algo que pidió el propio lead (la llamada
+   * que agendó). Aunque sea un seguimiento, no es una gestión proactiva: no
+   * cuenta para los topes legales de cobranza.
+   */
+  requestedByLead?: boolean;
+  /** Tipo del agente a cargo: el piso legal de cobranza depende de esto. */
+  agentType?: AgentType;
   /** El lead fue escalado a humano en este turno. */
   escalated: boolean;
   /**

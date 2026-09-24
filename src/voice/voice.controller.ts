@@ -12,7 +12,10 @@ import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { CredentialsService } from '../integrations/credentials.service';
-import { verifyRetellSignature } from '../common/webhook-signature';
+import {
+  verifyRetellSignature,
+  verifySharedSecret,
+} from '../common/webhook-signature';
 import { VoiceInboundService } from './voice-inbound.service';
 
 /**
@@ -23,8 +26,8 @@ import { VoiceInboundService } from './voice-inbound.service';
  *
  * El webhook de Retell verifica su firma (`x-retell-signature`) contra la API
  * key de Retell de la empresa (ya la tiene guardada para llamar; cero pasos
- * extra). El de Vapi (proveedor alternativo, no usado actualmente) queda
- * pendiente, igual que Meta en WhatsApp — ver whatsapp.controller.ts.
+ * extra). El de Vapi verifica el "Server URL Secret" (`x-vapi-secret`) que la
+ * empresa configura en Integraciones → Voz como secreto de webhook.
  */
 @Controller('voice')
 export class VoiceController {
@@ -86,15 +89,22 @@ export class VoiceController {
   }
 
   /**
-   * Webhook de Vapi (proveedor alternativo, no usado actualmente). Procesa
-   * `end-of-call-report`.
+   * Webhook de Vapi (proveedor alternativo). Procesa `end-of-call-report`.
    *
-   * NOTA: sin verificación de firma — Vapi no está en uso activo (Retell es el
-   * proveedor de voz configurado). Añadir si se activa Vapi en producción.
+   * Vapi no firma el cuerpo: manda el "Server URL Secret" configurado en el
+   * assistant tal cual, en el header `x-vapi-secret`. Se compara en tiempo
+   * constante con el secreto de webhook de la empresa que dice el
+   * `metadata.companyId` — si alguien forjó ese id, no conoce el secreto de
+   * esa empresa. Sin secreto configurado se rechaza: antes se aceptaba
+   * cualquier cuerpo y cualquiera podía escribir "resultados de llamada" en
+   * cualquier empresa.
    */
   @Post('vapi/webhook')
   @HttpCode(HttpStatus.OK)
-  async vapiWebhook(@Body() body: unknown): Promise<{ received: true }> {
+  async vapiWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Body() body: unknown,
+  ): Promise<{ received: true }> {
     const message = this.pick(body, 'message');
     if (this.pickString(message, 'type') !== 'end-of-call-report') {
       return { received: true };
@@ -106,6 +116,19 @@ export class VoiceController {
     if (!companyId || !leadId) {
       return { received: true };
     }
+
+    const cred = await this.credentials.getByCompanyId(companyId, 'voice');
+    if (cred?.provider !== 'vapi' || !cred.webhookSecret) {
+      throw new UnauthorizedException(
+        'Voz (Vapi) sin secreto de webhook configurado para esta empresa',
+      );
+    }
+    if (
+      !verifySharedSecret(this.header(req, 'x-vapi-secret'), cred.webhookSecret)
+    ) {
+      throw new UnauthorizedException('Secreto de Vapi inválido');
+    }
+
     const callId = this.pickString(call, 'id') ?? 'desconocido';
     const transcript =
       this.pickString(message, 'transcript') ??

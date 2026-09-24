@@ -3,6 +3,7 @@ import { CommonModule } from '../common/common.module';
 import { KnowledgeController } from './knowledge.controller';
 import { FactsController } from './facts.controller';
 import { OnboardingController } from './onboarding.controller';
+import { PanelKnowledgeController } from './panel-knowledge.controller';
 import { KnowledgeDocumentService } from './knowledge-document.service';
 import { SemanticSearchService } from './semantic-search.service';
 import { StructuredFactsService } from './structured-facts.service';
@@ -15,7 +16,12 @@ import { OnboardingService } from './onboarding.service';
  */
 @Module({
   imports: [CommonModule],
-  controllers: [KnowledgeController, FactsController, OnboardingController],
+  controllers: [
+    KnowledgeController,
+    FactsController,
+    OnboardingController,
+    PanelKnowledgeController,
+  ],
   providers: [
     KnowledgeDocumentService,
     SemanticSearchService,

@@ -8,6 +8,10 @@ interface AuthState {
   memberships: Membership[];
   selectedCompanyId: string | null;
   setSession: (data: LoginResponse) => void;
+  /** Reemplaza solo el token (tras cambiar la contraseña). */
+  setToken: (token: string) => void;
+  /** Marca el tour de bienvenida como visto (el backend ya lo guardó). */
+  markOnboardingDone: () => void;
   selectCompany: (companyId: string) => void;
   logout: () => void;
 }
@@ -30,6 +34,18 @@ export const useAuth = create<AuthState>()(
               ? data.memberships[0].companyId
               : null,
         }),
+      setToken: (token) => set({ token }),
+      markOnboardingDone: () =>
+        set((state) =>
+          state.user
+            ? {
+                user: {
+                  ...state.user,
+                  onboardingCompletedAt: new Date().toISOString(),
+                },
+              }
+            : {},
+        ),
       selectCompany: (companyId) => set({ selectedCompanyId: companyId }),
       logout: () =>
         set({

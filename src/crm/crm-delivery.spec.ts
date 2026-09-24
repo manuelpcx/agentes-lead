@@ -1,3 +1,11 @@
+// Sin red en los tests: todo host "resuelve" a una IP pública, para que la
+// validación anti-SSRF de las URLs del CRM deje pasar las de ejemplo.
+jest.mock('node:dns/promises', () => ({
+  lookup: jest
+    .fn()
+    .mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+}));
+
 import { deliverCrmEvent } from './crm-delivery';
 import { signHmacSha256Hex } from '../common/webhook-signature';
 import { CrmEventJob } from './crm-event.types';

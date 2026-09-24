@@ -13,6 +13,9 @@ import { AgentTurnJobData } from '../agent-turn.job';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_DERIVAR_A_AGENTE } from './tool-names';
 
+/** Espera antes del turno del agente receptor (deja liberar el candado). */
+const HANDOFF_DELAY_MS = 1_000;
+
 /**
  * Traspasa la conversación a otro agente de la empresa (Fase 8). Entrega un
  * resumen de contexto, deja constancia como interacción `system` (marcada como
@@ -144,11 +147,19 @@ export class DerivarAAgenteTool implements AgentTool {
           agentId: ctx.agentId,
         });
       }
-      await this.agentQueue.add('turn', {
-        companyId: TenantContext.requireCompanyId(),
-        leadId: ctx.lead.id,
-        correlationId: TenantContext.get()?.correlationId ?? randomUUID(),
-      });
+      // Demora corta: este turno todavía tiene tomado el candado del lead
+      // (`TurnLockService`), y el turno del receptor no puede arrancar hasta
+      // que se libere. Sin la demora entraría al ciclo de reintentos y el
+      // cliente esperaría bastante más.
+      await this.agentQueue.add(
+        'turn',
+        {
+          companyId: TenantContext.requireCompanyId(),
+          leadId: ctx.lead.id,
+          correlationId: TenantContext.get()?.correlationId ?? randomUUID(),
+        },
+        { delay: HANDOFF_DELAY_MS },
+      );
     }
 
     this.logger.log(

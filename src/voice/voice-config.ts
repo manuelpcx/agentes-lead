@@ -38,7 +38,8 @@ export function parseVoiceConfig(channelsConfig: unknown): VoiceConfig {
     return {};
   }
   const out: VoiceConfig = {};
-  const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
+  const str = (x: unknown) =>
+    typeof x === 'string' && x.trim() ? x.trim() : undefined;
   out.voiceId = str(v.voiceId);
   out.tone = str(v.tone);
   out.beginMessage = str(v.beginMessage);

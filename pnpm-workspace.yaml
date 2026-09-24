@@ -12,3 +12,11 @@ onlyBuiltDependencies:
   - prisma
   - '@nestjs/core'
   - msgpackr-extract
+
+# Parches de seguridad en dependencias transitivas, dentro de la misma linea
+# mayor que ya usan @nestjs/platform-express 10.4 / express 4 (ver pnpm audit).
+overrides:
+  multer: ">=2.3.0"
+  lodash: ">=4.17.24"
+  qs: ">=6.16.0"
+  body-parser: ">=1.20.6 <2"

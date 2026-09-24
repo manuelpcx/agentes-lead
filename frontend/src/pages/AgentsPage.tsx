@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import {
   Badge,
@@ -31,11 +32,12 @@ interface TemplateOption {
 }
 
 type TemplatePurpose = 'opening' | 'followup' | 'reactivation';
-const PURPOSES: { key: TemplatePurpose; label: string; hint: string }[] = [
-  { key: 'opening', label: 'Apertura', hint: 'Primer contacto fuera de la ventana de 24h.' },
-  { key: 'followup', label: 'Seguimiento', hint: 'Reintentos intermedios.' },
-  { key: 'reactivation', label: 'Reactivación', hint: 'Último intento antes de cerrar.' },
-];
+const PURPOSES: TemplatePurpose[] = ['opening', 'followup', 'reactivation'];
+const PURPOSE_I18N: Record<TemplatePurpose, string> = {
+  opening: 'purposeOpening',
+  followup: 'purposeFollowup',
+  reactivation: 'purposeReactivation',
+};
 
 /** Sub-estado (crudo, como texto) de la config de seguimiento del formulario. */
 interface FollowupUiState {
@@ -176,10 +178,12 @@ function toForm(a: AgentFull): FormState {
 /** Casillas para alternar un valor dentro de un arreglo. */
 function CheckGroup({
   options,
+  labels,
   selected,
   onToggle,
 }: {
   options: string[];
+  labels: Record<string, string>;
   selected: string[];
   onToggle: (value: string) => void;
 }) {
@@ -201,7 +205,7 @@ function CheckGroup({
             checked={selected.includes(opt)}
             onChange={() => onToggle(opt)}
           />
-          {opt}
+          {labels[opt] ?? opt}
         </label>
       ))}
     </div>
@@ -221,8 +225,16 @@ function AgentForm({
   submitLabel: string;
   templates: TemplateOption[];
 }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState<FormState>(initial);
   const [saving, setSaving] = useState(false);
+
+  const channelLabels = t('channels', { returnObjects: true }) as Record<string, string>;
+  const leadStateLabels = t('leadStatus', { returnObjects: true }) as Record<string, string>;
+  const typeLabels = t('assistant.typeLabels', { returnObjects: true }) as Record<
+    string,
+    string
+  >;
 
   const toggle = (field: 'channels' | 'leadStates', value: string) =>
     setForm((f) => ({
@@ -250,48 +262,47 @@ function AgentForm({
   return (
     <form onSubmit={submit} className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2">
-        <Field label="Nombre">
+        <Field label={t('agents.fieldName')}>
           <Input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
           />
         </Field>
-        <Field label="Tipo">
+        <Field label={t('agents.fieldType')}>
           <Select
             value={form.type}
             onChange={(e) => setForm({ ...form, type: e.target.value })}
           >
-            {AGENT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {AGENT_TYPES.map((ty) => (
+              <option key={ty} value={ty}>
+                {typeLabels[ty] ?? ty}
               </option>
             ))}
           </Select>
         </Field>
       </div>
 
-      <Field
-        label="Descripción"
-        hint="Ayuda al clasificador a decidir cuándo derivarle."
-      >
+      <Field label={t('agents.fieldDescription')} hint={t('agents.fieldDescriptionHint')}>
         <Input
           value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
         />
       </Field>
 
-      <Field label="Canales que atiende" hint="Ninguno = cualquiera.">
+      <Field label={t('agents.fieldChannels')} hint={t('agents.fieldChannelsHint')}>
         <CheckGroup
           options={CHANNELS}
+          labels={channelLabels}
           selected={form.channels}
           onToggle={(v) => toggle('channels', v)}
         />
       </Field>
 
-      <Field label="Estados de lead que maneja" hint="Ninguno = cualquiera.">
+      <Field label={t('agents.fieldLeadStates')} hint={t('agents.fieldLeadStatesHint')}>
         <CheckGroup
           options={LEAD_STATES}
+          labels={leadStateLabels}
           selected={form.leadStates}
           onToggle={(v) => toggle('leadStates', v)}
         />
@@ -299,7 +310,7 @@ function AgentForm({
 
       <div className="flex flex-wrap items-center gap-6">
         <div className="w-28">
-          <Field label="Prioridad">
+          <Field label={t('agents.fieldPriority')}>
             <Input
               type="number"
               min={0}
@@ -318,59 +329,55 @@ function AgentForm({
             checked={form.isDefault}
             onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
           />
-          Agente por defecto (recibe lo no clasificado)
+          {t('agents.defaultCheckbox')}
         </label>
       </div>
 
       {/* ── Seguimiento propio del agente (opcional) ── */}
       <div className="border-t border-slate-200 pt-5">
         <h4 className="mb-1 text-sm font-semibold text-slate-800">
-          Seguimiento de este agente
+          {t('agents.followupSectionTitle')}
         </h4>
         <p className="mb-4 text-xs text-slate-500">
-          Opcional. Lo que dejes vacío usa la configuración global de la
-          empresa (útil para que cobranza y ventas tengan cadencias distintas).
+          {t('agents.followupSectionHint')}
         </p>
 
         <Field
-          label="Escalera de canales"
-          hint='Orden separado por comas: email, whatsapp, call. Ej: "email,whatsapp,whatsapp,email".'
+          label={t('agents.channelLadderLabel')}
+          hint={t('agents.channelLadderHint')}
         >
           <Input
             value={form.followupUi.channelLadder}
             onChange={(e) => setFollowup('channelLadder', e.target.value)}
-            placeholder="(usa la escalera global)"
+            placeholder={t('agents.channelLadderPlaceholder')}
             className="font-mono text-xs"
           />
         </Field>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
-          <Field
-            label="Espaciado entre intentos (horas)"
-            hint='Ej: "12,48,72".'
-          >
+          <Field label={t('agents.delaysLabel')} hint={t('agents.delaysHint')}>
             <Input
               value={form.followupUi.delaysHours}
               onChange={(e) => setFollowup('delaysHours', e.target.value)}
-              placeholder="(usa el global)"
+              placeholder={t('agents.delaysPlaceholder')}
               className="font-mono text-xs"
             />
           </Field>
-          <Field label="Tope de intentos">
+          <Field label={t('agents.maxAttemptsLabel')}>
             <Input
               type="number"
               min={1}
               value={form.followupUi.maxAttempts}
               onChange={(e) => setFollowup('maxAttempts', e.target.value)}
-              placeholder="(global)"
+              placeholder={t('agents.maxAttemptsPlaceholder')}
             />
           </Field>
         </div>
 
         <div className="mt-4">
           <Field
-            label="Retardo del primer contacto (minutos)"
-            hint="0 = casi inmediato."
+            label={t('agents.firstContactLabel')}
+            hint={t('agents.firstContactHint')}
           >
             <Input
               type="number"
@@ -379,7 +386,7 @@ function AgentForm({
               onChange={(e) =>
                 setFollowup('firstContactDelayMin', e.target.value)
               }
-              placeholder="(global)"
+              placeholder={t('agents.firstContactPlaceholder')}
               className="max-w-[10rem]"
             />
           </Field>
@@ -387,32 +394,37 @@ function AgentForm({
 
         <div className="mt-5">
           <p className="mb-2 text-xs font-medium text-slate-600">
-            Plantillas de WhatsApp (fuera de la ventana de 24h)
+            {t('agents.templatesLabel')}
           </p>
           {templates.length === 0 ? (
             <p className="text-xs text-slate-400">
-              No hay plantillas APROBADAS todavía. Créalas y apruébalas en{' '}
-              <span className="font-medium">Plantillas WA</span>.
+              {t('agents.noTemplates', { link: t('nav.templates') })}
             </p>
           ) : (
             <div className="grid gap-3 md:grid-cols-3">
               {PURPOSES.map((p) => (
-                <Field key={p.key} label={p.label} hint={p.hint}>
+                <Field
+                  key={p}
+                  label={t(`agents.${PURPOSE_I18N[p]}`)}
+                  hint={t(`agents.${PURPOSE_I18N[p]}Hint`)}
+                >
                   <Select
-                    value={form.followupUi.templates[p.key]}
+                    value={form.followupUi.templates[p]}
                     onChange={(e) =>
                       setFollowup('templates', {
                         ...form.followupUi.templates,
-                        [p.key]: e.target.value,
+                        [p]: e.target.value,
                       })
                     }
                   >
                     <option value="">
-                      {p.key === 'opening' ? '(usa la global)' : '(usa apertura)'}
+                      {p === 'opening'
+                        ? t('agents.templateUseGlobal')
+                        : t('agents.templateUseOpening')}
                     </option>
-                    {templates.map((t) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name} ({t.language})
+                    {templates.map((tpl) => (
+                      <option key={tpl.name} value={tpl.name}>
+                        {tpl.name} ({tpl.language})
                       </option>
                     ))}
                   </Select>
@@ -425,11 +437,11 @@ function AgentForm({
 
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
-          {saving ? 'Guardando…' : submitLabel}
+          {saving ? t('agents.saving') : submitLabel}
         </Button>
         {onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel}>
-            Cancelar
+            {t('agents.cancel')}
           </Button>
         )}
       </div>
@@ -459,6 +471,7 @@ function toPayload(f: FormState, templates: TemplateOption[]) {
 }
 
 export function AgentsPage() {
+  const { t } = useTranslation();
   const [agents, setAgents] = useState<AgentFull[]>([]);
   const [metrics, setMetrics] = useState<AgentMetricsRow[]>([]);
   const [handoffs, setHandoffs] = useState<HandoffRow[]>([]);
@@ -467,8 +480,11 @@ export function AgentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const channelLabels = t('channels', { returnObjects: true }) as Record<string, string>;
+  const leadStateLabels = t('leadStatus', { returnObjects: true }) as Record<string, string>;
+
   const load = useCallback(async () => {
-    const [a, m, h, t] = await Promise.all([
+    const [a, m, h, tpl] = await Promise.all([
       api.get('/panel/agents').then((r) => r.data),
       api.get('/panel/agents/metrics').then((r) => r.data),
       api.get('/panel/handoffs').then((r) => r.data),
@@ -481,9 +497,9 @@ export function AgentsPage() {
     setMetrics(m);
     setHandoffs(h);
     setTemplates(
-      (t as { name: string; language: string; status: string }[])
-        .filter((tpl) => tpl.status === 'APPROVED')
-        .map((tpl) => ({ name: tpl.name, language: tpl.language })),
+      (tpl as { name: string; language: string; status: string }[])
+        .filter((x) => x.status === 'APPROVED')
+        .map((x) => ({ name: x.name, language: x.language })),
     );
   }, []);
 
@@ -501,7 +517,7 @@ export function AgentsPage() {
     } catch (e) {
       const msg =
         (e as { response?: { data?: { message?: string } } }).response?.data
-          ?.message ?? 'Ocurrió un error.';
+          ?.message ?? t('common.errorGeneric');
       setError(Array.isArray(msg) ? msg.join(', ') : String(msg));
     }
   };
@@ -518,8 +534,8 @@ export function AgentsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
       <PageHeader
-        title="Agentes"
-        subtitle="Configura, compara y observa los traspasos entre tus agentes."
+        title={t('agents.title')}
+        subtitle={t('agents.subtitle')}
         actions={
           !creating && (
             <Button
@@ -528,7 +544,7 @@ export function AgentsPage() {
                 setEditingId(null);
               }}
             >
-              + Nuevo agente
+              {t('agents.newAgent')}
             </Button>
           )
         }
@@ -544,19 +560,19 @@ export function AgentsPage() {
       <Card className="overflow-hidden">
         <div className="border-b border-slate-100 px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-700">
-            Métricas comparadas
+            {t('agents.comparedMetrics')}
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-4 py-2 font-medium">Agente</th>
-                <th className="py-2 text-right font-medium">Leads</th>
-                <th className="py-2 text-right font-medium">Citas</th>
-                <th className="py-2 text-right font-medium">Escal.</th>
-                <th className="py-2 text-right font-medium">Msg. env.</th>
-                <th className="px-4 py-2 text-right font-medium">Deriv.</th>
+                <th className="px-4 py-2 font-medium">{t('agents.colAgent')}</th>
+                <th className="py-2 text-right font-medium">{t('agents.colLeads')}</th>
+                <th className="py-2 text-right font-medium">{t('agents.colAppointments')}</th>
+                <th className="py-2 text-right font-medium">{t('agents.colEscalations')}</th>
+                <th className="py-2 text-right font-medium">{t('agents.colMsgSent')}</th>
+                <th className="px-4 py-2 text-right font-medium">{t('agents.colHandoffs')}</th>
               </tr>
             </thead>
             <tbody>
@@ -571,8 +587,8 @@ export function AgentsPage() {
                         {m.name}
                       </span>
                       <span className="text-xs text-slate-400">{m.type}</span>
-                      {m.isDefault && <Badge tone="brand">default</Badge>}
-                      {!m.isActive && <Badge tone="slate">inactivo</Badge>}
+                      {m.isDefault && <Badge tone="brand">{t('agents.defaultBadge')}</Badge>}
+                      {!m.isActive && <Badge tone="slate">{t('agents.inactiveBadge')}</Badge>}
                     </div>
                   </td>
                   <MetricCell value={m.leadsACargo} />
@@ -593,11 +609,11 @@ export function AgentsPage() {
       {creating && (
         <Card className="p-5">
           <h3 className="mb-4 text-sm font-semibold text-slate-700">
-            Nuevo agente
+            {t('agents.newAgentFormTitle')}
           </h3>
           <AgentForm
             initial={EMPTY_FORM}
-            submitLabel="Crear"
+            submitLabel={t('common.create')}
             onSubmit={create}
             onCancel={() => setCreating(false)}
             templates={templates}
@@ -614,13 +630,19 @@ export function AgentsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-slate-900">{a.name}</span>
                   <Badge tone="slate">{a.type}</Badge>
-                  {a.isDefault && <Badge tone="brand">default</Badge>}
-                  {!a.isActive && <Badge tone="slate">inactivo</Badge>}
+                  {a.isDefault && <Badge tone="brand">{t('agents.defaultBadge')}</Badge>}
+                  {!a.isActive && <Badge tone="slate">{t('agents.inactiveBadge')}</Badge>}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
-                  Canales: {a.channels.join(', ') || 'cualquiera'} · Estados:{' '}
-                  {a.leadStates.join(', ') || 'cualquiera'} · Prioridad:{' '}
-                  {a.priority}
+                  {t('agents.channelsSummary', {
+                    channels:
+                      a.channels.map((c) => channelLabels[c] ?? c).join(', ') ||
+                      t('agents.any'),
+                    states:
+                      a.leadStates.map((st) => leadStateLabels[st] ?? st).join(', ') ||
+                      t('agents.any'),
+                    priority: a.priority,
+                  })}
                 </div>
                 {a.description && (
                   <p className="mt-1 text-xs text-slate-400">{a.description}</p>
@@ -632,23 +654,19 @@ export function AgentsPage() {
                   size="sm"
                   onClick={() => setEditingId(editingId === a.id ? null : a.id)}
                 >
-                  {editingId === a.id ? 'cerrar' : 'editar'}
+                  {editingId === a.id ? t('agents.editClose') : t('agents.editOpen')}
                 </Button>
                 {a.isActive && (
                   <Button
                     variant="danger"
                     size="sm"
                     onClick={() => {
-                      if (
-                        confirm(
-                          `¿Desactivar "${a.name}"? Sus leads se reasignan al fallback.`,
-                        )
-                      ) {
+                      if (confirm(t('agents.deactivateConfirm', { name: a.name }))) {
                         deactivate(a.id);
                       }
                     }}
                   >
-                    desactivar
+                    {t('agents.deactivate')}
                   </Button>
                 )}
               </div>
@@ -658,7 +676,7 @@ export function AgentsPage() {
               <div className="mt-4 border-t border-slate-100 pt-4">
                 <AgentForm
                   initial={toForm(a)}
-                  submitLabel="Guardar"
+                  submitLabel={t('common.save')}
                   onSubmit={(f) => update(a.id, f)}
                   onCancel={() => setEditingId(null)}
                   templates={templates}
@@ -672,11 +690,11 @@ export function AgentsPage() {
       {/* Handoffs recientes */}
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-700">
-          Traspasos recientes
+          {t('agents.handoffsTitle')}
         </h2>
         {handoffs.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-400">
-            Sin traspasos aún.
+            {t('agents.noHandoffs')}
           </p>
         ) : (
           <div className="space-y-2">

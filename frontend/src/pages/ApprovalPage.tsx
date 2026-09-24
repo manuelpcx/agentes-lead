@@ -1,20 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { Badge, Button, Card, PageHeader, Textarea } from '../components/ui';
-import type { ExampleItem, KnowledgeGapItem } from '../types';
+import type { ComplianceIssueItem, ExampleItem, KnowledgeGapItem } from '../types';
 
 export function ApprovalPage() {
+  const { t } = useTranslation();
   const [gaps, setGaps] = useState<KnowledgeGapItem[]>([]);
   const [examples, setExamples] = useState<ExampleItem[]>([]);
+  const [issues, setIssues] = useState<ComplianceIssueItem[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
-    const [g, e] = await Promise.all([
+    const [g, e, i] = await Promise.all([
       api.get('/panel/knowledge-gaps').then((r) => r.data),
       api.get('/panel/examples').then((r) => r.data),
+      api.get('/panel/compliance-issues').then((r) => r.data),
     ]);
     setGaps(g);
     setExamples(e);
+    setIssues(i);
     setAnswers(
       Object.fromEntries(
         (g as KnowledgeGapItem[]).map((x) => [x.id, x.suggestedAnswer ?? '']),
@@ -40,44 +45,50 @@ export function ApprovalPage() {
     await api.post(`/panel/examples/${id}/approve`);
     load();
   };
+  const approveIssue = async (id: string) => {
+    await api.post(`/panel/compliance-issues/${id}/approve`);
+    load();
+  };
+  const rejectIssue = async (id: string) => {
+    await api.post(`/panel/compliance-issues/${id}/reject`);
+    load();
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
-      <PageHeader
-        title="Aprobación"
-        subtitle="Nada entra a la base ni al few-shot sin tu visto bueno."
-      />
+      <PageHeader title={t('approval.title')} subtitle={t('approval.subtitle')} />
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-700">
-          Vacíos de conocimiento
+          {t('approval.complianceTitle')}
         </h2>
-        {gaps.length === 0 && (
+        <p className="mb-2 text-xs text-slate-400">{t('approval.complianceHint')}</p>
+        {issues.length === 0 && (
           <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">
-            Nada pendiente. 🎉
+            {t('approval.nothingPending')}
           </p>
         )}
         <div className="space-y-3">
-          {gaps.map((g) => (
-            <Card key={g.id} className="p-4">
+          {issues.map((i) => (
+            <Card key={i.id} className="p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="font-medium text-slate-900">{g.question}</span>
-                <Badge tone="amber">{g.frequency}× preguntada</Badge>
+                <span className="font-medium text-slate-900">{i.issue}</span>
+                <div className="flex items-center gap-2">
+                  <Badge tone="slate">{i.agentName}</Badge>
+                  <Badge tone="amber">{i.frequency}×</Badge>
+                </div>
               </div>
-              <Textarea
-                value={answers[g.id] ?? ''}
-                onChange={(e) =>
-                  setAnswers({ ...answers, [g.id]: e.target.value })
-                }
-                placeholder="Respuesta a agregar a la base de conocimiento…"
-                className="mb-2 h-20"
-              />
+              {i.evidence && (
+                <p className="mb-2 text-xs italic text-slate-500">
+                  "{i.evidence}"
+                </p>
+              )}
               <div className="flex gap-2">
-                <Button onClick={() => approveGap(g.id)}>
-                  Aprobar (indexar)
+                <Button onClick={() => approveIssue(i.id)}>
+                  {t('approval.confirm')}
                 </Button>
-                <Button variant="secondary" onClick={() => rejectGap(g.id)}>
-                  Rechazar
+                <Button variant="secondary" onClick={() => rejectIssue(i.id)}>
+                  {t('approval.discard')}
                 </Button>
               </div>
             </Card>
@@ -87,29 +98,70 @@ export function ApprovalPage() {
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-slate-700">
-          Ejemplos propuestos
+          {t('approval.knowledgeGapsTitle')}
+        </h2>
+        {gaps.length === 0 && (
+          <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">
+            {t('approval.nothingPending')}
+          </p>
+        )}
+        <div className="space-y-3">
+          {gaps.map((g) => (
+            <Card key={g.id} className="p-4">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="font-medium text-slate-900">{g.question}</span>
+                <Badge tone="amber">{t('approval.askedTimes', { n: g.frequency })}</Badge>
+              </div>
+              <Textarea
+                value={answers[g.id] ?? ''}
+                onChange={(e) =>
+                  setAnswers({ ...answers, [g.id]: e.target.value })
+                }
+                placeholder={t('approval.answerPlaceholder')}
+                className="mb-2 h-20"
+              />
+              <div className="flex gap-2">
+                <Button onClick={() => approveGap(g.id)}>
+                  {t('approval.approveIndex')}
+                </Button>
+                <Button variant="secondary" onClick={() => rejectGap(g.id)}>
+                  {t('approval.reject')}
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-sm font-semibold text-slate-700">
+          {t('approval.examplesTitle')}
         </h2>
         {examples.length === 0 && (
           <p className="rounded-xl border border-dashed border-slate-300 py-8 text-center text-sm text-slate-500">
-            Sin ejemplos pendientes.
+            {t('approval.noExamples')}
           </p>
         )}
         <div className="space-y-2">
           {examples.map((ex) => (
             <Card key={ex.id} className="p-4 text-sm">
               <p className="text-slate-500">
-                <span className="font-medium text-slate-600">Situación:</span>{' '}
+                <span className="font-medium text-slate-600">
+                  {t('approval.situation')}
+                </span>{' '}
                 {ex.situation}
               </p>
               <p className="text-slate-800">
-                <span className="font-medium text-slate-600">Respuesta:</span>{' '}
+                <span className="font-medium text-slate-600">
+                  {t('approval.response')}
+                </span>{' '}
                 {ex.agentResponse}
               </p>
               <p className="mb-2 text-xs text-slate-400">
-                Resultado: {ex.outcome}
+                {t('approval.outcome', { outcome: ex.outcome })}
               </p>
               <Button onClick={() => approveExample(ex.id)}>
-                Aprobar para few-shot
+                {t('approval.approveFewShot')}
               </Button>
             </Card>
           ))}

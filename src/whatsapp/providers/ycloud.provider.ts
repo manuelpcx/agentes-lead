@@ -20,7 +20,12 @@ export class YCloudWhatsappProvider implements WhatsappProvider {
   ) {}
 
   async send(to: string, text: string): Promise<void> {
-    await this.post({ from: this.from, to, type: 'text', text: { body: text } });
+    await this.post({
+      from: this.from,
+      to,
+      type: 'text',
+      text: { body: text },
+    });
   }
 
   async sendTemplate(

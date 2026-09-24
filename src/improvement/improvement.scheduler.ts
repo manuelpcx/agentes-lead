@@ -8,6 +8,9 @@ import { AnalysisService } from './analysis.service';
 import { MetricsService } from './metrics.service';
 import { PlaybookService } from './playbook.service';
 
+/** Horas de silencio tras las que una conversación se da por terminada. */
+const IDLE_HOURS = 24;
+
 /**
  * Crons de mejora continua: análisis nocturno de conversaciones, cálculo
  * nocturno de métricas y análisis semanal de playbook. Lo dependiente del LLM
@@ -25,14 +28,22 @@ export class ImprovementScheduler {
     private readonly playbook: PlaybookService,
   ) {}
 
-  /** Análisis nocturno (03:00): conversaciones no analizadas. */
+  /**
+   * Análisis nocturno (03:00): conversaciones TERMINADAS y no analizadas.
+   *
+   * Antes analizaba cualquier conversación abierta y la marcaba como
+   * analizada, así que una charla evaluada en su tercer mensaje no se volvía a
+   * mirar nunca. Ahora se cierran primero las que llevan un día en silencio y
+   * solo se analizan esas: la unidad de análisis es una conversación completa.
+   */
   @Cron('0 0 3 * * *')
   async nightlyAnalysis(): Promise<void> {
+    await this.closeIdleConversations();
     if (!this.anthropic.isConfigured()) {
       return;
     }
     const pending = await this.prisma.raw.conversation.findMany({
-      where: { analyzedAt: null },
+      where: { analyzedAt: null, endedAt: { not: null } },
       select: { id: true, companyId: true },
       take: 50,
     });
@@ -44,6 +55,40 @@ export class ImprovementScheduler {
     }
     if (pending.length > 0) {
       this.logger.log(`Conversaciones analizadas: ${pending.length}`);
+    }
+  }
+
+  /**
+   * Cierra las conversaciones sin actividad en las últimas `IDLE_HOURS` horas.
+   * `Conversation.endedAt` no lo escribía nadie, así que ninguna terminaba
+   * nunca. El corte por inactividad garantiza que toda conversación se cierre
+   * —y por lo tanto se analice— aunque el lead nunca llegue a un estado final.
+   */
+  private async closeIdleConversations(): Promise<void> {
+    const corte = new Date(Date.now() - IDLE_HOURS * 60 * 60 * 1000);
+    const abiertas = await this.prisma.raw.conversation.findMany({
+      where: { endedAt: null, startedAt: { lt: corte } },
+      select: { id: true, leadId: true },
+      take: 500,
+    });
+    let cerradas = 0;
+    for (const convo of abiertas) {
+      const ultima = await this.prisma.raw.interaction.findFirst({
+        where: { leadId: convo.leadId },
+        orderBy: { occurredAt: 'desc' },
+        select: { occurredAt: true },
+      });
+      if (ultima && ultima.occurredAt > corte) {
+        continue; // sigue viva
+      }
+      await this.prisma.raw.conversation.update({
+        where: { id: convo.id },
+        data: { endedAt: ultima?.occurredAt ?? new Date() },
+      });
+      cerradas++;
+    }
+    if (cerradas > 0) {
+      this.logger.log(`Conversaciones cerradas por inactividad: ${cerradas}`);
     }
   }
 

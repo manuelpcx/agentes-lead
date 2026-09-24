@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Channel, Direction } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AnthropicService } from '../llm/anthropic.service';
+import { PromptService } from '../prompts/prompt.service';
 import { KnowledgeGapsService } from './knowledge-gaps.service';
 import { ExampleLibraryService } from './example-library.service';
+import { ComplianceIssuesService } from './compliance-issues.service';
 
 const CONVERSATION_CHANNELS: Channel[] = [
   Channel.whatsapp,
@@ -11,17 +13,23 @@ const CONVERSATION_CHANNELS: Channel[] = [
   Channel.call,
 ];
 
-const ANALYSIS_SYSTEM = `Eres un analista de calidad de un agente de ventas. Recibes la transcripción de una conversación y detectas oportunidades de mejora.
+const ANALYSIS_SYSTEM = `Eres un analista de calidad de un agente conversacional (ventas o cobranza, según el caso). Recibes las REGLAS que ese agente debe seguir (su propio system prompt) y la transcripción de una conversación real. Evalúa TRES cosas:
+
+1. Vacíos de conocimiento: preguntas del cliente que el agente no supo responder o evadió.
+2. Cumplimiento: momentos donde el agente NO respetó una regla explícita de las REGLAS dadas — por ejemplo, ignoró una petición del cliente (ej. "no me llames"), repitió una acción que ya había hecho, afirmó un dato sin respaldo, o no usó la herramienta que correspondía. Solo reporta fallas reales y concretas, con la cita textual del agente que lo evidencia — no inventes ni interpretes de más.
+3. Un buen ejemplo (opcional): una respuesta del agente que funcionó especialmente bien, con desenlace positivo.
 
 Responde SOLO con JSON válido (sin texto adicional, sin markdown) con esta forma:
 {
   "gaps": [{"question": "pregunta que el agente no supo responder o evadió", "suggestedAnswer": "respuesta sugerida si la puedes inferir, o null"}],
+  "complianceIssues": [{"issue": "regla que no se respetó, en una frase clara y accionable", "evidence": "cita textual del agente que lo muestra"}],
   "positiveExample": {"situation": "resumen de la situación", "agentResponse": "la respuesta del agente que funcionó bien", "outcome": "qué se logró (agendó/cerró/etc.)"}
 }
-Si no hay vacíos, "gaps" es []. Si no hubo un buen ejemplo claro (con desenlace positivo), "positiveExample" es null.`;
+Si no hay vacíos, "gaps" es []. Si no hay fallas de cumplimiento, "complianceIssues" es []. Si no hubo un buen ejemplo claro (con desenlace positivo), "positiveExample" es null.`;
 
 interface AnalysisResult {
   gaps?: Array<{ question?: string; suggestedAnswer?: string | null }>;
+  complianceIssues?: Array<{ issue?: string; evidence?: string | null }>;
   positiveExample?: {
     situation?: string;
     agentResponse?: string;
@@ -36,8 +44,10 @@ export class AnalysisService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly anthropic: AnthropicService,
+    private readonly prompts: PromptService,
     private readonly gaps: KnowledgeGapsService,
     private readonly examples: ExampleLibraryService,
+    private readonly compliance: ComplianceIssuesService,
   ) {}
 
   /**
@@ -78,8 +88,20 @@ export class AnalysisService {
       )
       .join('\n');
 
+    // Las REGLAS son las del agente que llevó ESTA conversación (Conversation.agentId),
+    // no un genérico "agente de ventas" — así la evaluación de cumplimiento es
+    // intrínsecamente distinta por agente/tipo (cobranza vs ventas).
+    const agent = await this.prisma.db.agent.findFirst({
+      where: { id: conversation.agentId },
+      select: { type: true },
+    });
+    const rules = agent
+      ? await this.prompts.getActiveContent(conversation.agentId, agent.type)
+      : '(sin reglas disponibles)';
+    const user = `REGLAS DEL AGENTE (debe cumplirlas en esta conversación):\n${rules}\n\nTRANSCRIPCIÓN:\n${transcript}`;
+
     try {
-      const raw = await this.anthropic.complete(ANALYSIS_SYSTEM, transcript);
+      const raw = await this.anthropic.complete(ANALYSIS_SYSTEM, user);
       const result = this.parseJson(raw);
       if (result) {
         for (const gap of result.gaps ?? []) {
@@ -87,6 +109,16 @@ export class AnalysisService {
             await this.gaps.recordGap(
               gap.question,
               gap.suggestedAnswer ?? undefined,
+              conversationId,
+            );
+          }
+        }
+        for (const issue of result.complianceIssues ?? []) {
+          if (issue.issue) {
+            await this.compliance.recordIssue(
+              conversation.agentId,
+              issue.issue,
+              issue.evidence ?? undefined,
               conversationId,
             );
           }

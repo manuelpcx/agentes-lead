@@ -3,6 +3,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { AuditModule } from '../audit/audit.module';
 import { KnowledgeGapsService } from './knowledge-gaps.service';
 import { ExampleLibraryService } from './example-library.service';
+import { ComplianceIssuesService } from './compliance-issues.service';
 import { PromptVersionsService } from './prompt-versions.service';
 import { MetricsService } from './metrics.service';
 import { AnalysisService } from './analysis.service';
@@ -21,12 +22,13 @@ import { PanelImprovementController } from './panel-improvement.controller';
   providers: [
     KnowledgeGapsService,
     ExampleLibraryService,
+    ComplianceIssuesService,
     PromptVersionsService,
     MetricsService,
     AnalysisService,
     PlaybookService,
     ImprovementScheduler,
   ],
-  exports: [ExampleLibraryService],
+  exports: [ExampleLibraryService, MetricsService],
 })
 export class ImprovementModule {}

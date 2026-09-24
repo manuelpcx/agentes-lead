@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { securityHeaders } from './common/security-headers';
 import type { EnvVars } from './common/config/env.validation';
 
 async function bootstrap(): Promise<void> {
@@ -15,6 +16,9 @@ async function bootstrap(): Promise<void> {
 
   // Logger estructurado (pino) como logger de la app.
   app.useLogger(app.get(Logger));
+
+  // Cabeceras de seguridad en toda respuesta (nosniff, no-frame, HSTS, CSP).
+  app.use(securityHeaders);
 
   const config = app.get(ConfigService<EnvVars, true>);
 
@@ -28,6 +32,8 @@ async function bootstrap(): Promise<void> {
       'Authorization',
       'X-Company-Id',
       'X-Signature',
+      'X-Timestamp',
+      'X-Api-Key',
     ],
   });
 

@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { useAuth } from '../store/auth';
 
-const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+// `||` y no `??`: una VITE_API_URL vacía en .env debe caer al valor por defecto.
+const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export const api = axios.create({ baseURL });
 

@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -17,9 +18,11 @@ import { CurrentUser, CurrentMembership } from '../auth/current-user.decorator';
 import { AuthMembership, AuthUser } from '../auth/auth.types';
 import { KnowledgeGapsService } from './knowledge-gaps.service';
 import { ExampleLibraryService } from './example-library.service';
+import { ComplianceIssuesService } from './compliance-issues.service';
 import { PromptVersionsService } from './prompt-versions.service';
 import { MetricsService } from './metrics.service';
 import { ApproveGapDto } from './dto/approve-gap.dto';
+import { UpdatePromptDto } from './dto/update-prompt.dto';
 
 /**
  * Cola de aprobación + métricas del panel (Fase 6). Todo bajo JWT + membresía.
@@ -31,6 +34,7 @@ export class PanelImprovementController {
   constructor(
     private readonly gaps: KnowledgeGapsService,
     private readonly examples: ExampleLibraryService,
+    private readonly compliance: ComplianceIssuesService,
     private readonly promptVersions: PromptVersionsService,
     private readonly metrics: MetricsService,
   ) {}
@@ -72,6 +76,30 @@ export class PanelImprovementController {
     return this.examples.approve(id);
   }
 
+  // ── Fallas de cumplimiento ──
+  @Get('compliance-issues')
+  listComplianceIssues(@Query('agentId') agentId?: string) {
+    return this.compliance.listPending(agentId);
+  }
+
+  @Post('compliance-issues/:id/approve')
+  @Roles(PanelRole.OWNER, PanelRole.OPERADOR)
+  approveComplianceIssue(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.compliance.approve(id, user.userId);
+  }
+
+  @Post('compliance-issues/:id/reject')
+  @Roles(PanelRole.OWNER, PanelRole.OPERADOR)
+  rejectComplianceIssue(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.compliance.reject(id, user.userId);
+  }
+
   // ── Versiones de prompt ──
   @Get('prompt-versions')
   listPromptVersions(@Query('agentId', new ParseUUIDPipe()) agentId: string) {
@@ -85,6 +113,25 @@ export class PanelImprovementController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.promptVersions.activate(id, user.userId);
+  }
+
+  @Put('prompt-versions/agent/:agentId')
+  @Roles(PanelRole.OWNER)
+  saveAgentPrompt(
+    @Param('agentId', new ParseUUIDPipe()) agentId: string,
+    @Body() dto: UpdatePromptDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.promptVersions.saveEdit(agentId, dto.content, user.userId);
+  }
+
+  @Post('prompt-versions/agent/:agentId/reset-to-default')
+  @Roles(PanelRole.OWNER)
+  resetPromptToDefault(
+    @Param('agentId', new ParseUUIDPipe()) agentId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.promptVersions.resetToDefault(agentId, user.userId);
   }
 
   // ── Métricas ──

@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto';
 import {
+  verifyMetaSignature,
   verifyRetellSignature,
+  verifySharedSecret,
   verifyYCloudSignature,
 } from './webhook-signature';
 
@@ -90,5 +92,54 @@ describe('verifyYCloudSignature', () => {
     const old = Math.floor(Date.now() / 1000) - 10 * 60;
     const header = sign(rawBody, old, secret);
     expect(verifyYCloudSignature(rawBody, header, secret)).toBe(false);
+  });
+});
+
+describe('verifyMetaSignature', () => {
+  const appSecret = 'meta_app_secret';
+  const rawBody = Buffer.from(
+    JSON.stringify({ object: 'whatsapp_business_account' }),
+  );
+  const sign = (body: Buffer, key: string) =>
+    `sha256=${createHmac('sha256', key).update(body).digest('hex')}`;
+
+  it('acepta una firma válida', () => {
+    expect(
+      verifyMetaSignature(rawBody, sign(rawBody, appSecret), appSecret),
+    ).toBe(true);
+  });
+
+  it('acepta el hex en mayúsculas (Meta lo manda en minúsculas, pero no depende de eso)', () => {
+    const header = sign(rawBody, appSecret)
+      .toUpperCase()
+      .replace('SHA256=', 'sha256=');
+    expect(verifyMetaSignature(rawBody, header, appSecret)).toBe(true);
+  });
+
+  it('rechaza sin header o con formato distinto', () => {
+    expect(verifyMetaSignature(rawBody, undefined, appSecret)).toBe(false);
+    expect(verifyMetaSignature(rawBody, 'sha1=abc', appSecret)).toBe(false);
+    expect(verifyMetaSignature(rawBody, 'sha256=zz', appSecret)).toBe(false);
+  });
+
+  it('rechaza si el secreto no coincide o el body fue alterado', () => {
+    const header = sign(rawBody, appSecret);
+    expect(verifyMetaSignature(rawBody, header, 'otro')).toBe(false);
+    expect(verifyMetaSignature(Buffer.from('{}'), header, appSecret)).toBe(
+      false,
+    );
+  });
+});
+
+describe('verifySharedSecret', () => {
+  it('acepta el secreto exacto (con espacios al borde recortados)', () => {
+    expect(verifySharedSecret(' s3cr3t ', 's3cr3t')).toBe(true);
+  });
+
+  it('rechaza sin header, con otro valor, o si no hay secreto configurado', () => {
+    expect(verifySharedSecret(undefined, 's3cr3t')).toBe(false);
+    expect(verifySharedSecret('otro', 's3cr3t')).toBe(false);
+    expect(verifySharedSecret('', 's3cr3t')).toBe(false);
+    expect(verifySharedSecret('s3cr3t', '')).toBe(false);
   });
 });
