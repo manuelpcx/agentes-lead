@@ -264,6 +264,13 @@ se muestran de vuelta**.
 - **Voz**: para las llamadas.
 - **CRM**: envía eventos a tu CRM y le permite al agente consultarlo en vivo.
 
+**Conecta el webhook.** En WhatsApp y en Voz, al elegir el proveedor aparece la
+URL que tienes que pegar en su panel, con un botón para copiarla, y los pasos:
+qué evento activar y de dónde sale el secreto. Con Meta también aparece el
+token de verificación. La URL es la misma para todas las empresas: cada mensaje
+se asigna a la tuya por tu número de negocio (YCloud) o tu *Phone Number ID*
+(Meta), que se registran solos al guardar la integración.
+
 **Secreto de firma del webhook.** Cada canal de entrada lo necesita y es
 **obligatorio**: sin él, los mensajes entrantes se rechazan. Con Meta es el
 *App Secret* de tu app; con YCloud, el secreto del endpoint de webhook, que es
@@ -290,7 +297,8 @@ Identidad y reglas de operación de la empresa.
 - **Número de WhatsApp de negocio** en formato E.164, por ejemplo
   `+56911111111`. YCloud lo usa para enrutar los mensajes entrantes a tu
   empresa. El campo *Phone Number ID* es solo para Meta Cloud API directo: con
-  YCloud, déjalo vacío.
+  YCloud, déjalo vacío. Los dos se completan solos al guardar la integración de
+  WhatsApp.
 - **Horario hábil**, en JSON. El agente no hace seguimiento fuera de él: lo
   pospone hasta la próxima hora permitida.
 - **Voz del agente**: voz del catálogo del proveedor, tono e idioma, y el saludo

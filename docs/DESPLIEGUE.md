@@ -396,3 +396,42 @@ existen:
 El prompt nombra la ley sin su número a propósito: el guardrail de salida
 bloquea cifras de 4 o más dígitos sin respaldo, y si el agente citara "19.496"
 el mensaje se bloquearía y el lead pasaría a una persona.
+
+## URL del webhook en Integraciones (2026-09-24)
+
+El cliente ya no tiene que adivinar la ruta: en **Integraciones → WhatsApp** (y
+**Voz**), al elegir el proveedor, el panel muestra la URL del webhook con botón
+de copiar y los pasos para su proveedor.
+
+| Proveedor | URL que se muestra |
+|---|---|
+| YCloud | `<backend>/whatsapp/ycloud/webhook` (evento `whatsapp.inbound_message.received`) |
+| Meta | `<backend>/whatsapp/webhook` (campo `messages`) + token de verificación |
+| Retell | `<backend>/voice/retell/webhook` (evento `call_analyzed`) |
+| Vapi | `<backend>/voice/vapi/webhook` (mensaje `end-of-call-report`) |
+
+- **Endpoint nuevo:** `GET /panel/integrations/webhooks`, solo OWNER (los demás
+  roles no pueden guardar integraciones, así que no ven la guía).
+- **`PUBLIC_API_URL` (opcional, nueva).** Es la URL pública del backend que se
+  muestra. Si falta, se deduce de la petición del panel con las cabeceras del
+  proxy (`X-Forwarded-Proto`/`X-Forwarded-Host`), que en Railway y Cloud Run da
+  la URL correcta. Conviene fijarla cuando haya dominio propio
+  (`https://api.tu-dominio.cl`) o si el panel llega al backend por otra ruta.
+- **Meta usa `WHATSAPP_VERIFY_TOKEN`**, que es uno solo para toda la plataforma.
+  El panel se lo muestra al dueño de cada empresa para que lo pegue en Meta. Si
+  no está configurado, el panel avisa que falta. Solo sirve para el apretón de
+  manos de la suscripción: los mensajes se validan con el App Secret de cada
+  empresa.
+- **Las rutas están en un solo lugar** (`src/integrations/webhook-urls.ts`) y
+  un test compara con las que registran los controllers: si alguien cambia una
+  ruta, el test falla antes de que el panel muestre una URL que no existe.
+
+**Número para enrutar la entrada.** La URL es la misma para todas las empresas:
+cada mensaje se asigna a la empresa por `Company.channelsConfig.whatsapp`
+(número de negocio con YCloud, Phone Number ID con Meta), que antes se cargaba
+aparte en **Configuración**. Si faltaba ahí, el cliente dejaba todo bien
+configurado y los mensajes se descartaban sin aviso. Ahora, al guardar la
+integración de WhatsApp, ese dato se copia solo (el número se normaliza a
+E.164: `+56 9 1111 1111` → `+56911111111`). No toca el resto de
+`channelsConfig`. Las empresas que ya tenían la integración lo reciben la
+próxima vez que guarden.
