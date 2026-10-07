@@ -10,7 +10,10 @@ import {
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { AddressInfo } from 'node:net';
+import { configureBodyParsing } from './body-parsing';
+import { HttpExceptionFilter } from './filters/http-exception.filter';
 
 /**
  * Prueba de humo del stack HTTP real (express + body-parser + multer) tal
@@ -53,10 +56,14 @@ describe('stack HTTP (express + body-parser + multer)', () => {
   let base: string;
 
   beforeAll(async () => {
-    app = await NestFactory.create(ProbeModule, {
+    // Igual que main.ts: cuerpo crudo, límite JSON y formato de error.
+    const nest = await NestFactory.create<NestExpressApplication>(ProbeModule, {
       rawBody: true,
       logger: false,
     });
+    configureBodyParsing(nest);
+    nest.useGlobalFilters(new HttpExceptionFilter());
+    app = nest;
     await app.listen(0, '127.0.0.1');
     const { port } = app.getHttpServer().address() as AddressInfo;
     base = `http://127.0.0.1:${port}`;
@@ -106,5 +113,51 @@ describe('stack HTTP (express + body-parser + multer)', () => {
       body: { externalId: 'lead-1', name: 'Ana' },
       raw,
     });
+  });
+
+  it('acepta un JSON de más de 100 KB con su cuerpo crudo (transcripción de una llamada larga)', async () => {
+    // ElevenLabs manda la transcripción completa, con métricas por turno: con
+    // el límite por defecto de Nest (100 KB) se rechazaba con un 500.
+    const transcript = Array.from({ length: 1500 }, (_, i) => ({
+      role: i % 2 ? 'user' : 'agent',
+      message: `turno ${i} de una llamada larga`,
+      time_in_call_secs: i,
+    }));
+    const raw = JSON.stringify({
+      type: 'post_call_transcription',
+      data: { transcript },
+    });
+    expect(Buffer.byteLength(raw)).toBeGreaterThan(100 * 1024);
+
+    const res = await fetch(`${base}/probe/json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: raw,
+    });
+
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as { raw: string };
+    // El cuerpo crudo llega intacto: la firma HMAC se calcula sobre él.
+    expect(json.raw).toBe(raw);
+  });
+
+  it('un JSON por sobre el límite responde 413, no 500', async () => {
+    const res = await fetch(`${base}/probe/json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: 'x'.repeat(3 * 1024 * 1024) }),
+    });
+
+    expect(res.status).toBe(413);
+  });
+
+  it('un JSON mal formado responde 400, no 500', async () => {
+    const res = await fetch(`${base}/probe/json`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"roto":',
+    });
+
+    expect(res.status).toBe(400);
   });
 });

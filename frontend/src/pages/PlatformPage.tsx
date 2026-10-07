@@ -17,6 +17,7 @@ export function PlatformPage() {
   const { t, i18n } = useTranslation();
   const [nonce, setNonce] = useState(0);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [vozDe, setVozDe] = useState<CompanySummary | null>(null);
 
   const { data: companies } = usePolling<CompanySummary[]>(
     () => api.get('/platform/companies').then((r) => r.data),
@@ -63,6 +64,7 @@ export function PlatformPage() {
                 <th className="px-4 py-2 font-medium">{t('platform.colKnowledge')}</th>
                 <th className="px-4 py-2 font-medium">{t('platform.colLeads')}</th>
                 <th className="px-4 py-2 font-medium">{t('platform.colMessages')}</th>
+                <th className="px-4 py-2 font-medium">{t('platform.colVoice')}</th>
                 <th className="px-4 py-2 font-medium">{t('platform.colLastActivity')}</th>
               </tr>
             </thead>
@@ -119,6 +121,12 @@ export function PlatformPage() {
                     <td className="px-4 py-2 text-slate-600">
                       {c.mensajesRecientes}
                     </td>
+                    <td className="px-4 py-2">
+                      <VozCelda
+                        voz={c.voz}
+                        onEdit={() => setVozDe(c)}
+                      />
+                    </td>
                     <td
                       className={cn(
                         'px-4 py-2',
@@ -142,6 +150,17 @@ export function PlatformPage() {
       )}
 
       <p className="mt-3 text-xs text-slate-400">{t('platform.privacyNote')}</p>
+
+      {vozDe && (
+        <VoiceLimitModal
+          company={vozDe}
+          onClose={() => setVozDe(null)}
+          onSaved={() => {
+            setVozDe(null);
+            setNonce((n) => n + 1);
+          }}
+        />
+      )}
 
       {demoOpen && (
         <DemoModal
@@ -244,6 +263,134 @@ function DemoModal({
           </div>
         </form>
       )}
+    </Modal>
+  );
+}
+
+/** Minutos de voz del mes contra el tope, con el color de lo cerca que está. */
+function VozCelda({
+  voz,
+  onEdit,
+}: {
+  voz: CompanySummary['voz'];
+  onEdit: () => void;
+}) {
+  const { t } = useTranslation();
+  const color =
+    voz.tope === 0
+      ? 'text-slate-400'
+      : voz.minutosMes >= voz.tope
+        ? 'text-rose-600'
+        : voz.minutosMes >= voz.tope * 0.8
+          ? 'text-amber-600'
+          : 'text-slate-600';
+  return (
+    <div className="whitespace-nowrap">
+      <span className={color}>
+        {voz.tope === 0
+          ? t('platform.voiceNone')
+          : t('platform.voiceMinutes', { used: voz.minutosMes, limit: voz.tope })}
+      </span>
+      {voz.topePorDefecto && (
+        <span className="ml-1 text-xs text-slate-400">
+          ({t('platform.voiceDefault')})
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onEdit}
+        className="ml-2 text-xs text-brand-600 hover:text-brand-700"
+      >
+        {t('platform.voiceEdit')}
+      </button>
+    </div>
+  );
+}
+
+/** Cambia el tope mensual de minutos de voz gestionada de una empresa. */
+function VoiceLimitModal({
+  company,
+  onClose,
+  onSaved,
+}: {
+  company: CompanySummary;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const [minutos, setMinutos] = useState(String(company.voz.tope));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const guardar = async (minutes: number | null) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.patch(`/platform/companies/${company.id}/voice-limit`, {
+        minutes,
+      });
+      onSaved();
+    } catch {
+      setError(t('common.errorGeneric'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const valor = Number(minutos);
+  const valido = minutos.trim() !== '' && Number.isInteger(valor) && valor >= 0;
+
+  return (
+    <Modal
+      title={t('platform.voiceModalTitle', { name: company.name })}
+      onClose={onClose}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valido) {
+            void guardar(valor);
+          }
+        }}
+        className="space-y-3"
+      >
+        <p className="text-xs text-slate-500">
+          {t('platform.voiceModalHint', { used: company.voz.minutosMes })}
+        </p>
+        <Field label={t('platform.voiceLimitLabel')}>
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            value={minutos}
+            onChange={(e) => setMinutos(e.target.value)}
+            autoFocus
+          />
+        </Field>
+        {error && (
+          <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">
+            {error}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button type="submit" disabled={busy || !valido}>
+            {t('common.save')}
+          </Button>
+          {!company.voz.topePorDefecto && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => void guardar(null)}
+              disabled={busy}
+            >
+              {t('platform.voiceUseDefault')}
+            </Button>
+          )}
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {t('common.cancel')}
+          </Button>
+        </div>
+      </form>
     </Modal>
   );
 }

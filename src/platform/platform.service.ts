@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { VoiceUsageService, startOfMonth } from '../voice/voice-usage.service';
 import { CreateDemoCompanyDto } from './dto/create-demo-company.dto';
 
 /**
@@ -39,6 +40,8 @@ export interface CompanySummary {
   mensajesRecientes: number;
   /** Última interacción de cualquier canal. Null = nunca conversó. */
   ultimaActividad: Date | null;
+  /** Voz gestionada: minutos del mes en curso y tope (el efectivo). */
+  voz: { minutosMes: number; tope: number; topePorDefecto: boolean };
 }
 
 export interface CompanyDetail extends CompanySummary {
@@ -79,6 +82,7 @@ export class PlatformService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
+    private readonly voiceUsage: VoiceUsageService,
   ) {}
 
   /**
@@ -101,6 +105,7 @@ export class PlatformService {
       leadsRecientes,
       mensajesRecientes,
       ultimaActividad,
+      llamadas,
     ] = await Promise.all([
       raw.company.findMany({
         select: {
@@ -109,6 +114,8 @@ export class PlatformService {
           rut: true,
           isActive: true,
           createdAt: true,
+          timezone: true,
+          voiceMinutesLimit: true,
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -147,6 +154,16 @@ export class PlatformService {
         by: ['companyId'],
         _max: { occurredAt: true },
       }),
+      // Llamadas gestionadas desde un poco antes del inicio del mes en UTC:
+      // cubre el mes en curso de cualquier zona horaria. Cada empresa se filtra
+      // después por el inicio de SU mes.
+      raw.voiceCall.findMany({
+        where: {
+          managed: true,
+          startedAt: { gte: new Date(Date.now() - 32 * 24 * 60 * 60 * 1000) },
+        },
+        select: { companyId: true, startedAt: true, durationSecs: true },
+      }),
     ]);
 
     const cuenta = (
@@ -172,8 +189,28 @@ export class PlatformService {
       ]);
     }
 
-    return companies.map((c) => ({
+    const ahora = new Date();
+    const llamadasPorEmpresa = new Map<string, typeof llamadas>();
+    for (const l of llamadas) {
+      llamadasPorEmpresa.set(l.companyId, [
+        ...(llamadasPorEmpresa.get(l.companyId) ?? []),
+        l,
+      ]);
+    }
+    const minutosDelMes = (companyId: string, timezone: string): number => {
+      const inicio = startOfMonth(ahora, timezone);
+      return (llamadasPorEmpresa.get(companyId) ?? [])
+        .filter((l) => l.startedAt >= inicio)
+        .reduce((t, l) => t + Math.ceil((l.durationSecs ?? 0) / 60), 0);
+    };
+
+    return companies.map(({ timezone, voiceMinutesLimit, ...c }) => ({
       ...c,
+      voz: {
+        minutosMes: minutosDelMes(c.id, timezone),
+        tope: voiceMinutesLimit ?? this.voiceUsage.defaultLimit,
+        topePorDefecto: voiceMinutesLimit === null,
+      },
       usuarios: porUsuarios.get(c.id) ?? 0,
       agentesActivos: porAgentes.get(c.id) ?? 0,
       canales: porCanales.get(c.id) ?? [],
@@ -197,11 +234,13 @@ export class PlatformService {
         isActive: true,
         createdAt: true,
         timezone: true,
+        voiceMinutesLimit: true,
       },
     });
     if (!company) {
       throw new NotFoundException('Empresa no encontrada');
     }
+    const { voiceMinutesLimit, ...companyBase } = company;
 
     const desde = new Date(Date.now() - DIAS_RECIENTES * 24 * 60 * 60 * 1000);
     const [
@@ -257,7 +296,15 @@ export class PlatformService {
     ]);
 
     return {
-      ...company,
+      ...companyBase,
+      voz: {
+        minutosMes: await this.voiceUsage.minutesUsed(
+          companyId,
+          company.timezone,
+        ),
+        tope: voiceMinutesLimit ?? this.voiceUsage.defaultLimit,
+        topePorDefecto: voiceMinutesLimit === null,
+      },
       usuarios: memberships.length,
       agentesActivos: agentes.filter((a) => a.isActive).length,
       canales: integraciones.filter((i) => i.isActive).map((i) => i.channel),
@@ -344,6 +391,34 @@ export class PlatformService {
     await this.audit(adminUserId, companyId, 'platform_set_company_active', {
       antes: company.isActive,
       despues: isActive,
+    });
+    return updated;
+  }
+
+  /**
+   * Tope mensual de minutos de voz gestionada. `null` vuelve al valor por
+   * defecto; 0 deja a la empresa sin llamadas.
+   */
+  async setVoiceLimit(
+    companyId: string,
+    minutes: number | null,
+    adminUserId: string,
+  ): Promise<{ id: string; voiceMinutesLimit: number | null }> {
+    const company = await this.prisma.raw.company.findUnique({
+      where: { id: companyId },
+      select: { voiceMinutesLimit: true },
+    });
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+    const updated = await this.prisma.raw.company.update({
+      where: { id: companyId },
+      data: { voiceMinutesLimit: minutes },
+      select: { id: true, voiceMinutesLimit: true },
+    });
+    await this.audit(adminUserId, companyId, 'platform_set_voice_limit', {
+      antes: company.voiceMinutesLimit,
+      despues: minutes,
     });
     return updated;
   }

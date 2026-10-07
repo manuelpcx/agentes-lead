@@ -44,12 +44,27 @@ export function parseDelaysHours(raw: string | undefined): number[] {
     .filter((n) => Number.isFinite(n) && n > 0);
 }
 
+/** Con qué se puede contactar al lead en este intento. */
+export interface FollowUpReach {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  /**
+   * La empresa puede llamar ahora (tiene voz y, si es la gestionada, minutos
+   * y cupo). Si no, la llamada de la escalera cae a otro canal en vez de
+   * gastar el intento en una llamada que no va a salir.
+   */
+  canCall?: boolean;
+}
+
 /** Un canal es usable si el lead tiene el dato de contacto que necesita. */
-function canUse(
-  channel: FollowUpChannel,
-  reach: { hasEmail: boolean; hasPhone: boolean },
-): boolean {
-  return channel === 'email' ? reach.hasEmail : reach.hasPhone;
+function canUse(channel: FollowUpChannel, reach: FollowUpReach): boolean {
+  if (channel === 'email') {
+    return reach.hasEmail;
+  }
+  if (channel === 'call') {
+    return reach.hasPhone && reach.canCall !== false;
+  }
+  return reach.hasPhone;
 }
 
 /**
@@ -61,7 +76,7 @@ function canUse(
 export function resolveFollowUpChannel(
   attempt: number,
   ladder: FollowUpChannel[],
-  reach: { hasEmail: boolean; hasPhone: boolean },
+  reach: FollowUpReach,
 ): FollowUpChannel | null {
   const preferred = ladder[(attempt - 1) % ladder.length];
   if (canUse(preferred, reach)) {

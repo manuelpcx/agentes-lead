@@ -31,6 +31,8 @@ export interface CompanySummary {
   leadsRecientes: number;
   mensajesRecientes: number;
   ultimaActividad: string | null;
+  /** Voz gestionada: minutos del mes en curso y tope efectivo. */
+  voz: { minutosMes: number; tope: number; topePorDefecto: boolean };
 }
 
 /** Credenciales de una demo recién creada. Se muestran una sola vez. */
@@ -116,6 +118,7 @@ export interface Interaction {
   content: string;
   agentId: string | null;
   occurredAt: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface AgentAction {

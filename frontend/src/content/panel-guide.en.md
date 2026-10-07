@@ -204,8 +204,8 @@ Who handles what, and how.
   AGENDAMIENTO (scheduling) or CUSTOM. Sales and collections start with a
   specialised prompt; the rest with a generic base.
 - **Description**: helps the classifier decide when to hand a lead over to it.
-- **Routing**: which channels it handles and which funnel statuses. Empty means
-  "any". The **default agent** gets whatever does not match another one.
+- **Routing**: which channels it handles (tap WhatsApp, Email or Call to select
+  them) and which funnel statuses. Empty means "any". The **default agent** gets whatever does not match another one.
 - **Deactivating** is reversible: its leads are reassigned to the default
   agent. Deleting is not.
 - **Compared metrics** and **handoffs** between agents, to see who hands over to
@@ -216,10 +216,13 @@ Who handles what, and how.
 Optional. Anything you leave blank uses the company-wide setting. Useful so
 collections and sales can have different cadences.
 
-- **Channel ladder**: the order per attempt, comma separated. For example
-  `email,whatsapp,whatsapp,email`.
-- **Spacing between attempts**, in hours, and **first contact delay**, in
-  minutes.
+- **Contact ladder**: a timeline starting at "New lead", with one step per
+  attempt and the wait between them. **Customize** builds it from the agent's
+  channels and the general waits. Tap a step to change its channel, move it or
+  remove it; **+ Step** adds one. Waits and the first contact delay are picked
+  on each segment. If the attempt cap is higher than the number of steps, the
+  ladder starts over. A step using a channel the agent doesn't handle is
+  flagged in red.
 - **WhatsApp templates** by purpose: opening (first contact outside the 24-hour
   window), follow-up and reactivation (last attempt before closing).
 
@@ -264,9 +267,22 @@ Your own provider accounts. Secrets are stored encrypted and **never shown
 back**.
 
 - **WhatsApp**: Meta Cloud API directly, or YCloud as an intermediary.
-- **Email**: for the agent's outbound mail.
-- **Voice**: for calls.
+- **Email**: goes out through our sending account; you don't need your own.
+- **Voice**: your agents call through our voice account, within your monthly
+  minutes. It shows how many you've used. Calls come from a platform number
+  that doesn't take incoming calls: if the customer wants to talk again, the
+  agent arranges it over WhatsApp. Under **Advanced** you can connect your own
+  Retell, Vapi or ElevenLabs account.
 - **CRM**: sends events to your CRM and lets the agent query it live.
+
+**Email with your domain.** In the Email card you type your domain (a
+subdomain works best, like `notifications.yourcompany.com`) and the DNS records
+to create where you manage your domain show up, with copy buttons. We check
+every 10 minutes: as soon as they're right, emails go out from your domain.
+Until then they go out from a platform domain, with your company name as the
+sender. Fill in **Replies go to** with your real mailbox: without it, your
+customers' replies reach no one. There's a daily email limit per company. If
+you'd rather use your own Resend or SMTP account, it's under **Advanced**.
 
 **Connect the webhook.** In WhatsApp and Voice, once you pick the provider you
 see the URL to paste in its dashboard, with a copy button, and the steps: which
@@ -278,8 +294,8 @@ which are recorded automatically when you save the integration.
 **Webhook signing secret.** Every inbound channel needs one and it is
 **mandatory**: without it, incoming messages are rejected. On Meta it is your
 app's *App Secret*; on YCloud, the webhook endpoint secret, which is not the
-API key; on Vapi, the *Server URL Secret*. If messages stopped arriving, check
-this first.
+API key; on Vapi, the *Server URL Secret*; on ElevenLabs, the post-call webhook
+HMAC secret. If messages stopped arriving, check this first.
 
 **Test connection** verifies the credentials before you leave them in
 production.
@@ -328,6 +344,10 @@ Only platform administrators see this, not customers. It lists the companies
 using the app with what actually shows whether they activated: connected
 channels, knowledge loaded, leads, messages in the last month, and how many
 days since their last activity.
+
+The **Voice** column shows each company's call minutes this month against
+its limit. **Change** sets its monthly limit; `0` leaves it without calls.
+Once they run out, its agent stops offering calls and continues by text.
 
 **Create demo** sets up an empty account with its default agent. It returns
 the email, the password and the webhook secret **once**: copy them right

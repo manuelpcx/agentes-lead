@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
+import { CopyValue } from './CopyValue';
 
 /** URLs de webhook que devuelve `GET /panel/integrations/webhooks`. */
 export interface WebhookInfo {
@@ -14,6 +14,7 @@ export interface WebhookInfo {
   voice: {
     retell: { url: string; events: string[] };
     vapi: { url: string; events: string[] };
+    elevenlabs: { url: string; events: string[]; variables: string[] };
   };
 }
 
@@ -24,57 +25,6 @@ interface Step {
   /** Nombre técnico que tiene que elegir tal cual (evento, campo). */
   code?: string;
   warn?: boolean;
-}
-
-function CopyValue({ value }: { value: string }) {
-  const { t } = useTranslation();
-  const [state, setState] = useState<'idle' | 'copied' | 'manual'>('idle');
-  const codeRef = useRef<HTMLElement>(null);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setState('copied');
-      window.setTimeout(() => setState('idle'), 1500);
-    } catch {
-      // Sin permiso de portapapeles (navegador o política de la empresa): se
-      // deja el texto seleccionado para que baste con Ctrl+C.
-      const el = codeRef.current;
-      const selection = window.getSelection();
-      if (el && selection) {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-      setState('manual');
-    }
-  };
-  return (
-    <div className="mt-1">
-      <div className="flex items-start gap-2">
-        <code
-          ref={codeRef}
-          className="min-w-0 flex-1 break-all rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono text-xs text-slate-700"
-        >
-          {value}
-        </code>
-        <button
-          type="button"
-          onClick={copy}
-          className="shrink-0 py-1 text-xs font-medium text-brand-600 hover:text-brand-700"
-        >
-          {state === 'copied'
-            ? t('integrations.webhook.copied')
-            : t('integrations.webhook.copy')}
-        </button>
-      </div>
-      {state === 'manual' && (
-        <p className="mt-1 text-xs text-slate-500">
-          {t('integrations.webhook.copyManual')}
-        </p>
-      )}
-    </div>
-  );
 }
 
 /** Pasos para conectar el webhook del proveedor elegido; null si no aplica. */
@@ -109,6 +59,19 @@ function stepsFor(
       { text: k('url'), copy: info.voice.retell.url },
       { text: k('event'), code: info.voice.retell.events.join(', ') },
       { text: k('secret') },
+    ];
+  }
+  if (channel === 'voice' && provider === 'elevenlabs') {
+    const el = info.voice.elevenlabs;
+    return [
+      { text: k('url'), copy: el.url },
+      { text: k('event'), code: el.events.join(', ') },
+      { text: k('secret') },
+      {
+        text: k('variables'),
+        code: el.variables.map((v) => `{{${v}}}`).join(' '),
+      },
+      { text: k('overrides') },
     ];
   }
   if (channel === 'voice' && provider === 'vapi') {

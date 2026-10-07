@@ -107,6 +107,46 @@ export function verifyMetaSignature(
 }
 
 /**
+ * Ventana de ElevenLabs para el timestamp de su firma. Es la que usa su propio
+ * SDK: reintenta entregas fallidas, así que los 5 min del resto rechazarían
+ * reintentos legítimos.
+ */
+const ELEVENLABS_MAX_SKEW_MS = 30 * 60 * 1000;
+
+/**
+ * Verifica la firma de un webhook de ElevenLabs Agents (`elevenlabs-signature`).
+ * Header: "t={timestamp_s},v0={hmac_sha256_hex}". Firma sobre `{timestamp}.{rawBody}`
+ * con el secreto HMAC del webhook. Mientras ElevenLabs rota el secreto, el
+ * header trae dos `v0=` (viejo y nuevo): basta con que calce uno.
+ * Doc: https://elevenlabs.io/docs/eleven-agents/workflows/post-call-webhooks
+ */
+export function verifyElevenLabsSignature(
+  rawBody: Buffer,
+  header: string | undefined,
+  secret: string,
+): boolean {
+  if (!header || !secret) {
+    return false;
+  }
+  const parts = header.split(',').map((p) => p.trim());
+  const tsStr = parts.find((p) => p.startsWith('t='))?.slice(2) ?? '';
+  const firmas = parts
+    .filter((p) => p.startsWith('v0='))
+    .map((p) => p.slice(3));
+  if (!/^\d{1,12}$/.test(tsStr) || firmas.length === 0) {
+    return false;
+  }
+  const tsMs = Number(tsStr) * 1000; // ElevenLabs usa segundos
+  if (Math.abs(Date.now() - tsMs) > ELEVENLABS_MAX_SKEW_MS) {
+    return false;
+  }
+  const expected = createHmac('sha256', secret)
+    .update(Buffer.concat([Buffer.from(`${tsStr}.`), rawBody]))
+    .digest('hex');
+  return firmas.some((f) => safeEquals(f, expected));
+}
+
+/**
  * Verifica un secreto compartido enviado tal cual en un header (Vapi manda
  * el "Server URL Secret" en `x-vapi-secret`). Comparación en tiempo constante.
  */

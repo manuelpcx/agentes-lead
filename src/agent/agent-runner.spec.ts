@@ -15,6 +15,7 @@ import type { EnvVars } from '../common/config/env.validation';
 import type { Queue } from 'bullmq';
 import { LeadMemoryService } from '../memory/lead-memory.service';
 import { LeadMemoryJobData } from '../memory/lead-memory.processor';
+import { VoiceService } from '../voice/voice.service';
 
 /** Corre `fn` dentro de un contexto de tenant (como el processor de la cola). */
 function inTenant<T>(fn: () => Promise<T>): Promise<T> {
@@ -49,7 +50,10 @@ function endTurn() {
   };
 }
 
-function buildHarness(configured = true) {
+function buildHarness(
+  configured = true,
+  opts: { voice?: VoiceService; extraTools?: AgentTool[] } = {},
+) {
   const config = {
     get: (key: string) =>
       key === 'AGENT_MAX_ITERATIONS'
@@ -134,7 +138,12 @@ function buildHarness(configured = true) {
   };
 
   const toolRegistry = {
-    forAgent: jest.fn(() => [consultar, enviar, escalar]),
+    forAgent: jest.fn(() => [
+      consultar,
+      enviar,
+      escalar,
+      ...(opts.extraTools ?? []),
+    ]),
   } as unknown as ToolRegistry;
 
   const whatsapp = {
@@ -171,6 +180,7 @@ function buildHarness(configured = true) {
     agentActions,
     memory,
     memoryQueue,
+    opts.voice,
   );
 
   return {
@@ -369,5 +379,51 @@ describe('AgentRunner y el respaldo del guardrail', () => {
     expect(
       validateOutgoingMessage('Reviso el pedido 458812', respaldos).allowed,
     ).toBe(true);
+  });
+});
+
+describe('AgentRunner y la voz', () => {
+  const llamar = {
+    name: 'iniciarLlamada',
+    definition: {
+      name: 'iniciarLlamada',
+      description: 'llama',
+      input_schema: { type: 'object' as const, properties: {} },
+    },
+    execute: jest.fn(),
+  } as unknown as AgentTool;
+
+  function nombresDeHerramientas(h: ReturnType<typeof buildHarness>) {
+    return (
+      h.createMessage.mock.calls[0][0].tools as Array<{ name: string }>
+    ).map((t) => t.name);
+  }
+
+  it('si la empresa no puede llamar, el agente no tiene iniciarLlamada (no ofrece una llamada que no saldrá)', async () => {
+    const voice = {
+      availability: jest.fn().mockResolvedValue({
+        mode: 'managed',
+        canCall: false,
+        reason: 'Se acabaron los minutos',
+      }),
+    } as unknown as VoiceService;
+    const h = buildHarness(true, { voice, extraTools: [llamar] });
+    h.createMessage.mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(nombresDeHerramientas(h)).not.toContain('iniciarLlamada');
+  });
+
+  it('con voz disponible, la herramienta sigue ahí', async () => {
+    const voice = {
+      availability: jest.fn().mockResolvedValue({ mode: 'byo', canCall: true }),
+    } as unknown as VoiceService;
+    const h = buildHarness(true, { voice, extraTools: [llamar] });
+    h.createMessage.mockResolvedValueOnce(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(nombresDeHerramientas(h)).toContain('iniciarLlamada');
   });
 });

@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { PlatformService } from './platform.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { VoiceUsageService } from '../voice/voice-usage.service';
 
 const AYER = new Date(Date.now() - 24 * 60 * 60 * 1000);
 const HACE_MESES = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000);
@@ -24,6 +25,8 @@ function buildHarness(
           rut: '1-9',
           isActive: true,
           createdAt: HACE_MESES,
+          timezone: 'America/Santiago',
+          voiceMinutesLimit: 300,
         },
         {
           id: 'c-2',
@@ -31,6 +34,8 @@ function buildHarness(
           rut: '2-7',
           isActive: true,
           createdAt: HACE_MESES,
+          timezone: 'America/Santiago',
+          voiceMinutesLimit: null,
         },
       ]),
       findUnique: jest
@@ -81,6 +86,13 @@ function buildHarness(
       aggregate: jest.fn().mockResolvedValue({ _max: { occurredAt: AYER } }),
     },
     appointment: { count: jest.fn().mockResolvedValue(9) },
+    voiceCall: {
+      // Dos llamadas gestionadas de este mes: 61 s (2 min) y 30 s (1 min).
+      findMany: jest.fn().mockResolvedValue([
+        { companyId: 'c-1', startedAt: new Date(), durationSecs: 61 },
+        { companyId: 'c-1', startedAt: new Date(), durationSecs: 30 },
+      ]),
+    },
     auditLog: { create: auditCreate },
     ...overrides,
   };
@@ -95,7 +107,15 @@ function buildHarness(
   } as unknown as PrismaService;
 
   const auth = { registerCompany } as unknown as AuthService;
-  return { service: new PlatformService(prisma, auth), auditCreate, base };
+  const voiceUsage = {
+    defaultLimit: 60,
+    minutesUsed: jest.fn().mockResolvedValue(7),
+  } as unknown as VoiceUsageService;
+  return {
+    service: new PlatformService(prisma, auth, voiceUsage),
+    auditCreate,
+    base,
+  };
 }
 
 describe('PlatformService.listCompanies', () => {
@@ -297,5 +317,53 @@ describe('PlatformService.setCompanyActive', () => {
     await expect(
       service.setCompanyActive('c-9', false, 'admin-1'),
     ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('PlatformService — voz gestionada', () => {
+  it('muestra los minutos del mes de cada empresa y su tope', async () => {
+    const { service } = buildHarness();
+
+    const [activa, dormida] = await service.listCompanies();
+
+    // Cada llamada se redondea al minuto hacia arriba: 61 s = 2, 30 s = 1.
+    expect(activa.voz).toEqual({
+      minutosMes: 3,
+      tope: 300,
+      topePorDefecto: false,
+    });
+    // Sin tope propio: el de la plataforma.
+    expect(dormida.voz).toEqual({
+      minutosMes: 0,
+      tope: 60,
+      topePorDefecto: true,
+    });
+  });
+
+  it('cambia el tope y deja constancia con el valor anterior', async () => {
+    const { service, base, auditCreate } = buildHarness({
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ voiceMinutesLimit: 100 }),
+        update: jest
+          .fn()
+          .mockResolvedValue({ id: 'c-1', voiceMinutesLimit: 500 }),
+      },
+    });
+
+    await expect(service.setVoiceLimit('c-1', 500, 'admin-1')).resolves.toEqual(
+      {
+        id: 'c-1',
+        voiceMinutesLimit: 500,
+      },
+    );
+    expect((base.company.update as jest.Mock).mock.calls[0][0].data).toEqual({
+      voiceMinutesLimit: 500,
+    });
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'platform_set_voice_limit',
+        newValue: { antes: 100, despues: 500 },
+      }),
+    });
   });
 });

@@ -1,12 +1,22 @@
-import { ChangeEvent, DragEvent, FormEvent, useEffect, useRef, useState } from 'react';
+import {
+  ChangeEvent,
+  DragEvent,
+  FormEvent,
+  ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from './ui';
 import { PaperclipIcon, SendIcon } from './icons';
+import { ChannelList, ChannelPicker } from './channels';
+import { ChannelLadderEditor, EMPTY_LADDER } from './ChannelLadderEditor';
 import type { AgentProposal, ChatMessage } from '../hooks/useAssistantChat';
 
 const ACCEPTED_EXTENSIONS = '.txt,.md,.csv,.json';
 
-function fieldValue(t: (key: string) => string, value: unknown): string {
+function fieldValue(t: (key: string) => string, value: unknown): ReactNode {
   if (Array.isArray(value)) return value.length ? value.join(', ') : t('assistant.proposal.anyValue');
   if (typeof value === 'boolean') return value ? t('common.yes') : t('common.no');
   return String(value);
@@ -17,14 +27,21 @@ function ProposalCard({
   status,
   onConfirm,
   onDismiss,
+  onEdit,
 }: {
   proposal: AgentProposal;
   status: ChatMessage['proposalStatus'];
   onConfirm: () => void;
   onDismiss: () => void;
+  onEdit?: (proposal: AgentProposal) => void;
 }) {
   const { t } = useTranslation();
   const destructive = proposal.kind === 'delete';
+  // Canales y escalera se pueden ajustar mientras la propuesta no se confirme.
+  const editable =
+    proposal.kind === 'create' &&
+    !!onEdit &&
+    (status === 'pending' || status === 'error' || status === undefined);
 
   const typeLabels = t('assistant.typeLabels', {
     returnObjects: true,
@@ -61,11 +78,47 @@ function ProposalCard({
               {proposal.description}
             </p>
           )}
+          {editable ? (
+            <div className="mt-3 space-y-3 rounded-lg bg-white p-2.5">
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-slate-600">
+                  {fieldLabels.channels}
+                </p>
+                <ChannelPicker
+                  selected={proposal.channels ?? []}
+                  onToggle={(c) => {
+                    const current = proposal.channels ?? [];
+                    onEdit?.({
+                      ...proposal,
+                      channels: current.includes(c)
+                        ? current.filter((x) => x !== c)
+                        : [...current, c],
+                    });
+                  }}
+                />
+              </div>
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-slate-600">
+                  {t('agents.channelLadderLabel')}
+                </p>
+                <ChannelLadderEditor
+                  value={proposal.ladder ?? EMPTY_LADDER}
+                  onChange={(ladder) => onEdit?.({ ...proposal, ladder })}
+                  attendedChannels={proposal.channels ?? []}
+                  cobranza={proposal.type === 'COBRANZA'}
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-500">
+              {fieldLabels.channels}:{' '}
+              <ChannelList
+                channels={proposal.channels ?? []}
+                emptyLabel={t('assistant.proposal.anyValue')}
+              />
+            </p>
+          )}
           <p className="mt-1 text-xs text-slate-500">
-            {fieldLabels.channels}:{' '}
-            {proposal.channels?.join(', ') || t('assistant.proposal.anyValue')}
-          </p>
-          <p className="text-xs text-slate-500">
             {fieldLabels.leadStates}:{' '}
             {proposal.leadStates?.join(', ') || t('assistant.proposal.anyValue')}
           </p>
@@ -84,11 +137,18 @@ function ProposalCard({
           </p>
           <div className="mt-1 space-y-0.5">
             {Object.entries(proposal.changes).map(([key, value]) => (
-              <p key={key} className="text-xs text-slate-600">
+              <p key={key} className="flex flex-wrap items-center gap-1 text-xs text-slate-600">
                 <span className="text-slate-500">
                   {fieldLabels[key] ?? key}:
                 </span>{' '}
-                {fieldValue(t, value)}
+                {key === 'channels' && Array.isArray(value) ? (
+                  <ChannelList
+                    channels={value}
+                    emptyLabel={t('assistant.proposal.anyValue')}
+                  />
+                ) : (
+                  fieldValue(t, value)
+                )}
               </p>
             ))}
           </div>
@@ -198,6 +258,7 @@ export function AssistantConversation({
   onSend,
   onConfirmProposal,
   onDismissProposal,
+  onEditProposal,
   onUploadFile,
   inputPlaceholder,
   dense = false,
@@ -211,6 +272,7 @@ export function AssistantConversation({
   onSend: (text: string) => void;
   onConfirmProposal: (index: number) => void;
   onDismissProposal: (index: number) => void;
+  onEditProposal?: (index: number, proposal: AgentProposal) => void;
   onUploadFile?: (file: File) => void;
   inputPlaceholder?: string;
   dense?: boolean;
@@ -292,6 +354,9 @@ export function AssistantConversation({
                 status={m.proposalStatus}
                 onConfirm={() => onConfirmProposal(i)}
                 onDismiss={() => onDismissProposal(i)}
+                onEdit={
+                  onEditProposal ? (p) => onEditProposal(i, p) : undefined
+                }
               />
             )}
           </div>

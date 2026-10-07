@@ -72,6 +72,31 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error: (obj.error as string) ?? exception.name,
       };
     }
+    // Errores 4xx de body-parser (cuerpo demasiado grande, JSON mal formado):
+    // siguen la convención de `http-errors` (`status` + `expose`). Son culpa
+    // de quien llama, no nuestra: antes salían como 500 y ensuciaban las
+    // alertas, y el remitente no sabía qué había hecho mal.
+    const clientError = exception as {
+      status?: unknown;
+      expose?: unknown;
+      message?: unknown;
+    } | null;
+    if (
+      clientError &&
+      clientError.expose === true &&
+      typeof clientError.status === 'number' &&
+      clientError.status >= 400 &&
+      clientError.status < 500
+    ) {
+      return {
+        status: clientError.status,
+        message:
+          typeof clientError.message === 'string'
+            ? clientError.message
+            : 'Solicitud inválida',
+        error: exception instanceof Error ? exception.name : 'BadRequest',
+      };
+    }
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,
       message: 'Error interno del servidor',

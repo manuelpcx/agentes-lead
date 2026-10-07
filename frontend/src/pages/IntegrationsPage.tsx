@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { ApiKeysCard } from '../components/ApiKeysCard';
 import { WebhookSetup, type WebhookInfo } from '../components/WebhookSetup';
+import { ManagedEmailCard } from '../components/ManagedEmailCard';
+import { ManagedVoiceCard } from '../components/ManagedVoiceCard';
 import {
   Badge,
   Button,
@@ -81,6 +83,7 @@ const SCHEMAS: Schema[] = [
     providers: [
       { value: 'retell', label: 'Retell' },
       { value: 'vapi', label: 'Vapi' },
+      { value: 'elevenlabs', label: 'ElevenLabs' },
     ],
     fields: {
       retell: [
@@ -91,8 +94,12 @@ const SCHEMAS: Schema[] = [
         { key: 'phoneNumberId', labelKey: 'phoneNumberId' },
         { key: 'assistantId', labelKey: 'assistantId' },
       ],
+      elevenlabs: [
+        { key: 'agentId', labelKey: 'elevenAgentId', ph: 'agent_…' },
+        { key: 'phoneNumberId', labelKey: 'elevenPhoneNumberId', ph: 'phnum_…' },
+      ],
     },
-    webhookSecretProviders: ['vapi'],
+    webhookSecretProviders: ['vapi', 'elevenlabs'],
   },
   {
     channel: 'crm',
@@ -131,9 +138,12 @@ function ChannelCard({
   webhooksFailed,
   onRetryWebhooks,
   onSaved,
+  bare = false,
 }: {
   schema: Schema;
   status?: Status;
+  /** Sin tarjeta ni título: va dentro de otra (la cuenta propia de Correo). */
+  bare?: boolean;
   /** URLs de webhook de este backend (null mientras cargan o si no aplican). */
   webhooks: WebhookInfo | null;
   webhooksFailed: boolean;
@@ -208,17 +218,19 @@ function ChannelCard({
     }
   };
 
-  return (
-    <Card className="p-6">
+  const content = (
+    <>
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-800">{t(`${s}.label`)}</h3>
+        {!bare && (
+          <h3 className="text-sm font-semibold text-slate-800">{t(`${s}.label`)}</h3>
+        )}
         {status?.configured ? (
           <Badge tone="green">{t('integrations.configured')}</Badge>
         ) : (
           <Badge tone="slate">{t('integrations.notConfigured')}</Badge>
         )}
       </div>
-      <p className="mb-4 text-xs text-slate-500">{t(`${s}.hint`)}</p>
+      {!bare && <p className="mb-4 text-xs text-slate-500">{t(`${s}.hint`)}</p>}
 
       <div className="space-y-4">
         <Field label={t('integrations.providerLabel')}>
@@ -339,8 +351,9 @@ function ChannelCard({
           </p>
         )}
       </div>
-    </Card>
+    </>
   );
+  return bare ? <div className="space-y-4">{content}</div> : <Card className="p-6">{content}</Card>;
 }
 
 export function IntegrationsPage() {
@@ -348,6 +361,10 @@ export function IntegrationsPage() {
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [webhooks, setWebhooks] = useState<WebhookInfo | null>(null);
   const [webhooksFailed, setWebhooksFailed] = useState(false);
+  // Cambia al guardar la cuenta propia de correo: el modo de envío puede cambiar.
+  const [emailRefresh, setEmailRefresh] = useState(0);
+  // Igual para la voz: con cuenta propia deja de usar la gestionada.
+  const [voiceRefresh, setVoiceRefresh] = useState(0);
 
   const load = () => {
     api
@@ -375,17 +392,60 @@ export function IntegrationsPage() {
     <div className="mx-auto max-w-4xl p-4 md:p-6">
       <PageHeader title={t('integrations.title')} subtitle={t('integrations.subtitle')} />
       <div className="grid gap-6 md:grid-cols-2">
-        {SCHEMAS.map((s) => (
-          <ChannelCard
-            key={s.channel}
-            schema={s}
-            status={byChannel(s.channel)}
-            webhooks={webhooks}
-            webhooksFailed={webhooksFailed}
-            onRetryWebhooks={loadWebhooks}
-            onSaved={load}
-          />
-        ))}
+        {SCHEMAS.filter((s) => s.channel !== 'email').map((s) =>
+          s.channel === 'voice' ? (
+            // Voz gestionada por la plataforma; la cuenta propia va en Avanzado.
+            <ManagedVoiceCard
+              key={s.channel}
+              refreshKey={voiceRefresh}
+              advanced={
+                <ChannelCard
+                  bare
+                  schema={s}
+                  status={byChannel(s.channel)}
+                  webhooks={webhooks}
+                  webhooksFailed={webhooksFailed}
+                  onRetryWebhooks={loadWebhooks}
+                  onSaved={() => {
+                    load();
+                    setVoiceRefresh((n) => n + 1);
+                  }}
+                />
+              }
+            />
+          ) : (
+            <ChannelCard
+              key={s.channel}
+              schema={s}
+              status={byChannel(s.channel)}
+              webhooks={webhooks}
+              webhooksFailed={webhooksFailed}
+              onRetryWebhooks={loadWebhooks}
+              onSaved={load}
+            />
+          ),
+        )}
+      </div>
+
+      {/* Correo gestionado, a lo ancho: los registros DNS necesitan espacio. */}
+      <div className="mt-6">
+        <ManagedEmailCard
+          refreshKey={emailRefresh}
+          advanced={
+            <ChannelCard
+              bare
+              schema={SCHEMAS.find((s) => s.channel === 'email') as Schema}
+              status={byChannel('email')}
+              webhooks={null}
+              webhooksFailed={false}
+              onRetryWebhooks={loadWebhooks}
+              onSaved={() => {
+                load();
+                setEmailRefresh((n) => n + 1);
+              }}
+            />
+          }
+        />
       </div>
 
       {/* Acceso por llave de API: lo usa el servidor MCP (ver `mcp/`). */}

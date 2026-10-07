@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -22,6 +22,8 @@ import { appendSystemInstruction } from './conversation-history';
 import { QUEUE_LEAD_MEMORY } from '../queue/queue.constants';
 import { LeadMemoryService } from '../memory/lead-memory.service';
 import { LeadMemoryJobData } from '../memory/lead-memory.processor';
+import { VoiceService } from '../voice/voice.service';
+import { TOOL_INICIAR_LLAMADA } from './tools/tool-names';
 
 /** Resultado de un turno (para el planificador de seguimiento). */
 export interface TurnOutcome {
@@ -59,9 +61,27 @@ export class AgentRunner {
     private readonly memory: LeadMemoryService,
     @InjectQueue(QUEUE_LEAD_MEMORY)
     private readonly memoryQueue: Queue<LeadMemoryJobData>,
+    @Optional() private readonly voice?: VoiceService,
   ) {
     this.maxIterations = config.get('AGENT_MAX_ITERATIONS', { infer: true });
     this.timeoutMs = config.get('AGENT_TIMEOUT_MS', { infer: true });
+  }
+
+  /**
+   * Herramientas del agente para este turno. Si la empresa no puede llamar
+   * (sin voz configurada, o sin minutos o cupo en la voz gestionada), se le
+   * quita `iniciarLlamada`: si no, le ofrece al cliente una llamada que no
+   * va a salir.
+   */
+  private async availableTools(enabledTools: string[]) {
+    const tools = this.toolRegistry.forAgent(enabledTools);
+    if (!this.voice || !tools.some((t) => t.name === TOOL_INICIAR_LLAMADA)) {
+      return tools;
+    }
+    const voz = await this.voice.availability().catch(() => null);
+    return voz && !voz.canCall
+      ? tools.filter((t) => t.name !== TOOL_INICIAR_LLAMADA)
+      : tools;
   }
 
   /** Turno de respuesta a un mensaje entrante del cliente. */
@@ -143,7 +163,7 @@ export class AgentRunner {
       nowText,
       timezone,
     );
-    const tools = this.toolRegistry.forAgent(agent.enabledTools);
+    const tools = await this.availableTools(agent.enabledTools);
     const toolDefs: Anthropic.Tool[] = tools.map((t) => t.definition);
 
     const ctx: ToolContext = {

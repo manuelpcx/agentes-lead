@@ -28,6 +28,8 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   // devolvía la integración de CUALQUIER empresa y el `update` la pisaba.
   'Integration',
   'ComplianceIssue',
+  'EmailDomain',
+  'VoiceCall',
 ]);
 
 /** Operaciones de escritura donde el `companyId` va en `data`. */

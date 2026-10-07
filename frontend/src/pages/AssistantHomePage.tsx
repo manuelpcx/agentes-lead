@@ -88,6 +88,7 @@ export function AssistantHomePage() {
           error={chat.error}
           onSend={chat.send}
           onConfirmProposal={chat.confirmProposal}
+          onEditProposal={chat.editProposal}
           onDismissProposal={chat.dismissProposal}
           onUploadFile={chat.uploadFile}
         />

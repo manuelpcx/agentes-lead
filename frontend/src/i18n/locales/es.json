@@ -446,17 +446,10 @@
     "defaultCheckbox": "Agente por defecto (recibe lo no clasificado)",
     "followupSectionTitle": "Seguimiento de este agente",
     "followupSectionHint": "Opcional. Lo que dejes vacío usa la configuración global de la empresa (útil para que cobranza y ventas tengan cadencias distintas).",
-    "channelLadderLabel": "Escalera de canales",
-    "channelLadderHint": "Orden separado por comas: email, whatsapp, call. Ej: \"email,whatsapp,whatsapp,email\".",
-    "channelLadderPlaceholder": "(usa la escalera global)",
-    "delaysLabel": "Espaciado entre intentos (horas)",
-    "delaysHint": "Ej: \"12,48,72\".",
-    "delaysPlaceholder": "(usa el global)",
+    "channelLadderLabel": "Escalera de contacto",
+    "channelLadderHint": "Por qué canal y cuánto después contacta el agente a un lead que no responde.",
     "maxAttemptsLabel": "Tope de intentos",
     "maxAttemptsPlaceholder": "(global)",
-    "firstContactLabel": "Retardo del primer contacto (minutos)",
-    "firstContactHint": "0 = casi inmediato.",
-    "firstContactPlaceholder": "(global)",
     "templatesLabel": "Plantillas de WhatsApp (fuera de la ventana de 24h)",
     "noTemplates": "No hay plantillas APROBADAS todavía. Créalas y apruébalas en {{link}}.",
     "purposeOpening": "Apertura",
@@ -474,10 +467,11 @@
     "editClose": "cerrar",
     "deactivate": "desactivar",
     "deactivateConfirm": "¿Desactivar \"{{name}}\"? Sus leads se reasignan al fallback.",
-    "channelsSummary": "Canales: {{channels}} · Estados: {{states}} · Prioridad: {{priority}}",
     "any": "cualquiera",
     "handoffsTitle": "Traspasos recientes",
-    "noHandoffs": "Sin traspasos aún."
+    "noHandoffs": "Sin traspasos aún.",
+    "anyChannel": "Cualquier canal",
+    "statesSummary": "Estados: {{states}} · Prioridad: {{priority}}"
   },
   "knowledge": {
     "title": "Conocimiento",
@@ -547,6 +541,113 @@
     "approveFewShot": "Aprobar para few-shot"
   },
   "integrations": {
+    "managedVoice": {
+      "title": "Voz (llamadas)",
+      "hint": "Tus agentes llaman con nuestra cuenta de voz: no necesitas contratar nada. La voz, el saludo y el tono se ajustan en Configuración → Voz del agente.",
+      "loadError": "No se pudo cargar el estado de la voz.",
+      "mode": {
+        "managed": "Incluida",
+        "byo": "Tu propia cuenta",
+        "none": "Sin llamadas"
+      },
+      "summary": {
+        "minutes": "Minutos de llamadas este mes: {{used}} de {{limit}}.",
+        "notIncluded": "Las llamadas no están incluidas en tu plan. Escríbenos para activarlas.",
+        "byo": "Las llamadas salen por tu propia cuenta, configurada en Avanzado.",
+        "none": "Las llamadas no están activas en tu cuenta. Escríbenos para activarlas.",
+        "unavailable": "Las llamadas no están disponibles en este servidor. Puedes conectar tu propia cuenta en Avanzado.",
+        "noCallbacks": "Las llamadas salen desde un número de la plataforma, que no recibe llamadas: si el cliente quiere volver a hablar, el agente lo coordina por WhatsApp."
+      },
+      "advanced": {
+        "title": "Avanzado: usar tu propia cuenta de Retell, Vapi o ElevenLabs",
+        "hint": "Si la conectas, las llamadas salen por ella, sin tope de minutos de nuestra parte."
+      }
+    },
+    "managedEmail": {
+      "title": "Correo",
+      "hint": "Tus correos salen por nuestra cuenta de envío. Agrega tu dominio para que salgan con tu marca: tú solo creas unos registros en el DNS.",
+      "loadError": "No se pudo cargar la configuración de correo.",
+      "genericError": "No se pudo completar la acción.",
+      "saved": "Remitente guardado.",
+      "mode": {
+        "managed": "Tu dominio",
+        "shared": "Dominio compartido",
+        "byo": "Tu propia cuenta",
+        "none": "Sin configurar"
+      },
+      "summary": {
+        "managed": "Los correos salen desde {{from}}.",
+        "shared": "Mientras tu dominio no esté verificado, los correos salen desde {{from}}.",
+        "byo": "Los correos salen por tu propia cuenta ({{from}}), configurada en Avanzado.",
+        "none": "Todavía no se pueden enviar correos: agrega tu dominio y crea sus registros DNS.",
+        "unavailable": "El correo gestionado no está habilitado en este servidor. Puedes conectar tu propia cuenta en Avanzado.",
+        "replyTo": "Las respuestas llegan a {{replyTo}}.",
+        "noReplyTo": "Falta un correo para respuestas: sin él, lo que respondan tus clientes no le llega a nadie. Complétalo abajo.",
+        "quota": "Enviados hoy: {{used}} de {{limit}}."
+      },
+      "sender": {
+        "title": "Remitente",
+        "fromName": "Nombre visible",
+        "fromNameHint": "Lo que ve el cliente como remitente. Vacío = el nombre de tu empresa.",
+        "replyTo": "Las respuestas llegan a",
+        "replyToHint": "Tu buzón real: ahí llegan las respuestas de tus clientes.",
+        "localPart": "Dirección",
+        "localPartHint": "Se usa con tu dominio propio. En el dominio compartido la dirección es fija.",
+        "yourDomain": "tu-dominio"
+      },
+      "domain": {
+        "title": "Tu dominio",
+        "unavailable": "No disponible en este servidor.",
+        "subdomainHint": "Te recomendamos un subdominio, por ejemplo notificaciones.tuempresa.cl: así la reputación de estos envíos no afecta a tu correo corporativo.",
+        "ownerOnly": "Solo el dueño de la cuenta puede agregar un dominio.",
+        "add": "Agregar dominio",
+        "adding": "Agregando…",
+        "added": "Dominio agregado. Crea los registros DNS de abajo.",
+        "dnsHelp": "Créalos donde administras el DNS de tu dominio (por ejemplo, Cloudflare o tu proveedor de hosting). Revisamos cada 10 minutos: en cuanto los detectemos, los correos empiezan a salir desde tu dominio.",
+        "lastChecked": "Última revisión: {{when}}",
+        "verify": "Verificar ahora",
+        "verifying": "Verificando…",
+        "verifyStarted": "Listo: estamos revisando los registros DNS.",
+        "remove": "Quitar dominio",
+        "removeConfirm": "¿Quitar {{domain}}? Los correos volverán a salir desde el dominio compartido, si está disponible.",
+        "removeYes": "Sí, quitar",
+        "removing": "Quitando…",
+        "removed": "Dominio quitado."
+      },
+      "domainStatus": {
+        "not_started": "Sin iniciar",
+        "pending": "Verificando",
+        "verified": "Verificado",
+        "partially_verified": "Verificado",
+        "partially_failed": "Incompleto",
+        "failed": "Falló",
+        "temporary_failure": "Falla temporal"
+      },
+      "domainHelp": {
+        "not_started": "La verificación no ha comenzado. Crea los registros y pulsa «Verificar ahora».",
+        "pending": "Buscando los registros DNS. Puede tardar desde minutos hasta 72 horas después de crearlos.",
+        "verified": "Dominio verificado: los correos salen desde aquí.",
+        "partially_verified": "Dominio verificado: los correos salen desde aquí.",
+        "partially_failed": "Parte de los registros no se pudo verificar. Revísalos y pulsa «Verificar ahora».",
+        "failed": "No encontramos los registros en 72 horas. Revisa que estén bien creados y pulsa «Verificar ahora».",
+        "temporary_failure": "Dejamos de detectar los registros DNS. Mientras lo revisas, los correos salen desde el dominio compartido."
+      },
+      "record": {
+        "name": "Nombre (host)",
+        "fullName": "Si tu proveedor pide el nombre completo: {{fqdn}}",
+        "value": "Valor",
+        "priority": "Prioridad"
+      },
+      "recordStatus": {
+        "verified": "OK",
+        "pending": "Pendiente",
+        "failed": "No encontrado"
+      },
+      "advanced": {
+        "title": "Avanzado: usar tu propia cuenta de Resend o SMTP",
+        "hint": "Si la conectas, los correos salen por ella en vez de por nuestra cuenta de envío."
+      }
+    },
     "webhook": {
       "title": "Conecta el webhook",
       "loadFailed": "No se pudo cargar la URL del webhook.",
@@ -576,10 +677,17 @@
         "event": "Retell manda ahí el resultado de cada llamada en este evento:",
         "secret": "Retell firma con tu API key: no hace falta otro secreto."
       },
+      "elevenlabs": {
+        "url": "En ElevenLabs, en la configuración de Agents, crea un webhook post-llamada con esta URL:",
+        "event": "Tiene que enviar estos eventos:",
+        "secret": "ElevenLabs te mostrará el secreto HMAC del webhook: pégalo abajo, en «Secreto del webhook», y guarda.",
+        "variables": "En el prompt y el saludo del agente puedes usar estas variables; las completamos en cada llamada:",
+        "overrides": "Si en Configuración elegiste voz, saludo, idioma o velocidad, habilítalos en la pestaña Security del agente. Si no, la llamada sale igual, con la configuración propia del agente."
+      },
       "vapi": {
         "url": "En Vapi, en tu assistant, pega esta Server URL:",
         "event": "Vapi manda ahí el informe de cada llamada en este mensaje:",
-        "secret": "Define un Server URL Secret en Vapi y pégalo abajo, en «Secreto del webhook (Vapi)»."
+        "secret": "Define un Server URL Secret en Vapi y pégalo abajo, en «Secreto del webhook»."
       }
     },
     "title": "Integraciones",
@@ -625,16 +733,18 @@
       },
       "voice": {
         "label": "Voz (llamadas)",
-        "hint": "Tu cuenta de Retell (o Vapi) y tu número para las llamadas.",
+        "hint": "Tu cuenta de Retell, Vapi o ElevenLabs y tu número para las llamadas.",
         "secretLabel": "API Key",
         "fields": {
           "fromNumber": "Número (E.164)",
           "agentId": "Agent ID de Retell",
           "phoneNumberId": "Phone Number ID",
-          "assistantId": "Assistant ID"
+          "assistantId": "Assistant ID",
+          "elevenAgentId": "Agent ID de ElevenLabs",
+          "elevenPhoneNumberId": "Phone Number ID (número importado en ElevenLabs)"
         },
-        "webhookSecretLabel": "Secreto del webhook (Vapi)",
-        "webhookSecretHint": "El \"Server URL Secret\" del assistant en Vapi. Obligatorio para recibir los resultados de las llamadas. Retell no lo necesita: firma con la API key."
+        "webhookSecretLabel": "Secreto del webhook",
+        "webhookSecretHint": "Obligatorio para recibir los resultados de las llamadas. Vapi: el \"Server URL Secret\" del assistant. ElevenLabs: el secreto HMAC del webhook post-llamada. Retell no lo necesita: firma con la API key."
       },
       "crm": {
         "label": "CRM",
@@ -771,7 +881,7 @@
     "languageSpain": "Español (España)",
     "languageMulti": "Multilingüe",
     "speedLabel": "Velocidad",
-    "speedHint": "1 = normal (0.5–2).",
+    "speedHint": "1 = normal (0.5–2; con ElevenLabs, de 0.7 a 1.2).",
     "save": "Guardar"
   },
   "account": {
@@ -835,6 +945,15 @@
     }
   },
   "platform": {
+    "colVoice": "Voz",
+    "voiceNone": "Sin voz",
+    "voiceMinutes": "{{used}} / {{limit}} min",
+    "voiceDefault": "por defecto",
+    "voiceEdit": "Cambiar",
+    "voiceModalTitle": "Minutos de voz · {{name}}",
+    "voiceModalHint": "Tope mensual de minutos de llamadas por nuestra cuenta de voz. 0 = sin llamadas. Este mes lleva {{used}} min.",
+    "voiceLimitLabel": "Minutos al mes",
+    "voiceUseDefault": "Usar el valor por defecto",
     "title": "Plataforma",
     "subtitle": "Los clientes que usan la aplicación y cómo la usan.",
     "newDemo": "Crear demo",
@@ -863,5 +982,34 @@
     "demoReady": "Listo. \"{{name}}\" ya puede entrar al panel.",
     "showOnce": "Copia estos datos ahora: no se vuelven a mostrar.",
     "emailTaken": "Ya existe una cuenta con ese correo. Usa otro."
+  },
+  "ladder": {
+    "groupLabel": "Escalera de contacto",
+    "start": "Lead nuevo",
+    "general": "Usa la escalera general de la plataforma",
+    "customize": "Personalizar",
+    "useGeneral": "Volver a la escalera general",
+    "tapHint": "Toca un paso para cambiar su canal, moverlo o quitarlo.",
+    "addStep": "Paso",
+    "addStepMenu": "¿Por qué canal?",
+    "step": "Paso {{n}}",
+    "stepAria": "Paso {{n}}: {{channel}}. Opciones del paso",
+    "channelLabel": "Canal",
+    "moveBefore": "Mover antes",
+    "moveAfter": "Mover después",
+    "remove": "Quitar paso",
+    "waitBetween": "Espera entre el paso {{from}} y el {{to}}",
+    "waitFirst": "Espera antes del primer contacto",
+    "firstDefault": "Por defecto",
+    "instant": "Al instante",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "days_one": "{{count}} día",
+    "days_other": "{{count}} días",
+    "week": "1 semana",
+    "notAttended": "El paso {{n}} usa {{channel}}, pero este agente no atiende ese canal.",
+    "cycleNote": "Desde el intento {{next}}, la escalera vuelve a empezar en el paso 1.",
+    "customDelays": "Con esperas propias entre intentos: {{list}}.",
+    "cobranzaNote": "Cobranza: la ley exige al menos 48 h entre gestiones."
   }
 }

@@ -23,8 +23,18 @@ function Bubble({ i }: { i: Interaction }) {
   const { t } = useTranslation();
   const author = classify(i);
   if (author === 'system') {
+    // Un envío fallido se destaca: es lo que explica que el agente "no haya
+    // hecho nada" (ej. el proveedor de WhatsApp sin saldo).
+    const fallo = i.metadata?.tipo === 'fallo_envio';
     return (
-      <div className="my-1 text-center text-xs italic text-slate-400">
+      <div
+        className={cn(
+          'my-1 text-center text-xs',
+          fallo
+            ? 'mx-auto w-fit max-w-[90%] rounded-lg bg-rose-50 px-3 py-1.5 text-rose-700'
+            : 'italic text-slate-400',
+        )}
+      >
         {i.content}
       </div>
     );

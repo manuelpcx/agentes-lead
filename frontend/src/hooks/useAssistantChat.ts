@@ -11,6 +11,7 @@ import {
   type Conversation,
   type ProposalStatus,
 } from '../store/assistantChat';
+import { EMPTY_LADDER, ladderToConfig } from '../components/ChannelLadderEditor';
 
 export type { AgentProposal, ChatMessage, Conversation, ProposalStatus };
 
@@ -37,8 +38,21 @@ function textForModel(m: ChatMessage): string {
   if (!m.proposal) {
     return m.text;
   }
-  const note = OUTCOME_NOTE[m.proposalStatus ?? 'pending'];
-  return note ? `${m.text}\n\n${note}` : m.text;
+  const status = m.proposalStatus ?? 'pending';
+  const notes = [OUTCOME_NOTE[status]];
+  // La persona puede ajustar canales y escalera en la tarjeta: el modelo debe
+  // saber con qué quedó, no solo lo que él propuso.
+  if (m.proposal.kind === 'create' && (status === 'pending' || status === 'done')) {
+    const canales = m.proposal.channels?.length
+      ? m.proposal.channels.join(', ')
+      : 'cualquiera';
+    const escalera = m.proposal.ladder?.steps.length
+      ? m.proposal.ladder.steps.join(' → ')
+      : 'la general';
+    notes.push(`[En la tarjeta: canales ${canales}; escalera de contacto ${escalera}.]`);
+  }
+  const extra = notes.filter(Boolean).join('\n');
+  return extra ? `${m.text}\n\n${extra}` : m.text;
 }
 
 /**
@@ -123,6 +137,7 @@ export function useAssistantChat() {
     updateMessageAt(conversationId, index, { proposalStatus: 'working' });
     try {
       if (proposal.kind === 'create') {
+        const followupConfig = ladderToConfig(proposal.ladder ?? EMPTY_LADDER);
         await api.post('/panel/agents', {
           name: proposal.name,
           type: proposal.type,
@@ -130,6 +145,7 @@ export function useAssistantChat() {
           channels: proposal.channels,
           leadStates: proposal.leadStates,
           isDefault: proposal.isDefault,
+          ...(Object.keys(followupConfig).length > 0 && { followupConfig }),
         });
       } else if (proposal.kind === 'update') {
         await api.patch(`/panel/agents/${proposal.agentId}`, proposal.changes);
@@ -144,6 +160,13 @@ export function useAssistantChat() {
     } catch {
       updateMessageAt(conversationId, index, { proposalStatus: 'error' });
     }
+  };
+
+  /** Ajustes hechos en la tarjeta (canales, escalera) antes de confirmar. */
+  const editProposal = (index: number, proposal: AgentProposal) => {
+    const conversationId = activeConversation?.id;
+    if (!conversationId) return;
+    updateMessageAt(conversationId, index, { proposal });
   };
 
   const dismissProposal = (index: number) => {
@@ -200,6 +223,7 @@ export function useAssistantChat() {
     error,
     send,
     confirmProposal,
+    editProposal,
     dismissProposal,
     uploadFile,
     startNewConversation: () => startNew(companyId),

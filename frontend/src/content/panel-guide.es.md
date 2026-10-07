@@ -198,8 +198,8 @@ Quién atiende y cómo.
 - **Tipo**: VENTAS, COBRANZA, SOPORTE, AGENDAMIENTO o CUSTOM. Ventas y cobranza
   parten con un prompt especializado; el resto, con una base genérica.
 - **Descripción**: ayuda al clasificador a decidir cuándo derivarle un lead.
-- **Enrutamiento**: qué canales atiende y qué estados del embudo maneja. Vacío
-  significa "cualquiera". El **agente por defecto** recibe lo que no calza con
+- **Enrutamiento**: qué canales atiende (toca WhatsApp, Correo o Llamada para
+  marcarlos) y qué estados del embudo maneja. Vacío significa "cualquiera". El **agente por defecto** recibe lo que no calza con
   ningún otro.
 - **Desactivar** es reversible: sus leads se reasignan al agente por defecto.
   Eliminar no lo es.
@@ -211,10 +211,13 @@ Quién atiende y cómo.
 Opcional. Lo que dejes vacío usa la configuración global. Sirve para que
 cobranza y ventas tengan cadencias distintas.
 
-- **Escalera de canales**: el orden por intento, separado por comas. Por
-  ejemplo `email,whatsapp,whatsapp,email`.
-- **Espaciado entre intentos**, en horas, y **retardo del primer contacto**, en
-  minutos.
+- **Escalera de contacto**: una línea de tiempo que parte en "Lead nuevo", con
+  un paso por intento y la espera entre ellos. **Personalizar** la arma con los
+  canales del agente y las esperas generales. Toca un paso para cambiarle el
+  canal, moverlo o quitarlo; **+ Paso** agrega uno. Las esperas y la demora del
+  primer contacto se eligen en cada tramo. Si el tope de intentos supera los
+  pasos, la escalera vuelve a empezar. Un paso con un canal que el agente no
+  atiende se marca en rojo.
 - **Plantillas de WhatsApp** por propósito: apertura (primer contacto fuera de
   la ventana de 24 h), seguimiento y reactivación (último intento antes de
   cerrar).
@@ -260,9 +263,23 @@ Tus propias cuentas de proveedores. Los secretos se guardan cifrados y **nunca
 se muestran de vuelta**.
 
 - **WhatsApp**: Meta Cloud API directo, o YCloud como intermediario.
-- **Correo**: para los envíos del agente.
-- **Voz**: para las llamadas.
+- **Correo**: sale por nuestra cuenta de envío; no necesitas cuenta propia.
+- **Voz**: tus agentes llaman con nuestra cuenta de voz, dentro de tus minutos
+  del mes. Muestra cuántos llevas. Las llamadas salen desde un número de la
+  plataforma que no recibe llamadas: si el cliente quiere volver a hablar, el
+  agente lo coordina por WhatsApp. En **Avanzado** puedes conectar tu propia
+  cuenta de Retell, Vapi o ElevenLabs.
 - **CRM**: envía eventos a tu CRM y le permite al agente consultarlo en vivo.
+
+**Correo con tu dominio.** En la tarjeta de Correo escribes tu dominio
+(conviene un subdominio, como `notificaciones.tuempresa.cl`) y aparecen los
+registros DNS que tienes que crear donde administras tu dominio, con botones
+para copiarlos. Lo revisamos cada 10 minutos: apenas quedan bien, los correos
+salen desde tu dominio. Mientras tanto salen desde un dominio de la plataforma,
+con el nombre de tu empresa como remitente. Completa **Las respuestas llegan
+a** con tu buzón real: sin él, las respuestas de tus clientes no llegan a
+nadie. Hay un tope de correos por día por empresa. Si prefieres tu propia
+cuenta de Resend o SMTP, está en **Avanzado**.
 
 **Conecta el webhook.** En WhatsApp y en Voz, al elegir el proveedor aparece la
 URL que tienes que pegar en su panel, con un botón para copiarla, y los pasos:
@@ -274,8 +291,9 @@ se asigna a la tuya por tu número de negocio (YCloud) o tu *Phone Number ID*
 **Secreto de firma del webhook.** Cada canal de entrada lo necesita y es
 **obligatorio**: sin él, los mensajes entrantes se rechazan. Con Meta es el
 *App Secret* de tu app; con YCloud, el secreto del endpoint de webhook, que es
-distinto de la API key; con Vapi, el *Server URL Secret*. Si dejaron de entrar
-mensajes, revisa esto primero.
+distinto de la API key; con Vapi, el *Server URL Secret*; con ElevenLabs, el
+secreto HMAC del webhook post-llamada. Si dejaron de entrar mensajes, revisa
+esto primero.
 
 **Probar conexión** verifica las credenciales antes de dejarlas en producción.
 
@@ -324,6 +342,10 @@ Solo la ven los administradores de la plataforma, no los clientes. Lista las
 empresas que usan la aplicación con lo que de verdad dice si activaron:
 canales conectados, conocimiento cargado, leads, mensajes del último mes y
 cuántos días llevan sin actividad.
+
+La columna **Voz** muestra los minutos de llamadas del mes contra el tope de
+cada empresa. **Cambiar** fija su tope mensual; `0` la deja sin llamadas.
+Cuando se le acaban, su agente deja de ofrecer llamadas y sigue por texto.
 
 **Crear demo** da de alta una cuenta vacía con su agente por defecto. Devuelve
 el correo, la contraseña y el secreto de webhook **una sola vez**: cópialos

@@ -202,6 +202,8 @@ export class IniciarLlamadaTool implements AgentTool {
         tono: voiceCfg.tone ?? DEFAULT_VOICE_TONE,
       },
       overrides: voiceConfigToOverrides(voiceCfg),
+      // En la voz gestionada elige el agente de voz (cobranza u otro).
+      agentType: ctx.agentType,
     });
     await this.interactions.register({
       leadId: ctx.lead.id,

@@ -3,6 +3,7 @@ import {
   WhatsappProvider,
   WhatsappTemplateMessage,
 } from './whatsapp-provider.interface';
+import { whatsappSendError } from './send-error';
 
 const GRAPH_VERSION = 'v21.0';
 
@@ -74,7 +75,7 @@ export class MetaCloudWhatsappProvider implements WhatsappProvider {
       this.logger.error(
         `Meta respondió ${response.status}: ${detail.slice(0, 300)}`,
       );
-      throw new Error(`Fallo al enviar WhatsApp (Meta ${response.status})`);
+      throw whatsappSendError('Meta', response.status, detail);
     }
   }
 }

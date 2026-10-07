@@ -19,8 +19,9 @@ const TERMINAL_STATUSES: LeadStatus[] = [
 /**
  * Cron cada 2 min: busca leads con `nextActionAt` vencido (en todas las
  * empresas, sin contexto de tenant) y encola un seguimiento por cada uno. El
- * `jobId` determinista evita duplicados dentro de la misma ventana. Frecuencia
- * alta = baja latencia del primer contacto (responder rápido).
+ * `jobId` determinista (lead + próxima acción) evita duplicados mientras esa
+ * acción siga pendiente. Frecuencia alta = baja latencia del primer contacto
+ * (responder rápido).
  */
 @Injectable()
 export class FollowUpScheduler {
@@ -47,7 +48,7 @@ export class FollowUpScheduler {
         isPausedForHuman: false,
         status: { notIn: TERMINAL_STATUSES },
       },
-      select: { id: true, companyId: true },
+      select: { id: true, companyId: true, nextActionAt: true },
       take: 500,
     });
 
@@ -59,10 +60,16 @@ export class FollowUpScheduler {
           leadId: lead.id,
           correlationId: randomUUID(),
         },
-        // El `jobId` NO puede llevar `:` (BullMQ lo prohíbe). `removeOnComplete`
-        // libera el id al terminar, para que el mismo lead pueda reencolarse en
-        // la próxima ventana (si no, el job completado retendría el id).
-        { jobId: `followup-${lead.id}`, removeOnComplete: true },
+        // El `jobId` NO puede llevar `:` (BullMQ lo prohíbe). Lleva la hora de
+        // la próxima acción: un job fallido se conserva en Redis con su id, y
+        // si el id fuera solo el del lead, BullMQ ignoraría en silencio todos
+        // los `add` siguientes y el lead quedaría trabado para siempre. Al
+        // reprogramarse (ver `deferAfterFailure`) el id cambia y vuelve a
+        // encolarse. `removeOnComplete` libera el id al terminar.
+        {
+          jobId: `followup-${lead.id}-${lead.nextActionAt?.getTime() ?? 0}`,
+          removeOnComplete: true,
+        },
       );
     }
 

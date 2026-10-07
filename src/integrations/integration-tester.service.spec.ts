@@ -9,12 +9,20 @@ jest.mock('node:dns/promises', () => ({
 import { IntegrationTester } from './integration-tester.service';
 import { CredentialsService } from './credentials.service';
 import { TenantContext } from '../common/tenant/tenant-context';
+import { PrismaService } from '../common/prisma/prisma.service';
 
-function build(cred: unknown) {
+function build(cred: unknown, channelsConfig: unknown = {}) {
   const credentials = {
     get: jest.fn().mockResolvedValue(cred),
   } as unknown as CredentialsService;
-  return new IntegrationTester(credentials);
+  const prisma = {
+    raw: {
+      company: {
+        findUnique: jest.fn().mockResolvedValue({ channelsConfig }),
+      },
+    },
+  } as unknown as PrismaService;
+  return new IntegrationTester(credentials, prisma);
 }
 
 function mockFetch(status: number) {
@@ -23,6 +31,10 @@ function mockFetch(status: number) {
     .mockResolvedValue({ ok: status >= 200 && status < 300, status });
   (global as unknown as { fetch: jest.Mock }).fetch = fn;
   return fn;
+}
+
+function run<T>(fn: () => Promise<T>) {
+  return TenantContext.run({ companyId: 'company-1', correlationId: 'c1' }, fn);
 }
 
 describe('IntegrationTester', () => {
@@ -56,6 +68,90 @@ describe('IntegrationTester', () => {
     mockFetch(200);
     const r = await t.test('voice');
     expect(r.ok).toBe(true);
+  });
+
+  it('ElevenLabs: valida agente y número (Twilio o SIP)', async () => {
+    const t = build({
+      provider: 'elevenlabs',
+      secret: 'xi',
+      config: { agentId: 'agent_1', phoneNumberId: 'phnum_1' },
+    });
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ provider: 'sip_trunk' }),
+      });
+    (global as unknown as { fetch: jest.Mock }).fetch = fetchMock;
+
+    const r = await run(() => t.test('voice'));
+
+    expect(r).toEqual({
+      ok: true,
+      message: 'Conexión con ElevenLabs correcta.',
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://api.elevenlabs.io/v1/convai/agents/agent_1',
+    );
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({ 'xi-api-key': 'xi' });
+  });
+
+  it('ElevenLabs: avisa si el agente no permite el saludo configurado', async () => {
+    // Lo que pasaba: la llamada salía con el saludo de Configuración y
+    // ElevenLabs cortaba la conversación ("Override for field 'first_message'
+    // is not allowed by config").
+    const t = build(
+      {
+        provider: 'elevenlabs',
+        secret: 'xi',
+        config: { agentId: 'agent_1', phoneNumberId: 'phnum_1' },
+      },
+      { voice: { beginMessage: 'Hola {{nombre}}' } },
+    );
+    (global as unknown as { fetch: jest.Mock }).fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          platform_settings: {
+            overrides: { conversation_config_override: { agent: {} } },
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ provider: 'twilio' }),
+      });
+
+    const r = await run(() => t.test('voice'));
+
+    expect(r.ok).toBe(true);
+    expect(r.message).toContain('no permite cambiar saludo');
+    expect(r.message).toContain('Security');
+  });
+
+  it('ElevenLabs: agente inexistente → lo dice', async () => {
+    const t = build({
+      provider: 'elevenlabs',
+      secret: 'xi',
+      config: { agentId: 'agent_x', phoneNumberId: 'phnum_1' },
+    });
+    mockFetch(404);
+    const r = await t.test('voice');
+    expect(r.ok).toBe(false);
+    expect(r.message).toContain('agent_x');
+  });
+
+  it('ElevenLabs: sin Agent ID o Phone Number ID → no ok sin llamar a la API', async () => {
+    const t = build({ provider: 'elevenlabs', secret: 'xi', config: {} });
+    const fetchMock = mockFetch(200);
+    const r = await t.test('voice');
+    expect(r.ok).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('un error de red → no ok', async () => {

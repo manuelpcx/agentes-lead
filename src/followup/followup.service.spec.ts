@@ -5,6 +5,7 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
+import { VoiceService } from '../voice/voice.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import type { EnvVars } from '../common/config/env.validation';
 
@@ -50,6 +51,7 @@ function buildHarness(
   template = '',
   agentFollowupConfig: Record<string, unknown> = {},
   agentType = 'VENTAS',
+  voice?: VoiceService,
 ) {
   const cfg: Record<string, unknown> = {
     FOLLOWUP_MAX_ATTEMPTS: 4,
@@ -66,6 +68,7 @@ function buildHarness(
   const prisma = {
     db: {
       interaction: { findFirst: jest.fn().mockResolvedValue(null) },
+      lead: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       agent: {
         findFirst: jest.fn().mockResolvedValue({
           followupConfig: agentFollowupConfig,
@@ -115,6 +118,7 @@ function buildHarness(
     interactions,
     whatsapp,
     agent,
+    voice,
   );
   return { service, prisma, leads, interactions, whatsapp, agent };
 }
@@ -246,6 +250,49 @@ describe('FollowUpService.processFollowUp', () => {
     expect(h.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(h.agent.runFollowUp).not.toHaveBeenCalled();
     expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledTimes(1);
+  });
+
+  it('si la plantilla falla y hay correo: lo deja anotado y sigue por correo', async () => {
+    const h = buildHarness({ contactAttempts: 1 }, ALWAYS_OPEN, 'bienvenida');
+    (h.whatsapp.sendTemplate as jest.Mock).mockRejectedValue(
+      new Error(
+        'Fallo al enviar WhatsApp (YCloud 403: la cuenta de YCloud no tiene saldo)',
+      ),
+    );
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).toContain('CORREO');
+    // Queda a la vista en la conversación del lead, con el motivo.
+    expect(h.interactions.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'system',
+        content: expect.stringMatching(/no tiene saldo.*correo/),
+      }),
+    );
+    // La plantilla no salió: no se registra como gestión hecha.
+    expect(h.interactions.register).not.toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { gestion: 'proactiva' } }),
+    );
+  });
+
+  it('si la plantilla falla y no hay correo: propaga el error para reintentar', async () => {
+    const h = buildHarness(
+      { contactAttempts: 1, email: null },
+      ALWAYS_OPEN,
+      'bienvenida',
+    );
+    const error = new Error(
+      'Fallo al enviar WhatsApp (YCloud 403: la cuenta de YCloud no tiene saldo)',
+    );
+    (h.whatsapp.sendTemplate as jest.Mock).mockRejectedValue(error);
+
+    await expect(
+      run(() => h.service.processFollowUp('lead-1')),
+    ).rejects.toThrow(error);
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    // Sin contacto no se cuenta el intento.
+    expect(h.leads.recordFollowUpAttempt).not.toHaveBeenCalled();
   });
 
   it('llamada agendada por el lead: corre el agente con instrucción de llamada, sin pasar por el guard de "cliente habló último"', async () => {
@@ -545,5 +592,102 @@ describe('FollowUpService — piso legal de cobranza', () => {
     await run(() => h.service.processFollowUp('lead-1'));
     expect(h.agent.runFollowUp).toHaveBeenCalledTimes(1);
     expect(h.interactions.findProactiveSince).not.toHaveBeenCalled();
+  });
+});
+
+describe('FollowUpService y la voz', () => {
+  it('si la empresa no puede llamar, el intento de llamada sale por otro canal', async () => {
+    const voice = {
+      availability: jest.fn().mockResolvedValue({
+        mode: 'managed',
+        canCall: false,
+        reason: 'Se acabaron los minutos',
+      }),
+    } as unknown as VoiceService;
+    const h = buildHarness(
+      { contactAttempts: 0 },
+      ALWAYS_OPEN,
+      '',
+      { channelLadder: ['call'] },
+      'VENTAS',
+      voice,
+    );
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    const instruction = (h.agent.runFollowUp as jest.Mock).mock.calls[0][1];
+    expect(instruction).not.toContain('LLAMADA');
+    expect(instruction).toContain('CORREO');
+  });
+
+  it('con una escalera sin llamadas, ni pregunta por la voz', async () => {
+    const voice = {
+      availability: jest.fn(),
+    } as unknown as VoiceService;
+    const h = buildHarness(
+      { contactAttempts: 0 },
+      ALWAYS_OPEN,
+      '',
+      {},
+      'VENTAS',
+      voice,
+    );
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(voice.availability).not.toHaveBeenCalled();
+  });
+});
+
+describe('FollowUpService.deferAfterFailure', () => {
+  const now = new Date('2026-10-06T19:30:00.000Z');
+  const motivo =
+    'Fallo al enviar WhatsApp (YCloud 403: la cuenta de YCloud no tiene saldo)';
+
+  it('posterga una hora la próxima acción vencida, sin cambiar su tipo', async () => {
+    const h = buildHarness();
+    await run(() => h.service.deferAfterFailure('lead-1', motivo, now));
+
+    const updateMany = h.prisma.db.lead.updateMany as jest.Mock;
+    expect(updateMany).toHaveBeenCalledWith({
+      // Solo si sigue vencida: no pisa algo que se haya agendado entretanto.
+      where: { id: 'lead-1', nextActionAt: { lte: now } },
+      data: { nextActionAt: new Date('2026-10-06T20:30:00.000Z') },
+    });
+  });
+
+  it('deja el motivo a la vista en la conversación del lead', async () => {
+    const h = buildHarness();
+    await run(() => h.service.deferAfterFailure('lead-1', motivo, now));
+
+    expect(h.interactions.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leadId: 'lead-1',
+        channel: 'system',
+        content: expect.stringContaining('no tiene saldo'),
+      }),
+    );
+  });
+
+  it('no repite el mismo aviso cada hora', async () => {
+    const h = buildHarness();
+    // Ya hay un aviso igual en las últimas 24 h.
+    (h.prisma.db.interaction.findFirst as jest.Mock).mockResolvedValueOnce({
+      id: 'aviso-1',
+    });
+    await run(() => h.service.deferAfterFailure('lead-1', motivo, now));
+
+    expect(h.prisma.db.lead.updateMany).toHaveBeenCalled();
+    expect(h.interactions.register).not.toHaveBeenCalled();
+  });
+
+  it('si la acción ya no está vencida, no la toca ni avisa', async () => {
+    const h = buildHarness();
+    (h.prisma.db.lead.updateMany as jest.Mock).mockResolvedValueOnce({
+      count: 0,
+    });
+    await run(() => h.service.deferAfterFailure('lead-1', motivo, now));
+
+    expect(h.interactions.register).not.toHaveBeenCalled();
   });
 });

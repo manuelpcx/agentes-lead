@@ -17,7 +17,8 @@ el panel.
 - **Redis 6+** (colas de trabajo).
 - Docker es la vía más simple para Postgres + Redis (hay `docker-compose.yml`).
 - Opcionales (para producción): `ANTHROPIC_API_KEY` (el cerebro del agente),
-  credenciales de WhatsApp/SMTP/Vapi y de Voyage AI (embeddings).
+  credenciales de WhatsApp/SMTP/voz (Retell, Vapi o ElevenLabs) y de Voyage AI
+  (embeddings).
 
 > Sin `ANTHROPIC_API_KEY` la app **igual arranca y es navegable**: el agente
 > degrada a "escalar a humano" y la mejora continua queda en pausa. Ideal para

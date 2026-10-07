@@ -12,9 +12,16 @@ import {
   cn,
 } from '../components/ui';
 import type { AgentFull, AgentMetricsRow, HandoffRow } from '../types';
+import { ChannelList, ChannelPicker } from '../components/channels';
+import {
+  ChannelLadderEditor,
+  EMPTY_LADDER,
+  LadderState,
+  ladderFromConfig,
+  ladderToConfig,
+} from '../components/ChannelLadderEditor';
 
 const AGENT_TYPES = ['VENTAS', 'SOPORTE', 'COBRANZA', 'AGENDAMIENTO', 'CUSTOM'];
-const CHANNELS = ['whatsapp', 'email', 'call'];
 const LEAD_STATES = [
   'NUEVO',
   'CONTACTADO',
@@ -39,20 +46,17 @@ const PURPOSE_I18N: Record<TemplatePurpose, string> = {
   reactivation: 'purposeReactivation',
 };
 
-/** Sub-estado (crudo, como texto) de la config de seguimiento del formulario. */
+/** Sub-estado de la config de seguimiento del formulario. */
 interface FollowupUiState {
-  channelLadder: string; // "email,whatsapp,whatsapp,email"
-  delaysHours: string; // "12,48,72"
+  /** Canales, esperas y primer contacto (editor visual). */
+  ladder: LadderState;
   maxAttempts: string;
-  firstContactDelayMin: string;
   templates: Record<TemplatePurpose, string>; // nombre de plantilla o ''
 }
 
 const EMPTY_FOLLOWUP_UI: FollowupUiState = {
-  channelLadder: '',
-  delaysHours: '',
+  ladder: EMPTY_LADDER,
   maxAttempts: '',
-  firstContactDelayMin: '',
   templates: { opening: '', followup: '', reactivation: '' },
 };
 
@@ -84,18 +88,8 @@ function parseFollowupUi(cfg: Record<string, unknown> | undefined): FollowupUiSt
   if (!cfg || typeof cfg !== 'object') {
     return EMPTY_FOLLOWUP_UI;
   }
-  const ladder = Array.isArray(cfg.channelLadder)
-    ? (cfg.channelLadder as unknown[]).filter((x) => typeof x === 'string').join(',')
-    : '';
-  const delays = Array.isArray(cfg.delaysHours)
-    ? (cfg.delaysHours as unknown[]).map(String).join(',')
-    : '';
   const maxAttempts =
     typeof cfg.maxAttempts === 'number' ? String(cfg.maxAttempts) : '';
-  const firstContactDelayMin =
-    typeof cfg.firstContactDelayMin === 'number'
-      ? String(cfg.firstContactDelayMin)
-      : '';
   const rawTemplates = (cfg.templates ?? {}) as Record<string, unknown>;
   const templates = { opening: '', followup: '', reactivation: '' } as Record<
     TemplatePurpose,
@@ -107,7 +101,7 @@ function parseFollowupUi(cfg: Record<string, unknown> | undefined): FollowupUiSt
       templates[p] = t.name;
     }
   }
-  return { channelLadder: ladder, delaysHours: delays, maxAttempts, firstContactDelayMin, templates };
+  return { ladder: ladderFromConfig(cfg), maxAttempts, templates };
 }
 
 /** Traduce el formulario a `followupConfig` (JSON) para el backend. */
@@ -115,36 +109,11 @@ function buildFollowupConfig(
   ui: FollowupUiState,
   templates: TemplateOption[],
 ): Record<string, unknown> {
-  const cfg: Record<string, unknown> = {};
-
-  const ladder = ui.channelLadder
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (ladder.length > 0) {
-    cfg.channelLadder = ladder;
-  }
-
-  const delays = ui.delaysHours
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (delays.length > 0) {
-    cfg.delaysHours = delays;
-  }
+  const cfg: Record<string, unknown> = ladderToConfig(ui.ladder);
 
   const maxAttempts = Number(ui.maxAttempts);
   if (ui.maxAttempts.trim() && Number.isFinite(maxAttempts) && maxAttempts > 0) {
     cfg.maxAttempts = Math.floor(maxAttempts);
-  }
-
-  const firstContact = Number(ui.firstContactDelayMin);
-  if (
-    ui.firstContactDelayMin.trim() &&
-    Number.isFinite(firstContact) &&
-    firstContact >= 0
-  ) {
-    cfg.firstContactDelayMin = Math.floor(firstContact);
   }
 
   const tpl: Record<string, unknown> = {};
@@ -229,7 +198,6 @@ function AgentForm({
   const [form, setForm] = useState<FormState>(initial);
   const [saving, setSaving] = useState(false);
 
-  const channelLabels = t('channels', { returnObjects: true }) as Record<string, string>;
   const leadStateLabels = t('leadStatus', { returnObjects: true }) as Record<string, string>;
   const typeLabels = t('assistant.typeLabels', { returnObjects: true }) as Record<
     string,
@@ -290,14 +258,16 @@ function AgentForm({
         />
       </Field>
 
-      <Field label={t('agents.fieldChannels')} hint={t('agents.fieldChannelsHint')}>
-        <CheckGroup
-          options={CHANNELS}
-          labels={channelLabels}
+      <fieldset>
+        <legend className="mb-1 block text-sm font-medium text-slate-600">
+          {t('agents.fieldChannels')}
+        </legend>
+        <ChannelPicker
           selected={form.channels}
           onToggle={(v) => toggle('channels', v)}
         />
-      </Field>
+        <p className="mt-1 text-xs text-slate-400">{t('agents.fieldChannelsHint')}</p>
+      </fieldset>
 
       <Field label={t('agents.fieldLeadStates')} hint={t('agents.fieldLeadStatesHint')}>
         <CheckGroup
@@ -342,27 +312,23 @@ function AgentForm({
           {t('agents.followupSectionHint')}
         </p>
 
-        <Field
-          label={t('agents.channelLadderLabel')}
-          hint={t('agents.channelLadderHint')}
-        >
-          <Input
-            value={form.followupUi.channelLadder}
-            onChange={(e) => setFollowup('channelLadder', e.target.value)}
-            placeholder={t('agents.channelLadderPlaceholder')}
-            className="font-mono text-xs"
+        <fieldset>
+          <legend className="mb-0.5 block text-sm font-medium text-slate-600">
+            {t('agents.channelLadderLabel')}
+          </legend>
+          <p className="mb-2 text-xs text-slate-400">
+            {t('agents.channelLadderHint')}
+          </p>
+          <ChannelLadderEditor
+            value={form.followupUi.ladder}
+            onChange={(ladder) => setFollowup('ladder', ladder)}
+            attendedChannels={form.channels}
+            cobranza={form.type === 'COBRANZA'}
+            maxAttempts={Number(form.followupUi.maxAttempts) || null}
           />
-        </Field>
+        </fieldset>
 
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <Field label={t('agents.delaysLabel')} hint={t('agents.delaysHint')}>
-            <Input
-              value={form.followupUi.delaysHours}
-              onChange={(e) => setFollowup('delaysHours', e.target.value)}
-              placeholder={t('agents.delaysPlaceholder')}
-              className="font-mono text-xs"
-            />
-          </Field>
+        <div className="mt-4 w-40">
           <Field label={t('agents.maxAttemptsLabel')}>
             <Input
               type="number"
@@ -370,24 +336,6 @@ function AgentForm({
               value={form.followupUi.maxAttempts}
               onChange={(e) => setFollowup('maxAttempts', e.target.value)}
               placeholder={t('agents.maxAttemptsPlaceholder')}
-            />
-          </Field>
-        </div>
-
-        <div className="mt-4">
-          <Field
-            label={t('agents.firstContactLabel')}
-            hint={t('agents.firstContactHint')}
-          >
-            <Input
-              type="number"
-              min={0}
-              value={form.followupUi.firstContactDelayMin}
-              onChange={(e) =>
-                setFollowup('firstContactDelayMin', e.target.value)
-              }
-              placeholder={t('agents.firstContactPlaceholder')}
-              className="max-w-[10rem]"
             />
           </Field>
         </div>
@@ -480,7 +428,6 @@ export function AgentsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const channelLabels = t('channels', { returnObjects: true }) as Record<string, string>;
   const leadStateLabels = t('leadStatus', { returnObjects: true }) as Record<string, string>;
 
   const load = useCallback(async () => {
@@ -633,11 +580,10 @@ export function AgentsPage() {
                   {a.isDefault && <Badge tone="brand">{t('agents.defaultBadge')}</Badge>}
                   {!a.isActive && <Badge tone="slate">{t('agents.inactiveBadge')}</Badge>}
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
-                  {t('agents.channelsSummary', {
-                    channels:
-                      a.channels.map((c) => channelLabels[c] ?? c).join(', ') ||
-                      t('agents.any'),
+                <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-500">
+                  <ChannelList channels={a.channels} emptyLabel={t('agents.anyChannel')} />
+                  <span aria-hidden="true">·</span>
+                  {t('agents.statesSummary', {
                     states:
                       a.leadStates.map((st) => leadStateLabels[st] ?? st).join(', ') ||
                       t('agents.any'),

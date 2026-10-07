@@ -28,6 +28,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
 import { AgentsService } from '../agents/agents.service';
 import { VoiceCatalogService } from '../voice/voice-catalog.service';
+import { VoiceService } from '../voice/voice.service';
 import { WhatsappTemplatesService } from '../whatsapp/whatsapp-templates.service';
 import { CreateWhatsappTemplateDto } from '../whatsapp/dto/create-template.dto';
 import {
@@ -72,6 +73,7 @@ export class PanelAdminController {
     private readonly credentials: CredentialsService,
     private readonly tester: IntegrationTester,
     private readonly config: ConfigService<EnvVars, true>,
+    private readonly voice: VoiceService,
   ) {}
 
   // ── Integraciones (credenciales por empresa, BYO) ──
@@ -128,6 +130,18 @@ export class PanelAdminController {
   @Get('voice/voices')
   listVoices() {
     return this.voiceCatalog.list();
+  }
+
+  /**
+   * Por dónde llama la empresa (cuenta propia o voz gestionada) y, en la
+   * gestionada, sus minutos del mes y su tope.
+   */
+  @Get('voice/status')
+  async voiceStatus() {
+    return {
+      ...(await this.voice.availability()),
+      managedAvailable: this.voice.managedAvailable,
+    };
   }
 
   // ── Plantillas de WhatsApp ──

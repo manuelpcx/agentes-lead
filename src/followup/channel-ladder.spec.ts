@@ -60,6 +60,20 @@ describe('resolveFollowUpChannel', () => {
     ).toBe('email');
   });
 
+  it('si la empresa no puede llamar, la llamada cae a otro canal', () => {
+    expect(
+      resolveFollowUpChannel(1, ['call'], {
+        hasEmail: true,
+        hasPhone: true,
+        canCall: false,
+      }),
+    ).toBe('email');
+    // Sin el dato, se asume que sí puede (compatibilidad).
+    expect(
+      resolveFollowUpChannel(1, ['call'], { hasEmail: true, hasPhone: true }),
+    ).toBe('call');
+  });
+
   it('null si el lead no tiene ningún dato de contacto', () => {
     expect(
       resolveFollowUpChannel(1, ladder, { hasEmail: false, hasPhone: false }),

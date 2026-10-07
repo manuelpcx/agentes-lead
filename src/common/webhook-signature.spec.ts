@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import {
+  verifyElevenLabsSignature,
   verifyMetaSignature,
   verifyRetellSignature,
   verifySharedSecret,
@@ -141,5 +142,56 @@ describe('verifySharedSecret', () => {
     expect(verifySharedSecret('otro', 's3cr3t')).toBe(false);
     expect(verifySharedSecret('', 's3cr3t')).toBe(false);
     expect(verifySharedSecret('s3cr3t', '')).toBe(false);
+  });
+});
+
+describe('verifyElevenLabsSignature', () => {
+  const secret = 'wsec_abc';
+  const rawBody = Buffer.from(
+    JSON.stringify({ type: 'post_call_transcription' }),
+  );
+
+  function digest(body: Buffer, tsSeconds: number, key: string): string {
+    return createHmac('sha256', key)
+      .update(Buffer.concat([Buffer.from(`${tsSeconds}.`), body]))
+      .digest('hex');
+  }
+  const now = () => Math.floor(Date.now() / 1000);
+
+  it('acepta una firma válida y reciente', () => {
+    const ts = now();
+    const header = `t=${ts},v0=${digest(rawBody, ts, secret)}`;
+    expect(verifyElevenLabsSignature(rawBody, header, secret)).toBe(true);
+  });
+
+  it('durante una rotación de secreto, basta con que calce una de las firmas', () => {
+    const ts = now();
+    const header =
+      `t=${ts},v0=${digest(rawBody, ts, 'secreto-viejo')},` +
+      `v0=${digest(rawBody, ts, secret)}`;
+    expect(verifyElevenLabsSignature(rawBody, header, secret)).toBe(true);
+  });
+
+  it('acepta un reintento de hace 20 min (ElevenLabs tolera 30)', () => {
+    const ts = now() - 20 * 60;
+    const header = `t=${ts},v0=${digest(rawBody, ts, secret)}`;
+    expect(verifyElevenLabsSignature(rawBody, header, secret)).toBe(true);
+  });
+
+  it('rechaza un timestamp de hace más de 30 min (replay)', () => {
+    const ts = now() - 31 * 60;
+    const header = `t=${ts},v0=${digest(rawBody, ts, secret)}`;
+    expect(verifyElevenLabsSignature(rawBody, header, secret)).toBe(false);
+  });
+
+  it('rechaza con otro secreto, cuerpo alterado, sin header o sin v0', () => {
+    const ts = now();
+    const header = `t=${ts},v0=${digest(rawBody, ts, secret)}`;
+    expect(verifyElevenLabsSignature(rawBody, header, 'otro')).toBe(false);
+    expect(
+      verifyElevenLabsSignature(Buffer.from('{"alterado":1}'), header, secret),
+    ).toBe(false);
+    expect(verifyElevenLabsSignature(rawBody, undefined, secret)).toBe(false);
+    expect(verifyElevenLabsSignature(rawBody, `t=${ts}`, secret)).toBe(false);
   });
 });

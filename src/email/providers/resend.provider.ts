@@ -29,6 +29,8 @@ export class ResendEmailProvider implements EmailProvider {
         subject: message.subject,
         text: message.text,
         html: message.html,
+        ...(message.replyTo ? { reply_to: message.replyTo } : {}),
+        ...(message.tags ? { tags: resendTags(message.tags) } : {}),
       }),
     });
 
@@ -40,4 +42,21 @@ export class ResendEmailProvider implements EmailProvider {
       throw new Error(`Fallo al enviar correo (Resend ${response.status})`);
     }
   }
+}
+
+/**
+ * Etiquetas en el formato de Resend. Solo acepta letras, números, `_` y `-`
+ * (hasta 256): lo demás se reemplaza por `_` para que un valor raro no
+ * rechace el correo entero.
+ */
+export function resendTags(
+  tags: Record<string, string>,
+): Array<{ name: string; value: string }> {
+  const clean = (v: string) => v.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 256);
+  return Object.entries(tags)
+    .filter(([, value]) => value !== undefined && value !== '')
+    .map(([name, value]) => ({
+      name: clean(name),
+      value: clean(String(value)),
+    }));
 }

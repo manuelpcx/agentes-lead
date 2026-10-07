@@ -33,6 +33,7 @@ export class SmtpEmailProvider implements EmailProvider {
       await this.transporter.sendMail({
         from: this.config.from,
         to: message.to,
+        ...(message.replyTo ? { replyTo: message.replyTo } : {}),
         subject: message.subject,
         text: message.text,
         html: message.html,

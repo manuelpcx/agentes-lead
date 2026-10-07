@@ -43,6 +43,10 @@ describe('WEBHOOK_PATHS', () => {
       path: WEBHOOK_PATHS.voice.vapi,
       method: RequestMethod.POST,
     });
+    expect(route(VoiceController, 'elevenlabsWebhook')).toEqual({
+      path: WEBHOOK_PATHS.voice.elevenlabs,
+      method: RequestMethod.POST,
+    });
   });
 });
 
@@ -106,6 +110,11 @@ describe('buildWebhookInfo', () => {
     expect(info.voice.vapi.url).toBe(
       'https://api.empresa.cl/voice/vapi/webhook',
     );
+    expect(info.voice.elevenlabs).toEqual({
+      url: 'https://api.empresa.cl/voice/elevenlabs/webhook',
+      events: ['post_call_transcription', 'call_initiation_failure'],
+      variables: ['nombre', 'empresa', 'motivo', 'tono'],
+    });
     expect(info.local).toBe(false);
   });
 

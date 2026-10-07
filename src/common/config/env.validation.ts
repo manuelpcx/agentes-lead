@@ -141,7 +141,57 @@ const envSchema = z
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
     // Resend (si EMAIL_PROVIDER=resend). El `from` sale de EMAIL_FROM.
+    // También es la cuenta del correo gestionado de las empresas: para dar de
+    // alta sus dominios necesita permiso "Full access".
     RESEND_API_KEY: z.string().optional(),
+
+    // ── Correo gestionado (cuenta de Resend de la plataforma) ──
+    // Dominio de la plataforma, verificado en Resend, desde el que envía una
+    // empresa mientras verifica el suyo (p. ej. "correo.tuplataforma.cl"). Sin
+    // él, una empresa sin dominio propio verificado no envía correos.
+    EMAIL_SHARED_DOMAIN: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(/^([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/, 'dominio inválido')
+      .optional(),
+    // Parte local de la dirección compartida: notificaciones@EMAIL_SHARED_DOMAIN.
+    EMAIL_SHARED_LOCAL_PART: z.string().default('notificaciones'),
+    // Tope diario (día UTC) de correos por empresa que salen por la cuenta de
+    // la plataforma. Protege la cuenta de Resend, que comparten todas.
+    EMAIL_DAILY_LIMIT_PER_COMPANY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(500),
+    // Región de envío de los dominios que se dan de alta (sa-east-1 = São Paulo).
+    RESEND_DOMAIN_REGION: z
+      .enum(['us-east-1', 'eu-west-1', 'sa-east-1', 'ap-northeast-1'])
+      .default('sa-east-1'),
+
+    // ── Voz gestionada (cuentas de Twilio y ElevenLabs de la plataforma) ──
+    // Las empresas sin cuenta de voz propia llaman por acá: un agente de
+    // ElevenLabs por tipo, compartido, y un número de la plataforma. Se activa
+    // con la API key, el número, el agente por defecto y el secreto del webhook.
+    ELEVENLABS_API_KEY: z.string().optional(),
+    // Número de la plataforma importado en ElevenLabs (Twilio o SIP trunk).
+    ELEVENLABS_PHONE_NUMBER_ID: z.string().optional(),
+    // Agente para los agentes de tipo COBRANZA; si falta, se usa el por defecto.
+    ELEVENLABS_AGENT_ID_COBRANZA: z.string().optional(),
+    // Agente para el resto de los tipos (ventas, soporte, agendamiento…).
+    ELEVENLABS_AGENT_ID_DEFAULT: z.string().optional(),
+    // Secreto HMAC del webhook post-llamada del workspace de la plataforma.
+    ELEVENLABS_WEBHOOK_SECRET: z.string().optional(),
+    // Minutos al mes por empresa si la plataforma no le fijó otro tope.
+    // 0 = sin voz gestionada hasta que se le asignen minutos.
+    VOICE_MONTHLY_MINUTES_DEFAULT: z.coerce.number().int().min(0).default(0),
+    // Llamadas simultáneas por empresa: el plan de ElevenLabs tiene un máximo
+    // compartido por todas, y una campaña de un cliente no puede tomarlo entero.
+    VOICE_MAX_CONCURRENT_PER_COMPANY: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2),
 
     // ── Llamadas de voz (Fase 5) ──
     // 'log' = stub sin llamada real (dev). 'vapi' = Vapi.ai. 'retell' = Retell AI

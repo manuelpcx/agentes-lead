@@ -446,17 +446,10 @@
     "defaultCheckbox": "Default agent (receives unclassified leads)",
     "followupSectionTitle": "This agent's follow-up",
     "followupSectionHint": "Optional. Anything you leave blank falls back to the company-wide settings (useful for collections and sales to have different cadences).",
-    "channelLadderLabel": "Channel ladder",
-    "channelLadderHint": "Comma-separated order: email, whatsapp, call. E.g.: \"email,whatsapp,whatsapp,email\".",
-    "channelLadderPlaceholder": "(uses the global ladder)",
-    "delaysLabel": "Spacing between attempts (hours)",
-    "delaysHint": "E.g.: \"12,48,72\".",
-    "delaysPlaceholder": "(uses the global setting)",
+    "channelLadderLabel": "Contact ladder",
+    "channelLadderHint": "Which channel the agent uses, and how long it waits, to reach a lead who doesn't reply.",
     "maxAttemptsLabel": "Attempt cap",
     "maxAttemptsPlaceholder": "(global)",
-    "firstContactLabel": "First contact delay (minutes)",
-    "firstContactHint": "0 = almost immediate.",
-    "firstContactPlaceholder": "(global)",
     "templatesLabel": "WhatsApp templates (outside the 24h window)",
     "noTemplates": "No APPROVED templates yet. Create and approve them in {{link}}.",
     "purposeOpening": "Opening",
@@ -474,10 +467,11 @@
     "editClose": "close",
     "deactivate": "deactivate",
     "deactivateConfirm": "Deactivate \"{{name}}\"? Its leads will be reassigned to the fallback.",
-    "channelsSummary": "Channels: {{channels}} · Statuses: {{states}} · Priority: {{priority}}",
     "any": "any",
     "handoffsTitle": "Recent handoffs",
-    "noHandoffs": "No handoffs yet."
+    "noHandoffs": "No handoffs yet.",
+    "anyChannel": "Any channel",
+    "statesSummary": "Statuses: {{states}} · Priority: {{priority}}"
   },
   "knowledge": {
     "title": "Knowledge",
@@ -547,6 +541,113 @@
     "approveFewShot": "Approve for few-shot"
   },
   "integrations": {
+    "managedVoice": {
+      "title": "Voice (calls)",
+      "hint": "Your agents call through our voice account: nothing to sign up for. Voice, greeting and tone are set in Settings → Agent voice.",
+      "loadError": "Couldn't load the voice status.",
+      "mode": {
+        "managed": "Included",
+        "byo": "Your own account",
+        "none": "No calls"
+      },
+      "summary": {
+        "minutes": "Call minutes this month: {{used}} of {{limit}}.",
+        "notIncluded": "Calls aren't included in your plan. Contact us to enable them.",
+        "byo": "Calls go out through your own account, set up under Advanced.",
+        "none": "Calls aren't active on your account. Contact us to enable them.",
+        "unavailable": "Calls aren't available on this server. You can connect your own account under Advanced.",
+        "noCallbacks": "Calls come from a platform number that doesn't take incoming calls: if the customer wants to talk again, the agent arranges it over WhatsApp."
+      },
+      "advanced": {
+        "title": "Advanced: use your own Retell, Vapi or ElevenLabs account",
+        "hint": "If you connect it, calls go out through it, with no minute limit on our side."
+      }
+    },
+    "managedEmail": {
+      "title": "Email",
+      "hint": "Your emails go out through our sending account. Add your domain so they carry your brand: you only create a few DNS records.",
+      "loadError": "Couldn't load the email settings.",
+      "genericError": "Couldn't complete the action.",
+      "saved": "Sender saved.",
+      "mode": {
+        "managed": "Your domain",
+        "shared": "Shared domain",
+        "byo": "Your own account",
+        "none": "Not set up"
+      },
+      "summary": {
+        "managed": "Emails go out from {{from}}.",
+        "shared": "Until your domain is verified, emails go out from {{from}}.",
+        "byo": "Emails go out through your own account ({{from}}), set up under Advanced.",
+        "none": "Emails can't be sent yet: add your domain and create its DNS records.",
+        "unavailable": "Managed email isn't enabled on this server. You can connect your own account under Advanced.",
+        "replyTo": "Replies go to {{replyTo}}.",
+        "noReplyTo": "A reply address is missing: without it, your customers' replies reach no one. Fill it in below.",
+        "quota": "Sent today: {{used}} of {{limit}}."
+      },
+      "sender": {
+        "title": "Sender",
+        "fromName": "Display name",
+        "fromNameHint": "What customers see as the sender. Empty = your company name.",
+        "replyTo": "Replies go to",
+        "replyToHint": "Your real mailbox: that's where customer replies arrive.",
+        "localPart": "Address",
+        "localPartHint": "Used with your own domain. On the shared domain the address is fixed.",
+        "yourDomain": "your-domain"
+      },
+      "domain": {
+        "title": "Your domain",
+        "unavailable": "Not available on this server.",
+        "subdomainHint": "We recommend a subdomain, for example notifications.yourcompany.com: that way the reputation of these sends doesn't affect your corporate email.",
+        "ownerOnly": "Only the account owner can add a domain.",
+        "add": "Add domain",
+        "adding": "Adding…",
+        "added": "Domain added. Create the DNS records below.",
+        "dnsHelp": "Create them wherever you manage your domain's DNS (for example, Cloudflare or your hosting provider). We check every 10 minutes: as soon as we detect them, emails start going out from your domain.",
+        "lastChecked": "Last checked: {{when}}",
+        "verify": "Verify now",
+        "verifying": "Verifying…",
+        "verifyStarted": "Done: we're checking the DNS records.",
+        "remove": "Remove domain",
+        "removeConfirm": "Remove {{domain}}? Emails will go back to the shared domain, if available.",
+        "removeYes": "Yes, remove",
+        "removing": "Removing…",
+        "removed": "Domain removed."
+      },
+      "domainStatus": {
+        "not_started": "Not started",
+        "pending": "Verifying",
+        "verified": "Verified",
+        "partially_verified": "Verified",
+        "partially_failed": "Incomplete",
+        "failed": "Failed",
+        "temporary_failure": "Temporary failure"
+      },
+      "domainHelp": {
+        "not_started": "Verification hasn't started. Create the records and press \"Verify now\".",
+        "pending": "Looking for the DNS records. It can take from minutes up to 72 hours after you create them.",
+        "verified": "Domain verified: emails go out from here.",
+        "partially_verified": "Domain verified: emails go out from here.",
+        "partially_failed": "Some records couldn't be verified. Check them and press \"Verify now\".",
+        "failed": "We didn't find the records within 72 hours. Check they're created correctly and press \"Verify now\".",
+        "temporary_failure": "We stopped detecting the DNS records. While you check, emails go out from the shared domain."
+      },
+      "record": {
+        "name": "Name (host)",
+        "fullName": "If your provider asks for the full name: {{fqdn}}",
+        "value": "Value",
+        "priority": "Priority"
+      },
+      "recordStatus": {
+        "verified": "OK",
+        "pending": "Pending",
+        "failed": "Not found"
+      },
+      "advanced": {
+        "title": "Advanced: use your own Resend or SMTP account",
+        "hint": "If you connect it, emails go out through it instead of our sending account."
+      }
+    },
     "webhook": {
       "title": "Connect the webhook",
       "loadFailed": "Couldn't load the webhook URL.",
@@ -576,10 +677,17 @@
         "event": "Retell sends the result of each call there in this event:",
         "secret": "Retell signs with your API key: no extra secret needed."
       },
+      "elevenlabs": {
+        "url": "In ElevenLabs, in the Agents settings, create a post-call webhook with this URL:",
+        "event": "It must send these events:",
+        "secret": "ElevenLabs will show you the webhook HMAC secret: paste it below, in \"Webhook secret\", and save.",
+        "variables": "The agent's prompt and greeting can use these variables; we fill them in on every call:",
+        "overrides": "If you picked a voice, greeting, language or speed in Settings, enable them in the agent's Security tab. Otherwise the call still goes out with the agent's own settings."
+      },
       "vapi": {
         "url": "In Vapi, in your assistant, paste this Server URL:",
         "event": "Vapi sends each call report there in this message:",
-        "secret": "Set a Server URL Secret in Vapi and paste it below, in \"Webhook secret (Vapi)\"."
+        "secret": "Set a Server URL Secret in Vapi and paste it below, in \"Webhook secret\"."
       }
     },
     "title": "Integrations",
@@ -625,16 +733,18 @@
       },
       "voice": {
         "label": "Voice (calls)",
-        "hint": "Your Retell (or Vapi) account and your number for calls.",
+        "hint": "Your Retell, Vapi or ElevenLabs account and your number for calls.",
         "secretLabel": "API Key",
         "fields": {
           "fromNumber": "Number (E.164)",
           "agentId": "Retell Agent ID",
           "phoneNumberId": "Phone Number ID",
-          "assistantId": "Assistant ID"
+          "assistantId": "Assistant ID",
+          "elevenAgentId": "ElevenLabs Agent ID",
+          "elevenPhoneNumberId": "Phone Number ID (number imported into ElevenLabs)"
         },
-        "webhookSecretLabel": "Webhook secret (Vapi)",
-        "webhookSecretHint": "The assistant's \"Server URL Secret\" in Vapi. Required to receive call results. Retell does not need it: it signs with the API key."
+        "webhookSecretLabel": "Webhook secret",
+        "webhookSecretHint": "Required to receive call results. Vapi: the assistant's \"Server URL Secret\". ElevenLabs: the post-call webhook HMAC secret. Retell does not need it: it signs with the API key."
       },
       "crm": {
         "label": "CRM",
@@ -771,7 +881,7 @@
     "languageSpain": "Spanish (Spain)",
     "languageMulti": "Multilingual",
     "speedLabel": "Speed",
-    "speedHint": "1 = normal (0.5–2).",
+    "speedHint": "1 = normal (0.5–2; with ElevenLabs, 0.7 to 1.2).",
     "save": "Save"
   },
   "account": {
@@ -835,6 +945,15 @@
     }
   },
   "platform": {
+    "colVoice": "Voice",
+    "voiceNone": "No voice",
+    "voiceMinutes": "{{used}} / {{limit}} min",
+    "voiceDefault": "default",
+    "voiceEdit": "Change",
+    "voiceModalTitle": "Voice minutes · {{name}}",
+    "voiceModalHint": "Monthly limit of call minutes through our voice account. 0 = no calls. This month: {{used}} min.",
+    "voiceLimitLabel": "Minutes per month",
+    "voiceUseDefault": "Use the default",
     "title": "Platform",
     "subtitle": "The customers using the app, and how.",
     "newDemo": "Create demo",
@@ -863,5 +982,34 @@
     "demoReady": "Done. \"{{name}}\" can sign in now.",
     "showOnce": "Copy these now: they are not shown again.",
     "emailTaken": "An account with that email already exists. Use another one."
+  },
+  "ladder": {
+    "groupLabel": "Contact ladder",
+    "start": "New lead",
+    "general": "Uses the platform's general ladder",
+    "customize": "Customize",
+    "useGeneral": "Back to the general ladder",
+    "tapHint": "Tap a step to change its channel, move it or remove it.",
+    "addStep": "Step",
+    "addStepMenu": "Which channel?",
+    "step": "Step {{n}}",
+    "stepAria": "Step {{n}}: {{channel}}. Step options",
+    "channelLabel": "Channel",
+    "moveBefore": "Move earlier",
+    "moveAfter": "Move later",
+    "remove": "Remove step",
+    "waitBetween": "Wait between step {{from}} and {{to}}",
+    "waitFirst": "Wait before the first contact",
+    "firstDefault": "Default",
+    "instant": "Right away",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "week": "1 week",
+    "notAttended": "Step {{n}} uses {{channel}}, but this agent doesn't handle that channel.",
+    "cycleNote": "From attempt {{next}} on, the ladder starts over at step 1.",
+    "customDelays": "With its own waits between attempts: {{list}}.",
+    "cobranzaNote": "Collections: the law requires at least 48 h between contacts."
   }
 }

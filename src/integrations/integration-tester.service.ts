@@ -1,7 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CredentialsService, IntegrationChannel } from './credentials.service';
 import { TenantContext } from '../common/tenant/tenant-context';
+import { PrismaService } from '../common/prisma/prisma.service';
 import { deliverCrmEvent } from '../crm/crm-delivery';
+import {
+  parseVoiceConfig,
+  voiceConfigToOverrides,
+} from '../voice/voice-config';
+import {
+  buildElevenLabsOverride,
+  readOverridePermissions,
+} from '../voice/providers/elevenlabs.provider';
 
 /** Resultado de probar una integración. */
 export interface TestResult {
@@ -17,7 +26,10 @@ export interface TestResult {
 export class IntegrationTester {
   private readonly logger = new Logger('IntegrationTester');
 
-  constructor(private readonly credentials: CredentialsService) {}
+  constructor(
+    private readonly credentials: CredentialsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async test(channel: IntegrationChannel): Promise<TestResult> {
     const c = await this.credentials.get(channel);
@@ -35,7 +47,7 @@ export class IntegrationTester {
         return await this.testEmail(c.provider, c.secret);
       }
       if (channel === 'voice') {
-        return await this.testVoice(c.provider, c.secret);
+        return await this.testVoice(c.provider, c.secret, c.config);
       }
       if (channel === 'crm') {
         return await this.testCrm(c.secret, c.config);
@@ -104,7 +116,11 @@ export class IntegrationTester {
   private async testVoice(
     provider: string,
     secret: string,
+    config: Record<string, unknown>,
   ): Promise<TestResult> {
+    if (provider === 'elevenlabs') {
+      return this.testElevenLabs(secret, config);
+    }
     if (provider !== 'retell') {
       return {
         ok: true,
@@ -121,6 +137,79 @@ export class IntegrationTester {
       return { ok: false, message: 'API key de Retell inválida.' };
     }
     return { ok: false, message: `Retell respondió ${res.status}.` };
+  }
+
+  /**
+   * ElevenLabs: lee el agente y el número configurados. Así la prueba valida
+   * la API key y además que los dos IDs existan en esa cuenta, que es donde
+   * suele estar el error.
+   */
+  private async testElevenLabs(
+    secret: string,
+    config: Record<string, unknown>,
+  ): Promise<TestResult> {
+    const agentId = typeof config.agentId === 'string' ? config.agentId : '';
+    const phoneId =
+      typeof config.phoneNumberId === 'string' ? config.phoneNumberId : '';
+    if (!agentId || !phoneId) {
+      return {
+        ok: false,
+        message: 'Faltan el Agent ID o el Phone Number ID de ElevenLabs.',
+      };
+    }
+    const get = (path: string) =>
+      fetch(`https://api.elevenlabs.io${path}`, {
+        headers: { 'xi-api-key': secret },
+      });
+    const agent = await get(`/v1/convai/agents/${encodeURIComponent(agentId)}`);
+    if (agent.status === 401) {
+      return { ok: false, message: 'API key de ElevenLabs inválida.' };
+    }
+    if (!agent.ok) {
+      return {
+        ok: false,
+        message: `No se encontró el agente ${agentId} en ElevenLabs (${agent.status}).`,
+      };
+    }
+    const phone = await get(
+      `/v1/convai/phone-numbers/${encodeURIComponent(phoneId)}`,
+    );
+    if (!phone.ok) {
+      return {
+        ok: false,
+        message: `No se encontró el número ${phoneId} en ElevenLabs (${phone.status}).`,
+      };
+    }
+    const { provider } = (await phone.json()) as { provider?: string };
+    if (provider !== 'twilio' && provider !== 'sip_trunk') {
+      return {
+        ok: false,
+        message: `El número es de tipo "${provider}": para llamar tiene que ser Twilio o SIP trunk.`,
+      };
+    }
+
+    // La conexión está bien, pero si en Configuración hay voz/saludo/idioma/
+    // velocidad que el agente no deja cambiar, las llamadas no los van a usar:
+    // mejor enterarse acá que por una llamada que suena distinto.
+    const company = await this.prisma.raw.company.findUnique({
+      where: { id: TenantContext.requireCompanyId() },
+      select: { channelsConfig: true },
+    });
+    const { dropped } = buildElevenLabsOverride(
+      voiceConfigToOverrides(parseVoiceConfig(company?.channelsConfig)),
+      readOverridePermissions(await agent.json()),
+    );
+    if (dropped.length > 0) {
+      return {
+        ok: true,
+        message:
+          `Conexión con ElevenLabs correcta, pero el agente no permite cambiar ` +
+          `${dropped.join(', ')}. Habilítalo en la pestaña Security del agente ` +
+          'o bórralo en Configuración → Voz del agente; mientras tanto, las ' +
+          'llamadas usan el del agente.',
+      };
+    }
+    return { ok: true, message: 'Conexión con ElevenLabs correcta.' };
   }
 
   /**

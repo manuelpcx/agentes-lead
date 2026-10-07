@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
+import type { LadderState } from '../components/ChannelLadderEditor';
 
 export type AgentProposal =
   | {
@@ -11,6 +12,8 @@ export type AgentProposal =
       channels?: string[];
       leadStates?: string[];
       isDefault?: boolean;
+      /** Escalera de contacto ajustada en la tarjeta antes de confirmar. */
+      ladder?: LadderState;
     }
   | {
       kind: 'update';

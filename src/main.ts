@@ -1,14 +1,16 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { securityHeaders } from './common/security-headers';
+import { configureBodyParsing } from './common/body-parsing';
 import type { EnvVars } from './common/config/env.validation';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // Buffer de logs hasta cablear pino; rawBody habilita la verificación HMAC.
     bufferLogs: true,
     rawBody: true,
@@ -19,6 +21,9 @@ async function bootstrap(): Promise<void> {
 
   // Cabeceras de seguridad en toda respuesta (nosniff, no-frame, HSTS, CSP).
   app.use(securityHeaders);
+
+  // Límite de cuerpo JSON (las transcripciones de llamadas largas pasan 100 KB).
+  configureBodyParsing(app);
 
   const config = app.get(ConfigService<EnvVars, true>);
 

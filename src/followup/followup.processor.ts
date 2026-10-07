@@ -27,6 +27,18 @@ export class FollowUpProcessor extends WorkerHost {
           this.logger.error(
             `Fallo en seguimiento (leadId=${leadId}): ${(error as Error).message}`,
           );
+          // Agotados los reintentos, la próxima acción seguiría vencida y el
+          // cron la reencolaría cada 2 min contra un proveedor caído. Se
+          // posterga para reintentar más tarde, con el motivo a la vista.
+          if (job.attemptsMade + 1 >= (job.opts.attempts ?? 1)) {
+            await this.followup
+              .deferAfterFailure(leadId, (error as Error).message)
+              .catch((e: Error) =>
+                this.logger.error(
+                  `No se pudo postergar el seguimiento (leadId=${leadId}): ${e.message}`,
+                ),
+              );
+          }
           throw error;
         }
       },

@@ -3,6 +3,7 @@ import {
   WhatsappProvider,
   WhatsappTemplateMessage,
 } from './whatsapp-provider.interface';
+import { whatsappSendError } from './send-error';
 
 /**
  * Proveedor de WhatsApp vía YCloud (BSP). Envía texto con `sendDirectly`
@@ -72,7 +73,7 @@ export class YCloudWhatsappProvider implements WhatsappProvider {
       this.logger.error(
         `YCloud respondió ${response.status}: ${detail.slice(0, 300)}`,
       );
-      throw new Error(`Fallo al enviar WhatsApp (YCloud ${response.status})`);
+      throw whatsappSendError('YCloud', response.status, detail);
     }
   }
 }

@@ -101,17 +101,21 @@ enum ComplianceIssueStatus {
 
 /// Raíz del multi-tenancy. Toda entidad de negocio cuelga de aquí.
 model Company {
-  id             String   @id @default(uuid()) @db.Uuid
-  name           String
-  rut            String
-  timezone       String   @default("America/Santiago")
-  businessHours  Json     @default("{}")
-  channelsConfig Json     @default("{}")
+  id                String   @id @default(uuid()) @db.Uuid
+  name              String
+  rut               String
+  timezone          String   @default("America/Santiago")
+  businessHours     Json     @default("{}")
+  channelsConfig    Json     @default("{}")
   /// Secreto para verificar la firma HMAC del webhook. Cifrado en reposo (app-layer).
-  webhookSecret  String
-  isActive       Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  webhookSecret     String
+  isActive          Boolean  @default(true)
+  /// Tope mensual de minutos de voz gestionada (la cuenta de la plataforma).
+  /// Null = el valor por defecto (VOICE_MONTHLY_MINUTES_DEFAULT). Solo lo
+  /// cambia la plataforma: no va en channelsConfig, que edita la empresa.
+  voiceMinutesLimit Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   agents             Agent[]
   leads              Lead[]
@@ -133,8 +137,58 @@ model Company {
   leadNotes          LeadNote[]
   leadMemories       LeadMemory[]
   apiKeys            ApiKey[]
+  emailDomain        EmailDomain?
+  voiceCalls         VoiceCall[]
 
   @@index([isActive])
+}
+
+// Cada llamada de voz iniciada: base del tope mensual de minutos y del límite
+// de llamadas simultáneas de la voz gestionada, y de la correlación del
+// webhook de fin de llamada. Tenant-scoped por `companyId`.
+model VoiceCall {
+  id           String    @id @default(uuid()) @db.Uuid
+  companyId    String    @db.Uuid
+  leadId       String    @db.Uuid
+  /// elevenlabs | retell | vapi
+  provider     String
+  /// Salió por la cuenta de la plataforma (voz gestionada): cuenta para el tope.
+  managed      Boolean   @default(false)
+  /// Id de la llamada en el proveedor (`conversation_id` en ElevenLabs).
+  callId       String
+  /// started | completed | failed
+  status       String    @default("started")
+  durationSecs Int?
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, callId])
+  @@index([companyId, startedAt])
+}
+
+// Dominio propio de una empresa para enviar correo con la cuenta de Resend de
+// la PLATAFORMA (correo gestionado): la empresa solo crea los registros DNS.
+// Uno por empresa. Tenant-scoped por `companyId`.
+model EmailDomain {
+  id             String    @id @default(uuid()) @db.Uuid
+  companyId      String    @unique @db.Uuid
+  /// En minúsculas, p. ej. notificaciones.cliente.cl.
+  domain         String    @unique
+  resendDomainId String    @unique
+  /// Estado según Resend: not_started, pending, verified, partially_verified,
+  /// partially_failed, failed o temporary_failure.
+  status         String
+  /// Registros DNS que tiene que crear la empresa, tal como los entrega Resend.
+  records        Json      @default("[]")
+  verifiedAt     DateTime?
+  lastCheckedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 // Credenciales de proveedores por empresa (BYO: cada empresa trae su propia
@@ -283,6 +337,7 @@ model Lead {
   appointments  Appointment[]
   notes         LeadNote[]
   memory        LeadMemory?
+  voiceCalls    VoiceCall[]
 
   @@unique([companyId, externalId])
   @@index([nextActionAt])
@@ -571,11 +626,11 @@ model LeadMemory {
   leadId    String @unique @db.Uuid
 
   /// Resumen en prosa de quien es el lead y en que quedo la relacion.
-  summary String?
+  summary        String?
   /// `occurredAt` de la interaccion mas nueva incluida en el resumen.
   summarizedUpto DateTime?
   /// Hechos clave como lista de `{ clave, valor, registradoEn }`.
-  facts Json @default("[]")
+  facts          Json      @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

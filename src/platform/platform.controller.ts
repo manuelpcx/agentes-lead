@@ -16,6 +16,7 @@ import { RateLimit } from '../common/rate-limit/rate-limit.decorator';
 import { PlatformService } from './platform.service';
 import { CreateDemoCompanyDto } from './dto/create-demo-company.dto';
 import { SetCompanyActiveDto } from './dto/set-company-active.dto';
+import { SetVoiceLimitDto } from './dto/set-voice-limit.dto';
 
 /**
  * Mantenedor de la plataforma: el listado de clientes y el alta de cuentas de
@@ -60,5 +61,15 @@ export class PlatformController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.platform.setCompanyActive(id, dto.isActive, user.userId);
+  }
+
+  /** Tope mensual de minutos de voz gestionada de una empresa. */
+  @Patch('companies/:id/voice-limit')
+  setVoiceLimit(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: SetVoiceLimitDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.platform.setVoiceLimit(id, dto.minutes, user.userId);
   }
 }

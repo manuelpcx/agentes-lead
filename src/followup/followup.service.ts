@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AgentType,
@@ -14,6 +14,7 @@ import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AgentRunner } from '../agent/agent-runner.service';
+import { VoiceService } from '../voice/voice.service';
 import {
   PROMISE_PAY_TYPE,
   SCHEDULED_CALL_TYPE,
@@ -65,6 +66,10 @@ const HOUR_MS = 60 * 60 * 1000;
 const WHATSAPP_WINDOW_MS = 24 * HOUR_MS;
 /** Tipo de próxima acción cuando un tope legal de cobranza posterga el contacto. */
 export const LEGAL_LIMIT_TYPE = 'limite_legal';
+/** Espera antes de reintentar un seguimiento que falló todos sus reintentos. */
+const RETRY_AFTER_FAILURE_MS = HOUR_MS;
+/** Marca de los avisos de envío fallido en la conversación del lead. */
+const FALLO_ENVIO = 'fallo_envio';
 
 @Injectable()
 export class FollowUpService {
@@ -79,6 +84,7 @@ export class FollowUpService {
     private readonly interactions: InteractionsService,
     private readonly whatsapp: WhatsappService,
     private readonly agent: AgentRunner,
+    @Optional() private readonly voice?: VoiceService,
   ) {
     this.defaults = {
       ladder: parseLadder(
@@ -268,9 +274,15 @@ export class FollowUpService {
 
     // Escalera de canales: elige el canal de este intento según los datos de
     // contacto del lead (correo es el fiable para leads fríos).
+    // Solo se pregunta por la voz si la escalera tiene llamadas.
+    const canCall =
+      eff.ladder.includes('call') && this.voice
+        ? (await this.voice.availability()).canCall
+        : true;
     let channel = resolveFollowUpChannel(attempt, eff.ladder, {
       hasEmail: !!lead.email,
       hasPhone: !!lead.phone,
+      canCall,
     });
     if (!channel) {
       await this.leads.closeAsLost(leadId);
@@ -315,19 +327,20 @@ export class FollowUpService {
           : 'followup';
       const template = pickTemplate(eff, purpose);
       if (template && lead.phone) {
-        await this.sendWhatsAppTemplate(lead, template, company?.name);
-        await this.leads.recordFollowUpAttempt(
-          leadId,
-          nextTime,
-          'plantilla_wa',
-        );
-        this.logger.log(
-          `Seguimiento por plantilla WhatsApp (leadId=${leadId} intento=${attempt} ` +
-            `propósito=${purpose} plantilla=${template.name})`,
-        );
-        return;
-      }
-      if (lead.email) {
+        if (await this.sendWhatsAppTemplate(lead, template, company?.name)) {
+          await this.leads.recordFollowUpAttempt(
+            leadId,
+            nextTime,
+            'plantilla_wa',
+          );
+          this.logger.log(
+            `Seguimiento por plantilla WhatsApp (leadId=${leadId} intento=${attempt} ` +
+              `propósito=${purpose} plantilla=${template.name})`,
+          );
+          return;
+        }
+        channel = 'email'; // la plantilla falló y hay correo: sigue por ahí
+      } else if (lead.email) {
         channel = 'email'; // fallback: fuera de ventana y sin plantilla
       } else {
         await this.leads.recordFollowUpAttempt(
@@ -362,6 +375,38 @@ export class FollowUpService {
     this.logger.log(
       `Seguimiento ejecutado (leadId=${leadId} intento=${attempt} ` +
         `canal=${channel} enviado=${outcome.messageSent})`,
+    );
+  }
+
+  /**
+   * Posterga un seguimiento que agotó sus reintentos (ej. el proveedor de
+   * WhatsApp rechazó el envío por falta de saldo). Mantiene el tipo de la
+   * próxima acción para no perder la intención (llamada agendada, promesa de
+   * pago) y no cuenta intento: no hubo contacto. Solo actúa si la acción sigue
+   * vencida, para no pisar algo que se haya agendado entretanto.
+   */
+  async deferAfterFailure(
+    leadId: string,
+    reason: string,
+    now = new Date(),
+  ): Promise<void> {
+    const retryAt = new Date(now.getTime() + RETRY_AFTER_FAILURE_MS);
+    const { count } = await this.prisma.db.lead.updateMany({
+      where: { id: leadId, nextActionAt: { lte: now } },
+      data: { nextActionAt: retryAt },
+    });
+    if (count === 0) {
+      return;
+    }
+    this.logger.warn(
+      `Seguimiento fallido, se reintenta más tarde (leadId=${leadId} → ${retryAt.toISOString()}): ${reason}`,
+    );
+    // Si el proveedor sigue caído esto se repite cada hora: el aviso basta
+    // una vez al día para no llenar la conversación.
+    await this.noteSendFailure(
+      leadId,
+      `Seguimiento automático fallido: ${reason}. Se vuelve a intentar en una hora.`,
+      now,
     );
   }
 
@@ -450,13 +495,25 @@ export class FollowUpService {
     lead: Lead,
     template: AgentTemplateRef,
     companyName?: string | null,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const firstName = lead.name?.trim().split(/\s+/)[0] || 'allí';
-    await this.whatsapp.sendTemplate(lead.phone as string, {
-      name: template.name,
-      languageCode: template.language,
-      bodyParams: [firstName, companyName?.trim() || 'nuestra empresa'],
-    });
+    try {
+      await this.whatsapp.sendTemplate(lead.phone as string, {
+        name: template.name,
+        languageCode: template.language,
+        bodyParams: [firstName, companyName?.trim() || 'nuestra empresa'],
+      });
+    } catch (error) {
+      // Sin correo no hay alternativa: se propaga para que el procesador
+      // reintente y, agotados los reintentos, postergue y avise.
+      if (!lead.email) throw error;
+      const reason = (error as Error).message;
+      this.logger.warn(
+        `Plantilla WhatsApp fallida, sigue por correo (leadId=${lead.id}): ${reason}`,
+      );
+      await this.noteSendFailure(lead.id, `${reason}. Se intenta por correo.`);
+      return false;
+    }
     await this.interactions.register({
       leadId: lead.id,
       channel: Channel.whatsapp,
@@ -466,6 +523,38 @@ export class FollowUpService {
         '(fuera de ventana de 24h)',
       agentId: null,
       metadata: { gestion: GESTION_PROACTIVA },
+    });
+    return true;
+  }
+
+  /**
+   * Deja a la vista, en la conversación del lead, que un envío falló y por
+   * qué. Sin esto el fallo solo quedaba en los logs del servidor y en el
+   * panel parecía que el agente no había hecho nada. No repite el mismo aviso
+   * dentro de 24 h.
+   */
+  private async noteSendFailure(
+    leadId: string,
+    content: string,
+    now = new Date(),
+  ): Promise<void> {
+    const repetido = await this.prisma.db.interaction.findFirst({
+      where: {
+        leadId,
+        channel: Channel.system,
+        content,
+        occurredAt: { gte: new Date(now.getTime() - 24 * HOUR_MS) },
+      },
+      select: { id: true },
+    });
+    if (repetido) return;
+    await this.interactions.register({
+      leadId,
+      channel: Channel.system,
+      direction: Direction.outbound,
+      content,
+      agentId: null,
+      metadata: { tipo: FALLO_ENVIO },
     });
   }
 }

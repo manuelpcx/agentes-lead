@@ -435,3 +435,178 @@ integración de WhatsApp, ese dato se copia solo (el número se normaliza a
 E.164: `+56 9 1111 1111` → `+56911111111`). No toca el resto de
 `channelsConfig`. Las empresas que ya tenían la integración lo reciben la
 próxima vez que guarden.
+
+## ElevenLabs como proveedor de voz (2026-09-24)
+
+Tercer proveedor de llamadas, junto a Retell y Vapi. Igual que Retell,
+ElevenLabs Agents conduce la conversación con su propio agente (prompt, voz,
+LLM); nosotros disparamos la llamada y recibimos la transcripción por webhook.
+**No hay migración ni variables de entorno nuevas:** cada empresa carga sus
+credenciales en **Integraciones → Voz → ElevenLabs**.
+
+### Qué necesita cada empresa en ElevenLabs
+
+1. **Un agente** en ElevenLabs Agents. Su prompt y su saludo pueden usar
+   `{{nombre}}`, `{{empresa}}`, `{{motivo}}` y `{{tono}}`, que mandamos en cada
+   llamada. El prompt que ya usamos con Retell (`scripts/retell-prompt.mjs`,
+   `GENERAL_PROMPT` y `BEGIN_MESSAGE`) sirve tal cual: usa esas mismas
+   variables.
+2. **Un número importado** en ElevenLabs, de Twilio o de SIP trunk. El tipo se
+   detecta solo (una consulta por número, que queda en memoria del proceso);
+   otros tipos se rechazan con un mensaje claro.
+3. **API key** con acceso a Agents (llamadas, agentes y números) y lectura de
+   voces (para el catálogo de Configuración).
+4. **Webhook post-llamada** apuntando a `<backend>/voice/elevenlabs/webhook`,
+   con los eventos `post_call_transcription` y `call_initiation_failure`. El
+   secreto HMAC que entrega ElevenLabs va en "Secreto del webhook". El panel
+   muestra la URL y estos pasos al elegir ElevenLabs.
+5. **Overrides**, solo si en Configuración eligieron voz, saludo, idioma o
+   velocidad: hay que habilitarlos en la pestaña *Security* del agente. Si no,
+   las llamadas salen igual, pero con la config propia del agente para esos
+   campos. **Probar conexión** avisa cuáles no están habilitados.
+
+En Integraciones van el **Agent ID** y el **Phone Number ID**. **Probar
+conexión** lee el agente y el número: valida la API key, que ambos IDs existan
+en esa cuenta y que el agente permita la config de voz de Configuración.
+
+### Cómo funciona
+
+- **Llamar** (`src/voice/providers/elevenlabs.provider.ts`): endpoint de
+  Twilio o de SIP según el número, con las variables del lead en
+  `dynamic_variables` y la config de voz de la empresa en
+  `conversation_config_override`. El idioma se traduce al código de ElevenLabs
+  (`es-419` → `es`) y la velocidad se ajusta a su rango (0,7–1,2).
+- **Overrides: solo lo que el agente permite.** Un override no habilitado en
+  *Security* no da error al pedir la llamada: ElevenLabs la acepta y corta la
+  conversación al empezar ("Override for field 'first_message' is not allowed
+  by config"). Por eso, antes de llamar se leen los permisos del agente
+  (`platform_settings.overrides`, cacheados 5 min) y se mandan solo los campos
+  permitidos. Si no se pueden leer, se llama sin overrides. Una voz que no
+  existe en la cuenta (típico al pasar de Retell, con una voz `11labs-…`
+  elegida) tampoco se manda. Lo que queda fuera se avisa en el log. Si aun así
+  ElevenLabs rechaza la petición por un valor de la config, se reintenta una
+  vez sin ella. Al cambiar de proveedor, conviene volver a elegir la voz en
+  Configuración: el catálogo pasa a mostrar las voces de la cuenta de
+  ElevenLabs, incluidas las clonadas.
+- **Webhook** (`POST /voice/elevenlabs/webhook`): ElevenLabs no devuelve
+  metadata propia cuando la llamada falla, así que la empresa y el lead salen
+  de la llamada que registramos al iniciarla (`Interaction.metadata.callId` =
+  `conversation_id`), no del cuerpo. La firma (`elevenlabs-signature`) se
+  verifica con el secreto de esa empresa, con la ventana de 30 min que usa
+  ElevenLabs para sus reintentos.
+- **Tamaño de los avisos.** El backend acepta cuerpos JSON de hasta 2 MB
+  (`src/common/body-parsing.ts`; Nest trae 100 KB por defecto). La
+  transcripción de una llamada larga pasaba los 100 KB y se rechazaba, y el
+  agente no se enteraba de lo que se habló. El **audio** de la llamada no lo
+  usamos y puede pesar varios MB: hay que dejar desactivado el envío de audio
+  en el webhook post-llamada de ElevenLabs. Si llega igual, se rechaza con 413
+  (antes salía como 500, igual que un JSON mal formado, que ahora es 400).
+- **Llamada no contestada u ocupada** (`call_initiation_failure`): queda en el
+  historial del lead como "La llamada no se conectó (no contestó)" y no
+  despierta al agente. Con transcripción, el agente retoma por texto, como con
+  Retell.
+
+**No se probó contra una cuenta real** de ElevenLabs (no hay API key en este
+entorno): los tests simulan sus respuestas según la documentación de la API.
+Antes de dárselo a un cliente, conviene hacer una llamada de prueba de punta a
+punta.
+
+## Correo gestionado (2026-09-28)
+
+Las empresas ya no necesitan cuenta de correo propia: envían por la cuenta de
+Resend de la plataforma (`RESEND_API_KEY`). En **Integraciones → Correo**
+escriben su dominio, el sistema lo da de alta en Resend y les muestra los
+registros DNS que tienen que crear.
+
+### Qué hay que hacer al desplegar
+
+- **Migración nueva: `email_domain`.** Tabla `EmailDomain`, un dominio por
+  empresa. Se aplica sola al arrancar (el contenedor corre
+  `prisma migrate deploy`).
+- **`RESEND_API_KEY` con permiso "Full access".** La de ahora envía los
+  correos de la plataforma; si es de solo envío ("Sending access"), dar de
+  alta un dominio falla y el panel lo dice. Se cambia en Resend → API Keys.
+- **`EMAIL_SHARED_DOMAIN`**: el dominio desde el que envía una empresa
+  mientras verifica el suyo, con su nombre como remitente
+  (`"Empresa" <notificaciones@EMAIL_SHARED_DOMAIN>`). Tiene que estar
+  verificado en la misma cuenta de Resend. **Recomendación: un dominio propio
+  de esta plataforma, no `medi-history.com`**, que es el que usa hoy
+  `EMAIL_FROM`: los correos de cobranza de los clientes se reportan como spam
+  más seguido y le bajarían la reputación. Si no se configura, una empresa sin
+  dominio verificado no envía (como hasta ahora).
+- Opcionales: `EMAIL_SHARED_LOCAL_PART` (`notificaciones`),
+  `EMAIL_DAILY_LIMIT_PER_COMPANY` (500 por día UTC) y `RESEND_DOMAIN_REGION`
+  (`sa-east-1`, São Paulo, lo más cerca de Chile).
+- **Plan de Resend:** el Pro incluye 10 dominios; el paquete de 100 dominios
+  más cuesta USD 20 al mes, y el Scale llega a 1.000.
+
+### Cómo funciona
+
+- **Por dónde sale cada correo de una empresa**, en orden: su cuenta propia si
+  la conectó (Integraciones → Correo → Avanzado); su dominio, si ya está
+  verificado; el dominio compartido; y si no hay nada, no se envía (queda en
+  el log).
+- **Dominio** (`src/email/managed-email.service.ts`): al darlo de alta se
+  dispara la verificación de inmediato. Resend revisa los DNS por 72 h, así
+  que se verifica solo cuando la empresa crea los registros. Un scheduler
+  revisa cada 10 min los que siguen pendientes, y el panel pregunta al
+  abrirse. Resend entrega el nombre de cada registro relativo al dominio
+  principal (`resend._domainkey.notificaciones`); el panel muestra además el
+  nombre completo, porque hay proveedores de DNS que lo piden así.
+- **Remitente** (`channelsConfig.email`): nombre visible, la parte antes de la
+  @ en el dominio propio (por defecto `contacto`) y el correo donde llegan las
+  respuestas (`reply_to`).
+- **Tope diario por empresa** (`src/email/email-quota.service.ts`): contador
+  en Redis por día UTC. Solo aplica a lo que sale por la cuenta de la
+  plataforma. Si Redis no responde, deja pasar.
+- **Etiquetas en cada envío:** `company_id` y, desde el agente, `lead_id`.
+  Resend las devuelve en sus eventos, así que ya se puede conectar el paso
+  siguiente: su webhook de rebotes y quejas, para pausar solo a la empresa
+  que se pase y no arriesgar la cuenta de todos.
+- **Endpoints:** `GET /panel/email`; `PUT /panel/email/sender`,
+  `POST /panel/email/domain`, `POST /panel/email/domain/verify` y
+  `DELETE /panel/email/domain`, solo OWNER.
+
+## Voz gestionada (2026-09-29)
+
+Las empresas llaman con las cuentas de Twilio y ElevenLabs de la plataforma,
+con un tope mensual de minutos por empresa. **La puesta en marcha y el prompt
+del agente de cobranza están en `docs/VOZ_GESTIONADA.md`.**
+
+- **Migración nueva: `voice_calls`.** Tabla `VoiceCall` (cada llamada, para
+  contar minutos y llamadas en curso) y `Company.voiceMinutesLimit`. Se aplica
+  sola al arrancar.
+- **Variables nuevas:** `ELEVENLABS_API_KEY`, `ELEVENLABS_PHONE_NUMBER_ID`,
+  `ELEVENLABS_AGENT_ID_COBRANZA`, `ELEVENLABS_AGENT_ID_DEFAULT`,
+  `ELEVENLABS_WEBHOOK_SECRET`, `VOICE_MONTHLY_MINUTES_DEFAULT` (por defecto
+  `0`: nadie tiene voz hasta que se le asignen minutos) y
+  `VOICE_MAX_CONCURRENT_PER_COMPANY` (por defecto `2`). Sin las primeras, la
+  voz gestionada queda apagada y todo sigue como antes.
+- **Qué cambia en el comportamiento:**
+  - Si la empresa no puede llamar (sin voz, sin minutos o con el máximo de
+    llamadas en curso), el agente **no tiene la herramienta `iniciarLlamada`**
+    en ese turno. Antes, una empresa sin voz configurada "llamaba" de mentira
+    (el proveedor de log) y el agente le decía al cliente que lo estaba
+    llamando.
+  - El seguimiento automático salta el paso de llamada de la escalera si no
+    se puede llamar, en vez de gastar el intento.
+  - El webhook de ElevenLabs reconoce las llamadas gestionadas (`VoiceCall`),
+    verifica la firma con `ELEVENLABS_WEBHOOK_SECRET` y guarda la duración.
+- **Endpoints:** `GET /panel/voice/status` (la empresa) y
+  `PATCH /platform/companies/:id/voice-limit` (mantenedor, auditado).
+
+## Seguimiento: envíos fallidos (2026-10-06)
+
+Sin migraciones ni variables nuevas.
+
+- **Leads trabados.** Si un seguimiento fallaba en sus 5 reintentos (por
+  ejemplo, YCloud sin saldo), el lead quedaba sin seguimiento para siempre: el
+  job fallido retenía su id y la cola ignoraba los siguientes. Ahora el id
+  lleva la hora de la próxima acción, y el seguimiento fallido se posterga una
+  hora en vez de quedar vencido. Al desplegar, los leads que estaban trabados
+  se reencolan solos en el siguiente ciclo (2 min).
+- **Respaldo por correo.** Si la plantilla de WhatsApp falla y el lead tiene
+  correo, el agente le escribe por correo en ese mismo intento.
+- **El fallo se ve en el panel.** Queda una línea en rojo en la conversación
+  del lead con el motivo (por ejemplo, "la cuenta de YCloud no tiene saldo").
+  El mismo aviso no se repite dentro de 24 h.

@@ -33,3 +33,6 @@ logs
 
 # Prisma (cliente generado)
 /prisma/generated
+
+# Videos generados por la skill /brag (pesan cientos de MB)
+/brag-output*

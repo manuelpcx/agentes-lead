@@ -84,6 +84,8 @@ export class EnviarCorreoTool implements AgentTool {
       to: ctx.lead.email,
       subject: asunto,
       text: cuerpo,
+      // Para ubicar el lead si el correo rebota o lo marcan como spam.
+      tags: { lead_id: ctx.lead.id },
     });
     await this.interactions.register({
       leadId: ctx.lead.id,

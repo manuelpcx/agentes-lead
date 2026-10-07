@@ -13,6 +13,7 @@ export const WEBHOOK_PATHS = {
   voice: {
     retell: '/voice/retell/webhook',
     vapi: '/voice/vapi/webhook',
+    elevenlabs: '/voice/elevenlabs/webhook',
   },
 } as const;
 
@@ -31,6 +32,7 @@ export interface WebhookInfo {
   voice: {
     retell: { url: string; events: string[] };
     vapi: { url: string; events: string[] };
+    elevenlabs: { url: string; events: string[]; variables: string[] };
   };
 }
 
@@ -103,6 +105,13 @@ export function buildWebhookInfo(
       vapi: {
         url: baseUrl + WEBHOOK_PATHS.voice.vapi,
         events: ['end-of-call-report'],
+      },
+      elevenlabs: {
+        url: baseUrl + WEBHOOK_PATHS.voice.elevenlabs,
+        events: ['post_call_transcription', 'call_initiation_failure'],
+        // Las variables dinámicas que manda `iniciarLlamada` en cada llamada:
+        // el prompt del agente de ElevenLabs las puede usar.
+        variables: ['nombre', 'empresa', 'motivo', 'tono'],
       },
     },
   };

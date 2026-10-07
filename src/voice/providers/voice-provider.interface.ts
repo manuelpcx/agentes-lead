@@ -1,3 +1,5 @@
+import type { AgentType } from '@prisma/client';
+
 /** Token de inyección del proveedor de llamadas de voz activo. */
 export const VOICE_PROVIDER = Symbol('VOICE_PROVIDER');
 
@@ -27,6 +29,11 @@ export interface StartCallParams {
     language?: string;
     beginMessage?: string;
   };
+  /**
+   * Tipo del agente de texto que pide la llamada. En la voz gestionada elige
+   * el agente de voz (uno por tipo, compartido entre empresas).
+   */
+  agentType?: AgentType;
 }
 
 /** Contrato de llamadas de voz (salida). */
