@@ -1,4 +1,5 @@
-import { condicionesPara, parseArgs } from './run';
+import { agregarCorridas, condicionesPara, parseArgs } from './run';
+import { EvalCase, EvalCheck, EvalResult } from './types';
 
 describe('parseArgs', () => {
   it('toma el filtro de casos', () => {
@@ -6,6 +7,7 @@ describe('parseArgs', () => {
       filtro: 'precio',
       sin: [],
       ablacion: false,
+      repeticiones: 1,
     });
   });
 
@@ -14,6 +16,7 @@ describe('parseArgs', () => {
       filtro: 'memoria',
       sin: ['resumen', 'hechos'],
       ablacion: false,
+      repeticiones: 1,
     });
   });
 
@@ -30,27 +33,121 @@ describe('parseArgs', () => {
       /--ablacion/,
     );
   });
+
+  it('lee cuántas veces correr cada caso', () => {
+    expect(parseArgs(['--repeticiones=3']).repeticiones).toBe(3);
+  });
+
+  it.each(['0', '-2', 'tres', '1.5', '11'])(
+    'rechaza --repeticiones=%s (debe ser un entero de 1 a 10)',
+    (valor) => {
+      expect(() => parseArgs([`--repeticiones=${valor}`])).toThrow(/de 1 a 10/);
+    },
+  );
 });
 
 describe('condicionesPara', () => {
+  const base = { sin: [], ablacion: false, repeticiones: 1 };
+
   it('sin opciones corre una sola condición, completa', () => {
-    expect(condicionesPara({ sin: [], ablacion: false })).toEqual([
-      { nombre: 'completo', sin: [] },
-    ]);
+    expect(condicionesPara(base)).toEqual([{ nombre: 'completo', sin: [] }]);
   });
 
   it('con --sin corre solo esa condición', () => {
-    expect(condicionesPara({ sin: ['hechos'], ablacion: false })).toEqual([
+    expect(condicionesPara({ ...base, sin: ['hechos'] })).toEqual([
       { nombre: 'sin hechos', sin: ['hechos'] },
     ]);
   });
 
   it('la ablación apaga cada pieza por separado y luego todas', () => {
-    expect(condicionesPara({ sin: [], ablacion: true })).toEqual([
+    expect(condicionesPara({ ...base, ablacion: true })).toEqual([
       { nombre: 'completo', sin: [] },
       { nombre: 'sin resumen', sin: ['resumen'] },
       { nombre: 'sin hechos', sin: ['hechos'] },
       { nombre: 'sin memoria', sin: ['resumen', 'hechos'] },
     ]);
+  });
+});
+
+describe('agregarCorridas', () => {
+  const caso: EvalCase = {
+    id: 'x',
+    descripcion: 'caso de prueba',
+    historial: [{ de: 'cliente', texto: 'hola' }],
+    espera: { criterios: [] },
+  };
+
+  function corrida(checks: EvalCheck[], enviado = 'respuesta'): EvalResult {
+    return {
+      caso,
+      run: {
+        acciones: [],
+        mensajes: [{ canal: 'whatsapp', texto: enviado }],
+        escalado: false,
+        system: '',
+      },
+      checks,
+      ok: checks.every((c) => c.ok),
+    };
+  }
+
+  it('cuenta, por criterio, en cuántas corridas se cumplió', () => {
+    const agregado = agregarCorridas([
+      corrida([
+        { criterio: 'a', ok: true },
+        { criterio: 'b', ok: true },
+      ]),
+      corrida(
+        [
+          { criterio: 'a', ok: true },
+          { criterio: 'b', ok: false, detalle: 'falló b' },
+        ],
+        'primera que falla',
+      ),
+      corrida(
+        [
+          { criterio: 'a', ok: false, detalle: 'falló a' },
+          { criterio: 'b', ok: false, detalle: 'otra vez b' },
+        ],
+        'segunda que falla',
+      ),
+    ]);
+
+    expect(agregado.corridas).toBe(3);
+    expect(agregado.completas).toBe(1);
+    expect(agregado.criterios).toEqual([
+      { criterio: 'a', ok: 2, total: 3, detalle: 'falló a' },
+      { criterio: 'b', ok: 1, total: 3, detalle: 'falló b' },
+    ]);
+    // Para depurar, se muestra lo que envió la primera corrida que falló.
+    expect(agregado.enviadoEnFallo).toBe('primera que falla');
+  });
+
+  it('un criterio que aparece en algunas corridas cuenta solo esas', () => {
+    // "el turno termina sin error" solo existe en la corrida que se cayó.
+    const agregado = agregarCorridas([
+      corrida([{ criterio: 'a', ok: true }]),
+      corrida([
+        { criterio: 'el turno termina sin error', ok: false, detalle: '429' },
+        { criterio: 'a', ok: false },
+      ]),
+    ]);
+
+    expect(agregado.criterios).toEqual([
+      { criterio: 'a', ok: 1, total: 2 },
+      {
+        criterio: 'el turno termina sin error',
+        ok: 0,
+        total: 1,
+        detalle: '429',
+      },
+    ]);
+  });
+
+  it('si todas las corridas pasan no hay ejemplo de fallo', () => {
+    const agregado = agregarCorridas([corrida([{ criterio: 'a', ok: true }])]);
+
+    expect(agregado.completas).toBe(1);
+    expect(agregado.enviadoEnFallo).toBeUndefined();
   });
 });

@@ -254,6 +254,20 @@ export class AgentRunner {
         }
       }
 
+      // `tool_use` sin ningún bloque de herramienta: no hay resultados que
+      // devolver, y un mensaje de usuario vacío la API lo rechaza con 400
+      // (pasó en el banco de evaluaciones). Se cierra el turno como si el
+      // modelo hubiera terminado; si no había respondido, la red de seguridad
+      // de abajo escala. Se registra la forma de la respuesta para entender
+      // por qué el modelo la produce.
+      if (toolResults.length === 0) {
+        this.logger.warn(
+          `Lead ${leadId}: stop_reason tool_use sin herramientas ` +
+            `(bloques: ${response.content.map((b) => b.type).join(', ') || 'ninguno'})`,
+        );
+        break;
+      }
+
       convo = [...convo, { role: 'user', content: toolResults }];
       if (stop) {
         break;

@@ -23,15 +23,18 @@ import { runCase } from './world';
  * `npm run eval -- --ablacion memoria-larga` — corre los casos con todo, sin
  *   cada pieza y sin memoria, y compara (el experimento de *Generative
  *   Agents*). Cuesta una corrida del banco por condición.
+ * `npm run eval -- --repeticiones=3 ...` — corre cada caso 3 veces y reporta
+ *   cuántas pasó. El modelo no responde igual dos veces: para comparar
+ *   condiciones, una sola corrida es puro ruido.
  *
  * Necesita `ANTHROPIC_API_KEY`. Cada caso son unas pocas llamadas al modelo
  * más una del juez: correr el banco entero cuesta centavos, no dólares.
  */
 
-const VERDE = '[32m';
-const ROJO = '[31m';
-const GRIS = '[90m';
-const RESET = '[0m';
+const VERDE = '[32m';
+const ROJO = '[31m';
+const GRIS = '[90m';
+const RESET = '[0m';
 
 function buildAnthropic(): AnthropicService {
   const env: Record<string, unknown> = {
@@ -55,14 +58,30 @@ export interface Args {
   filtro?: string;
   sin: PiezaMemoria[];
   ablacion: boolean;
+  repeticiones: number;
 }
 
-/** Lee `[filtro] [--sin=pieza,pieza] [--ablacion]`, en cualquier orden. */
+const MAX_REPETICIONES = 10;
+
+/**
+ * Lee `[filtro] [--sin=pieza,pieza] [--ablacion] [--repeticiones=N]`, en
+ * cualquier orden.
+ */
 export function parseArgs(argv: string[]): Args {
-  const args: Args = { sin: [], ablacion: false };
+  const args: Args = { sin: [], ablacion: false, repeticiones: 1 };
   for (const arg of argv) {
     if (arg === '--ablacion') {
       args.ablacion = true;
+    } else if (arg.startsWith('--repeticiones=')) {
+      const valor = arg.slice('--repeticiones='.length);
+      const n = Number(valor);
+      // Tope de 10: cada repetición es una corrida pagada del banco.
+      if (!/^\d+$/.test(valor) || n < 1 || n > MAX_REPETICIONES) {
+        throw new Error(
+          `--repeticiones debe ser un entero de 1 a ${MAX_REPETICIONES} (llegó "${valor}").`,
+        );
+      }
+      args.repeticiones = n;
     } else if (arg.startsWith('--sin=')) {
       for (const pieza of arg.slice('--sin='.length).split(',')) {
         if (!PIEZAS_MEMORIA.includes(pieza as PiezaMemoria)) {
@@ -108,6 +127,64 @@ export function condicionesPara(args: Args): Condicion[] {
   return [{ nombre: 'completo', sin: [] }];
 }
 
+/** Un criterio sumado sobre las corridas en que apareció. */
+export interface CriterioAgregado {
+  criterio: string;
+  ok: number;
+  total: number;
+  /** Motivo de la primera vez que falló. */
+  detalle?: string;
+}
+
+/** Las N corridas de un mismo caso, resumidas. */
+export interface Agregado {
+  caso: EvalCase;
+  corridas: number;
+  completas: number;
+  criterios: CriterioAgregado[];
+  /** Lo que envió la primera corrida que falló, para depurar. */
+  enviadoEnFallo?: string;
+}
+
+/**
+ * Suma las corridas de un caso. El modelo no responde igual dos veces: con
+ * una sola corrida, un criterio que se cumple el 60 % del tiempo sale "OK" o
+ * "FALLA" al azar. Contado sobre N corridas se ve como lo que es: 3/5.
+ */
+export function agregarCorridas(resultados: EvalResult[]): Agregado {
+  const porCriterio = new Map<string, CriterioAgregado>();
+  let enviadoEnFallo: string | undefined;
+
+  for (const r of resultados) {
+    for (const check of r.checks) {
+      const actual = porCriterio.get(check.criterio) ?? {
+        criterio: check.criterio,
+        ok: 0,
+        total: 0,
+      };
+      actual.total += 1;
+      if (check.ok) {
+        actual.ok += 1;
+      } else if (actual.detalle === undefined && check.detalle) {
+        actual.detalle = check.detalle;
+      }
+      porCriterio.set(check.criterio, actual);
+    }
+    if (!r.ok && enviadoEnFallo === undefined) {
+      enviadoEnFallo =
+        r.run.mensajes.map((m) => m.texto).join(' | ') || '(nada)';
+    }
+  }
+
+  return {
+    caso: resultados[0].caso,
+    corridas: resultados.length,
+    completas: resultados.filter((r) => r.ok).length,
+    criterios: [...porCriterio.values()],
+    ...(enviadoEnFallo !== undefined ? { enviadoEnFallo } : {}),
+  };
+}
+
 /** Corre un caso completo: turno + comprobaciones + juez. */
 export async function evaluar(
   caso: EvalCase,
@@ -122,22 +199,26 @@ export async function evaluar(
   return { caso, run, checks, ok: checks.every((c) => c.ok) };
 }
 
-function imprimir(result: EvalResult): void {
-  const fallos = result.checks.filter((c) => !c.ok);
-  const marca = result.ok ? `${VERDE}OK  ${RESET}` : `${ROJO}FALLA${RESET}`;
+function imprimir(agregado: Agregado): void {
+  const todas = agregado.completas === agregado.corridas;
+  const marca = todas ? `${VERDE}OK  ${RESET}` : `${ROJO}FALLA${RESET}`;
+  // Con una sola corrida, "1/1" solo estorba.
+  const cuenta =
+    agregado.corridas > 1 ? ` ${agregado.completas}/${agregado.corridas}` : '';
   console.log(
-    `${marca} ${result.caso.id} ${GRIS}— ${result.caso.descripcion}${RESET}`,
+    `${marca}${cuenta} ${agregado.caso.id} ${GRIS}— ${agregado.caso.descripcion}${RESET}`,
   );
-  for (const fallo of fallos) {
-    console.log(`      ${ROJO}✗${RESET} ${fallo.criterio}`);
-    if (fallo.detalle) {
-      console.log(`        ${GRIS}${fallo.detalle}${RESET}`);
+  for (const c of agregado.criterios.filter((c) => c.ok < c.total)) {
+    const veces = agregado.corridas > 1 ? `${c.ok}/${c.total} ` : '';
+    console.log(`      ${ROJO}✗${RESET} ${veces}${c.criterio}`);
+    if (c.detalle) {
+      console.log(`        ${GRIS}${c.detalle}${RESET}`);
     }
   }
-  if (!result.ok) {
-    const enviado =
-      result.run.mensajes.map((m) => m.texto).join(' | ') || '(nada)';
-    console.log(`        ${GRIS}envió: ${enviado.slice(0, 200)}${RESET}`);
+  if (agregado.enviadoEnFallo !== undefined) {
+    console.log(
+      `        ${GRIS}envió: ${agregado.enviadoEnFallo.slice(0, 200)}${RESET}`,
+    );
   }
 }
 
@@ -170,29 +251,36 @@ async function main(): Promise<void> {
 
   const condiciones = condicionesPara(args);
   const totales: Array<{ nombre: string; texto: string; todoOk: boolean }> = [];
+  const veces =
+    args.repeticiones > 1 ? `, ${args.repeticiones} veces cada uno` : '';
   for (const condicion of condiciones) {
-    console.log(`Evaluando ${casos.length} casos (${condicion.nombre})...\n`);
-    const resultados: EvalResult[] = [];
+    console.log(
+      `Evaluando ${casos.length} casos${veces} (${condicion.nombre})...\n`,
+    );
+    const agregados: Agregado[] = [];
     for (const caso of casos) {
-      const result = await evaluar(caso, anthropic, { sin: condicion.sin });
-      resultados.push(result);
-      imprimir(result);
+      const corridas: EvalResult[] = [];
+      for (let i = 0; i < args.repeticiones; i++) {
+        corridas.push(await evaluar(caso, anthropic, { sin: condicion.sin }));
+      }
+      const agregado = agregarCorridas(corridas);
+      agregados.push(agregado);
+      imprimir(agregado);
     }
 
-    const ok = resultados.filter((r) => r.ok).length;
-    const totalChecks = resultados.reduce((n, r) => n + r.checks.length, 0);
-    const okChecks = resultados.reduce(
-      (n, r) => n + r.checks.filter((c) => c.ok).length,
-      0,
-    );
+    const completas = agregados.reduce((n, a) => n + a.completas, 0);
+    const corridas = agregados.reduce((n, a) => n + a.corridas, 0);
+    const criterios = agregados.flatMap((a) => a.criterios);
+    const okChecks = criterios.reduce((n, c) => n + c.ok, 0);
+    const totalChecks = criterios.reduce((n, c) => n + c.total, 0);
     const texto =
-      `${ok}/${resultados.length} casos completos · ` +
+      `${completas}/${corridas} corridas completas · ` +
       `${okChecks}/${totalChecks} criterios`;
     console.log(`\n${texto}\n`);
     totales.push({
       nombre: condicion.nombre,
       texto,
-      todoOk: ok === resultados.length,
+      todoOk: completas === corridas,
     });
   }
 

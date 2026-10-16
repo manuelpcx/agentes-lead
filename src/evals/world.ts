@@ -32,6 +32,8 @@ import { ActualizarEstadoLeadTool } from '../agent/tools/actualizar-estado-lead.
 import { CalificarLeadTool } from '../agent/tools/calificar-lead.tool';
 import { CancelarSeguimientoTool } from '../agent/tools/cancelar-seguimiento.tool';
 import { GuardarEnMemoriaTool } from '../agent/tools/guardar-en-memoria.tool';
+import { IniciarLlamadaTool } from '../agent/tools/iniciar-llamada.tool';
+import { VoiceService } from '../voice/voice.service';
 import { EvalCase, EvalRun, RunOptions } from './types';
 
 /**
@@ -44,7 +46,11 @@ import { EvalCase, EvalRun, RunOptions } from './types';
  * o uno con respuestas guionadas, que es como se prueba el propio harness sin
  * gastar tokens.
  *
- * Fuera del mundo por ahora: voz, CRM y derivación a otro agente. Necesitan
+ * Las llamadas están, con un proveedor de voz que no llama a nadie: sin la
+ * herramienta, un agente que quiere llamar escala a una persona y casos como
+ * "no me llames" no pueden detectar la llamada.
+ *
+ * Fuera del mundo por ahora: CRM y derivación a otro agente. Necesitan
  * proveedores externos o colas, y ninguno cambia cómo redacta el agente.
  */
 
@@ -218,7 +224,16 @@ export async function runCase(
 
   const interactions = {
     register: async () => ({ occurredAt: new Date() }),
+    // Lo que consultan las guardas de llamadas y del piso de cobranza: en el
+    // mundo no hay llamadas ni gestiones previas.
+    findRecent: async () => null,
+    findProactiveSince: async () => [],
   } as unknown as InteractionsService;
+
+  // Proveedor de voz que no llama a nadie: la llamada queda en `acciones`.
+  const voice = {
+    startCall: async () => ({ callId: 'eval-call' }),
+  } as unknown as VoiceService;
 
   const leads = {
     getById: async () => leadRow,
@@ -254,6 +269,7 @@ export async function runCase(
     new CalificarLeadTool(leads, interactions),
     new CancelarSeguimientoTool(leads, interactions),
     new GuardarEnMemoriaTool(memory),
+    new IniciarLlamadaTool(voice, interactions, leads),
   ];
 
   const registry = new ToolRegistry(herramientas);

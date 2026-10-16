@@ -143,6 +143,28 @@ describe('runCase', () => {
   });
 });
 
+describe('runCase — llamadas', () => {
+  it('el agente puede llamar en el mundo, y la llamada queda registrada', async () => {
+    // Sin la herramienta, un agente que quiere llamar escala a una persona y
+    // un caso como "no me llames" nunca puede detectar la llamada.
+    const { anthropic } = scripted([
+      toolUse('iniciarLlamada', { motivo: 'resolver dudas del contrato' }),
+    ]);
+    const caso: EvalCase = {
+      ...CASO_BASE,
+      espera: { noUsa: ['iniciarLlamada'], criterios: [] },
+    };
+
+    const run = await runCase(caso, anthropic);
+
+    expect(run.error).toBeUndefined();
+    expect(run.acciones.map((a) => a.tool)).toEqual(['iniciarLlamada']);
+    expect(checksDeterministas(caso, run)).toEqual([
+      { criterio: 'no usa iniciarLlamada', ok: false },
+    ]);
+  });
+});
+
 describe('runCase — ventana de historial y ablación', () => {
   /** Un caso con `n` turnos; el primero lleva una marca para buscarlo. */
   function casoLargo(n: number): EvalCase {
@@ -230,6 +252,9 @@ describe('casos largos del banco', () => {
       expect(visto).not.toContain(primero?.texto);
       for (const f of caso.memoria?.facts ?? []) {
         expect(run.system).toContain(f.valor);
+      }
+      if (caso.memoria?.summary) {
+        expect(run.system).toContain(caso.memoria.summary);
       }
     },
   );

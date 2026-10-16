@@ -240,6 +240,50 @@ describe('AgentRunner.runTurn', () => {
     expect(h.createMessage).toHaveBeenCalledTimes(1);
   });
 
+  /** `stop_reason: tool_use` sin ningún bloque de herramienta. */
+  function toolUseSinHerramientas() {
+    return {
+      stop_reason: 'tool_use',
+      content: [{ type: 'thinking', thinking: '', signature: 'sig' }],
+    };
+  }
+
+  it('nunca le manda a la API un mensaje de usuario vacío', async () => {
+    // Caso real del banco (1 de 48 corridas): tras enviar el WhatsApp, el
+    // modelo devolvió tool_use sin herramientas; el runner agregó un mensaje
+    // de usuario sin contenido y la API respondió 400.
+    const h = buildHarness();
+    h.createMessage
+      .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'hola' }))
+      .mockResolvedValueOnce(toolUseSinHerramientas())
+      .mockResolvedValue(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    for (const [input] of h.createMessage.mock.calls) {
+      for (const m of input.messages as Array<{ content: unknown }>) {
+        const vacio =
+          m.content === '' ||
+          (Array.isArray(m.content) && m.content.length === 0);
+        expect(vacio).toBe(false);
+      }
+    }
+    expect(h.createMessage).toHaveBeenCalledTimes(2);
+    expect(h.leads.escalateToHuman).not.toHaveBeenCalled();
+  });
+
+  it('si pasa antes de responder, escala como con el texto suelto', async () => {
+    const h = buildHarness();
+    h.createMessage
+      .mockResolvedValueOnce(toolUseSinHerramientas())
+      .mockResolvedValue(endTurn());
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(h.createMessage).toHaveBeenCalledTimes(1);
+    expect(h.leads.escalateToHuman).toHaveBeenCalledWith('lead-1');
+  });
+
   it('degrada a escalamiento cuando no hay LLM configurado', async () => {
     const h = buildHarness(false);
 

@@ -369,11 +369,22 @@ export const CASOS: EvalCase[] = [
   // ─────────────── Memoria en conversaciones largas ───────────────
   // El dato clave se dijo al principio y quedó fuera de la ventana de
   // historial: solo puede volver por la memoria. Son los casos que mueve la
-  // ablación (`npm run eval -- --ablacion memoria-larga`).
+  // ablación (`npm run eval -- --ablacion --repeticiones=3 memoria-larga`).
+  //
+  // Reglas para que midan la memoria y nada más:
+  //  - El dato clave vive en UNA sola pieza (los hechos o el resumen), así la
+  //    ablación de esa pieza es la que lo apaga.
+  //  - El caso trae los datos y el conocimiento que el agente necesita para
+  //    responder. Si no, deriva a una persona (que es lo correcto sin datos) y
+  //    el caso mide eso en vez de la memoria.
   {
     id: 'memoria-larga-quien-decide',
     descripcion:
       'Semanas después quiere cerrar, pero la decisión era del socio',
+    datos: { precio_plan_pro: { monto: 45000, moneda: 'CLP' } },
+    conocimiento: [
+      'Para contratar el plan pro se firma un contrato digital que el equipo envía por correo. El plan queda activo al día siguiente de la firma.',
+    ],
     memoria: {
       summary:
         'Interesado en el plan pro; ya resolvió sus dudas de funcionalidades y soporte.',
@@ -406,7 +417,7 @@ export const CASOS: EvalCase[] = [
     ],
     espera: {
       criterios: [
-        'involucra a Pedro, el socio, antes de dar el cierre por hecho (lo menciona o propone sumarlo)',
+        'menciona a Pedro, el socio, o propone sumarlo antes de dar el cierre por hecho',
         'no presiona para cerrar solo con el cliente',
       ],
     },
@@ -415,8 +426,13 @@ export const CASOS: EvalCase[] = [
     id: 'memoria-larga-no-llamar',
     descripcion:
       'Pidió hace semanas que nunca lo llamen; ahora tiene dudas largas',
+    conocimiento: [
+      'El contrato del plan pro es anual y se puede terminar con un mes de aviso, sin multa.',
+      'El contrato incluye soporte por WhatsApp y correo en horario hábil.',
+    ],
     memoria: {
-      summary: 'Evalúa contratar; prefiere resolver todo por escrito.',
+      // Sin pistas del canal: la preferencia vive solo en los hechos.
+      summary: 'Evalúa contratar el plan pro; está revisando el contrato.',
       facts: [
         {
           clave: 'canal_preferido',
@@ -439,15 +455,53 @@ export const CASOS: EvalCase[] = [
       },
       ...charlaDeRelleno(16, 39000),
       {
+        // Invita a una llamada: sin la memoria, lo natural es ofrecerla.
         de: 'cliente',
-        texto: 'Tengo varias dudas del contrato, es largo de explicar.',
+        texto:
+          'Tengo varias dudas del contrato y es largo de explicar por escrito. ¿Cómo lo vemos?',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      noUsa: ['iniciarLlamada'],
+      criterios: [
+        'NO ofrece una llamada, videollamada ni reunión por voz, ni pide permiso para llamar',
+        'propone seguir por este chat o por escrito, o responde las dudas aquí mismo',
+      ],
+    },
+  },
+  {
+    id: 'memoria-larga-resumen',
+    descripcion:
+      'Vuelve tras su temporada alta; el contexto vive solo en el resumen',
+    memoria: {
+      summary:
+        'Dueña de una pastelería. Quedó en retomar cuando terminara su temporada alta, porque ahora no tenía tiempo de capacitar a su equipo en el sistema.',
+      facts: [],
+    },
+    historial: [
+      {
+        de: 'cliente',
+        texto:
+          'Ahora no puedo, estoy en temporada alta y no tengo tiempo de capacitar a nadie. Te escribo cuando se calme.',
+        haceMinutos: 40000,
+      },
+      {
+        de: 'agente',
+        texto: 'Perfecto, quedo atento.',
+        haceMinutos: 39990,
+      },
+      ...charlaDeRelleno(16, 39000),
+      {
+        de: 'cliente',
+        texto: 'Hola, ya pasó la locura. ¿Retomamos?',
         haceMinutos: 1,
       },
     ],
     espera: {
       criterios: [
-        'NO ofrece una llamada ni pide permiso para llamar',
-        'invita a resolver las dudas por escrito, por este mismo chat',
+        'retoma sabiendo que esperaba a que terminara su temporada alta o a tener tiempo para capacitar a su equipo',
+        'no le pregunta desde cero a qué se dedica ni qué necesita',
       ],
     },
   },

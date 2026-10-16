@@ -327,6 +327,12 @@ export class ContextBuilder {
    * cliente escriba por WhatsApp, la conversación se retoma donde quedó (el
    * historial se une por lead). Si no hay número de WhatsApp configurado, se
    * invita igual pero sin dictar un número (para no inventarlo).
+   *
+   * También va aquí el "no me llames": vive en el bloque que se arma en cada
+   * turno, así que rige para todos los tipos de agente y también para los que
+   * ya existían (los prompts por defecto se copian al crear el agente). Nombra
+   * la videollamada porque el banco mostró al agente respetando "no me llames"
+   * al pie de la letra y ofreciendo una videollamada.
    */
   private channelPolicy(companyWhatsApp?: string | null): string {
     const destino = companyWhatsApp
@@ -340,7 +346,11 @@ export class ContextBuilder {
       `invitando de forma natural y breve a seguir la conversación ${destino}. ` +
       'Es el mismo hilo: cuando el cliente te escriba por WhatsApp, retomas la ' +
       'conversación donde quedó (no lo trates como alguien nuevo). No pidas que ' +
-      '"respondan este correo".'
+      '"respondan este correo".\n' +
+      'Si la persona pidió que no la llamen (lo dice el historial o tu memoria), ' +
+      'eso incluye videollamadas y cualquier reunión por voz o video: no las ' +
+      'ofrezcas ni uses "iniciarLlamada". Sigue solo por escrito hasta que ella ' +
+      'misma pida que la llamen.'
     );
   }
 
