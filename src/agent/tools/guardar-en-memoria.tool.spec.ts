@@ -2,13 +2,18 @@ import { Lead } from '@prisma/client';
 import { GuardarEnMemoriaTool } from './guardar-en-memoria.tool';
 import { ToolContext } from './tool.interface';
 import { LeadMemoryService } from '../../memory/lead-memory.service';
-import { MemoryFact, upsertFact } from '../../memory/lead-memory';
+import { MAX_FACTS, MemoryFact, upsertFact } from '../../memory/lead-memory';
 
-function buildHarness() {
-  let facts: MemoryFact[] = [];
+function buildHarness(iniciales: MemoryFact[] = []) {
+  let facts: MemoryFact[] = iniciales;
   const rememberFact = jest.fn(
-    async (_leadId: string, clave: string, valor: string) => {
-      facts = upsertFact(facts, clave, valor);
+    async (
+      _leadId: string,
+      clave: string,
+      valor: string,
+      importancia?: number,
+    ) => {
+      facts = upsertFact(facts, clave, valor, importancia);
       return facts;
     },
   );
@@ -37,10 +42,12 @@ describe('GuardarEnMemoriaTool', () => {
       ctx,
     );
 
+    // Sin importancia explícita, entra con la de por defecto.
     expect(rememberFact).toHaveBeenCalledWith(
       'lead-1',
       'producto_de_interes',
       'plan pro',
+      5,
     );
     expect(result.content).toContain('producto_de_interes = plan pro');
     expect(result.isError).toBeUndefined();
@@ -55,6 +62,40 @@ describe('GuardarEnMemoriaTool', () => {
     );
 
     expect(result.content).toContain('horario_preferido');
+  });
+
+  it('guarda la importancia que decide el modelo', async () => {
+    const { tool, ctx, rememberFact } = buildHarness();
+
+    await tool.execute(
+      { clave: 'pago', valor: 'prometió pagar el viernes', importancia: 9 },
+      ctx,
+    );
+
+    expect(rememberFact).toHaveBeenCalledWith(
+      'lead-1',
+      'pago',
+      'prometió pagar el viernes',
+      9,
+    );
+  });
+
+  it('avisa que no se guardó si la memoria está llena de datos más importantes', async () => {
+    const llenos: MemoryFact[] = Array.from({ length: MAX_FACTS }, (_, i) => ({
+      clave: `clave_${i}`,
+      valor: `valor ${i}`,
+      importancia: 9,
+      registradoEn: new Date().toISOString(),
+    }));
+    const { tool, ctx } = buildHarness(llenos);
+
+    const result = await tool.execute(
+      { clave: 'color_favorito', valor: 'azul', importancia: 2 },
+      ctx,
+    );
+
+    expect(result.content).not.toContain('Guardado en la memoria');
+    expect(result.content).toMatch(/no se guard/i);
   });
 
   it('pide los dos campos', async () => {

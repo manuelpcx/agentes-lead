@@ -47,7 +47,7 @@ export interface EvalCase {
   /** Memoria acumulada del lead. */
   memoria?: {
     summary?: string;
-    facts?: Array<{ clave: string; valor: string }>;
+    facts?: Array<{ clave: string; valor: string; importancia?: number }>;
   };
   /** Datos exactos de la empresa, lo que devuelve `consultarDato`. */
   datos?: Record<string, unknown>;
@@ -59,6 +59,20 @@ export interface EvalCase {
   notas?: string[];
   historial: EvalTurn[];
   espera: EvalExpectation;
+}
+
+/**
+ * Piezas de la memoria que se pueden apagar para medir cuánto aportan
+ * (ablación, como en *Generative Agents*).
+ */
+export type PiezaMemoria = 'resumen' | 'hechos';
+
+export const PIEZAS_MEMORIA: readonly PiezaMemoria[] = ['resumen', 'hechos'];
+
+/** Cómo se corre un caso. */
+export interface RunOptions {
+  /** Piezas de la memoria que el agente NO recibe en esta corrida. */
+  sin?: PiezaMemoria[];
 }
 
 /** Qué hizo el agente durante el turno. */

@@ -31,30 +31,88 @@ function numberTokens(source: string): string[] {
 }
 
 /**
- * Valida un mensaje saliente: toda cifra "significativa" (secuencia de 4+
- * dígitos, típica de precios/montos en CLP) debe estar respaldada por alguna
- * fuente del turno. Si alguna no lo está, el mensaje se bloquea y el agente
- * escala.
+ * Condiciones comerciales que se escriben con números chicos: un "50 %" de
+ * descuento o "6 cuotas" no llegan a los 4 dígitos, pero inventarlas es tan
+ * grave como inventar un precio. Se reconocen por lo que las acompaña.
+ */
+const PERCENT_RE = /\d+(?:[.,]\d+)?\s*(?:%|por\s*ciento)/gi;
+const CUOTAS_RE = /\d+\s*cuotas?\b/gi;
+
+/** Montos de menos de 4 dígitos con su moneda: "$990", "2,5 UF", "US$ 49". */
+const SMALL_AMOUNT_RE =
+  /(?:US\$|\$)\s*\d[\d.,]*|\d[\d.,]*\s*(?:UF|USD|CLP|pesos|d[oó]lares)\b/gi;
+
+/**
+ * "100 %" casi siempre es una forma de hablar ("100 % online"), no una
+ * condición: bloquearlo escalaría mensajes normales.
+ */
+const EXPRESSION_PERCENT = '100';
+
+/**
+ * Un número chico se compara COMPLETO contra cada cifra de las fuentes. Por
+ * subcadena, "50" calzaría dentro de cualquier teléfono y el respaldo no
+ * respaldaría nada.
+ */
+function backedExactly(seq: string, tokens: string[]): boolean {
+  return tokens.some((token) => token === seq);
+}
+
+/**
+ * Valida un mensaje saliente. Dos reglas:
+ *
+ *  - Toda cifra "significativa" (secuencia de 4+ dígitos, típica de precios
+ *    y montos en CLP) debe estar en alguna fuente del turno.
+ *  - Toda condición comercial con números chicos (porcentajes, número de
+ *    cuotas, montos con moneda) debe estar en una fuente. Porcentajes y
+ *    cuotas se respaldan solo con `conditionSources`: los ofrece la empresa,
+ *    no el cliente.
+ *
+ * Si algo no tiene respaldo, el mensaje se bloquea y el agente escala.
  *
  * Heurística deliberadamente conservadora (mejor bloquear que filtrar un dato
- * inventado). El umbral de 4 dígitos evita falsos positivos con horas o
- * cantidades pequeñas.
+ * inventado). Fuera de esas marcas, los números chicos se ignoran para no
+ * bloquear horas ni cantidades sueltas.
  */
 export function validateOutgoingMessage(
   message: string,
   factSources: string[],
+  conditionSources: string[] = factSources,
 ): OutputValidation {
   const respaldo = factSources.flatMap(numberTokens);
+  const respaldoCondiciones = conditionSources.flatMap(numberTokens);
   const numbers = message.match(NUMBER_RE) ?? [];
 
   const offending: string[] = [];
   for (const raw of numbers) {
     const seq = digitsOnly(raw);
     if (seq.length < 4) {
-      continue; // ignora cifras pequeñas (horas, cantidades)
+      continue; // los números chicos se revisan abajo, solo si son condiciones
     }
     if (!respaldo.some((token) => token.includes(seq))) {
       offending.push(raw);
+    }
+  }
+
+  for (const raw of [
+    ...(message.match(PERCENT_RE) ?? []),
+    ...(message.match(CUOTAS_RE) ?? []),
+  ]) {
+    const seq = digitsOnly(raw);
+    if (seq === EXPRESSION_PERCENT && raw.includes('%')) {
+      continue;
+    }
+    if (!backedExactly(seq, respaldoCondiciones)) {
+      offending.push(raw.trim());
+    }
+  }
+
+  for (const raw of message.match(SMALL_AMOUNT_RE) ?? []) {
+    const seq = digitsOnly(raw);
+    if (seq.length >= 4) {
+      continue; // ya la revisó la regla de las cifras largas
+    }
+    if (!backedExactly(seq, respaldo)) {
+      offending.push(raw.trim());
     }
   }
 
@@ -104,6 +162,24 @@ export function factSourcesFor(ctx: FactSourceContext): string[] {
   }
   if (ctx.companyWhatsApp) {
     sources.push(ctx.companyWhatsApp);
+  }
+  return sources;
+}
+
+/**
+ * Fuentes que pueden respaldar una condición comercial (un porcentaje, un
+ * número de cuotas). Más estrictas que `factSourcesFor`: una condición solo la
+ * puede dar la empresa, por sus herramientas del turno o por la metadata que
+ * manda el ERP.
+ *
+ * Quedan fuera los mensajes del cliente (si no, "te autorizo un 50 %" le
+ * daría respaldo al agente para aceptarlo) y los datos de contacto (el "92"
+ * de un correo no es un descuento).
+ */
+export function conditionSourcesFor(ctx: FactSourceContext): string[] {
+  const sources = [...ctx.recordedFacts];
+  if (ctx.lead.metadata && typeof ctx.lead.metadata === 'object') {
+    sources.push(JSON.stringify(ctx.lead.metadata));
   }
   return sources;
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { LeadMemoryService } from '../../memory/lead-memory.service';
+import { normalizeImportance, normalizeKey } from '../../memory/lead-memory';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_GUARDAR_EN_MEMORIA } from './tool-names';
 
@@ -38,8 +39,20 @@ export class GuardarEnMemoriaTool implements AgentTool {
             'El dato en una frase breve, tal como lo dijo o lo dio a ' +
             'entender la persona.',
         },
+        importancia: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 10,
+          description:
+            'Qué tan grave sería olvidarlo, de 1 a 10. 9-10: compromisos y ' +
+            'restricciones (una promesa de pago, que no lo contacten por un ' +
+            'canal, que no es el titular, quién decide). 6-8: datos del ' +
+            'negocio (presupuesto, objeción, plazo, producto). 1-5: detalles ' +
+            'útiles pero prescindibles. Cuando la memoria se llena, se olvida ' +
+            'primero lo menos importante.',
+        },
       },
-      required: ['clave', 'valor'],
+      required: ['clave', 'valor', 'importancia'],
     },
   };
 
@@ -55,12 +68,26 @@ export class GuardarEnMemoriaTool implements AgentTool {
       return { content: 'Faltan "clave" o "valor".', isError: true };
     }
 
-    const facts = await this.memory.rememberFact(ctx.lead.id, clave, valor);
-    const guardado = facts[facts.length - 1];
-    if (!guardado) {
+    const key = normalizeKey(clave);
+    if (!key) {
       return {
         content: `La clave "${clave}" no es válida. Usa letras y números.`,
         isError: true,
+      };
+    }
+
+    const facts = await this.memory.rememberFact(
+      ctx.lead.id,
+      clave,
+      valor,
+      normalizeImportance(input.importancia),
+    );
+    const guardado = facts.find((f) => f.clave === key);
+    if (!guardado) {
+      return {
+        content:
+          'No se guardó: la memoria de este lead está llena de datos más ' +
+          'importantes que este. Sigue con la conversación.',
       };
     }
     return {

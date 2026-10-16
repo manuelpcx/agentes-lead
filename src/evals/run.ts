@@ -5,7 +5,13 @@ import { AnthropicService } from '../llm/anthropic.service';
 import { ProviderHealthService } from '../alerts/provider-health.service';
 import { CASOS } from './cases';
 import { checksDeterministas, juzgar } from './judge';
-import { EvalCase, EvalResult } from './types';
+import {
+  EvalCase,
+  EvalResult,
+  PIEZAS_MEMORIA,
+  PiezaMemoria,
+  RunOptions,
+} from './types';
 import { runCase } from './world';
 
 /**
@@ -13,15 +19,19 @@ import { runCase } from './world';
  *
  * `npm run eval` — todos los casos.
  * `npm run eval -- precio` — solo los casos cuyo id contenga "precio".
+ * `npm run eval -- --sin=hechos` — con esa pieza de la memoria apagada.
+ * `npm run eval -- --ablacion memoria-larga` — corre los casos con todo, sin
+ *   cada pieza y sin memoria, y compara (el experimento de *Generative
+ *   Agents*). Cuesta una corrida del banco por condición.
  *
  * Necesita `ANTHROPIC_API_KEY`. Cada caso son unas pocas llamadas al modelo
  * más una del juez: correr el banco entero cuesta centavos, no dólares.
  */
 
-const VERDE = '[32m';
-const ROJO = '[31m';
-const GRIS = '[90m';
-const RESET = '[0m';
+const VERDE = '[32m';
+const ROJO = '[31m';
+const GRIS = '[90m';
+const RESET = '[0m';
 
 function buildAnthropic(): AnthropicService {
   const env: Record<string, unknown> = {
@@ -41,12 +51,70 @@ function buildAnthropic(): AnthropicService {
   return new AnthropicService(config, sinAlertas);
 }
 
+export interface Args {
+  filtro?: string;
+  sin: PiezaMemoria[];
+  ablacion: boolean;
+}
+
+/** Lee `[filtro] [--sin=pieza,pieza] [--ablacion]`, en cualquier orden. */
+export function parseArgs(argv: string[]): Args {
+  const args: Args = { sin: [], ablacion: false };
+  for (const arg of argv) {
+    if (arg === '--ablacion') {
+      args.ablacion = true;
+    } else if (arg.startsWith('--sin=')) {
+      for (const pieza of arg.slice('--sin='.length).split(',')) {
+        if (!PIEZAS_MEMORIA.includes(pieza as PiezaMemoria)) {
+          throw new Error(
+            `Pieza desconocida "${pieza}". Se pueden apagar: ${PIEZAS_MEMORIA.join(', ')}.`,
+          );
+        }
+        args.sin.push(pieza as PiezaMemoria);
+      }
+    } else {
+      args.filtro = arg;
+    }
+  }
+  if (args.ablacion && args.sin.length > 0) {
+    throw new Error(
+      'Usa --ablacion o --sin, no los dos: --ablacion ya apaga cada pieza.',
+    );
+  }
+  return args;
+}
+
+/** Una forma de correr el banco: con todo, o con alguna pieza apagada. */
+export interface Condicion {
+  nombre: string;
+  sin: PiezaMemoria[];
+}
+
+/**
+ * Condiciones a correr. La ablación sigue al paper: con todo, sin cada pieza
+ * por separado y sin ninguna, para ver cuánto aporta cada una.
+ */
+export function condicionesPara(args: Args): Condicion[] {
+  if (args.ablacion) {
+    return [
+      { nombre: 'completo', sin: [] },
+      ...PIEZAS_MEMORIA.map((p) => ({ nombre: `sin ${p}`, sin: [p] })),
+      { nombre: 'sin memoria', sin: [...PIEZAS_MEMORIA] },
+    ];
+  }
+  if (args.sin.length > 0) {
+    return [{ nombre: `sin ${args.sin.join(' ni ')}`, sin: args.sin }];
+  }
+  return [{ nombre: 'completo', sin: [] }];
+}
+
 /** Corre un caso completo: turno + comprobaciones + juez. */
 export async function evaluar(
   caso: EvalCase,
   anthropic: AnthropicService,
+  opciones: RunOptions = {},
 ): Promise<EvalResult> {
-  const run = await runCase(caso, anthropic);
+  const run = await runCase(caso, anthropic, opciones);
   const checks = [
     ...checksDeterministas(caso, run),
     ...(await juzgar(caso, run, anthropic)),
@@ -77,7 +145,14 @@ async function main(): Promise<void> {
   // El banco imprime su propio reporte; los logs de Nest solo estorban.
   Logger.overrideLogger(false);
 
-  const filtro = process.argv[2];
+  let args: Args;
+  try {
+    args = parseArgs(process.argv.slice(2));
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exit(1);
+  }
+  const { filtro } = args;
   const casos = filtro ? CASOS.filter((c) => c.id.includes(filtro)) : CASOS;
 
   if (casos.length === 0) {
@@ -93,25 +168,43 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`Evaluando ${casos.length} casos...\n`);
-  const resultados: EvalResult[] = [];
-  for (const caso of casos) {
-    const result = await evaluar(caso, anthropic);
-    resultados.push(result);
-    imprimir(result);
+  const condiciones = condicionesPara(args);
+  const totales: Array<{ nombre: string; texto: string; todoOk: boolean }> = [];
+  for (const condicion of condiciones) {
+    console.log(`Evaluando ${casos.length} casos (${condicion.nombre})...\n`);
+    const resultados: EvalResult[] = [];
+    for (const caso of casos) {
+      const result = await evaluar(caso, anthropic, { sin: condicion.sin });
+      resultados.push(result);
+      imprimir(result);
+    }
+
+    const ok = resultados.filter((r) => r.ok).length;
+    const totalChecks = resultados.reduce((n, r) => n + r.checks.length, 0);
+    const okChecks = resultados.reduce(
+      (n, r) => n + r.checks.filter((c) => c.ok).length,
+      0,
+    );
+    const texto =
+      `${ok}/${resultados.length} casos completos · ` +
+      `${okChecks}/${totalChecks} criterios`;
+    console.log(`\n${texto}\n`);
+    totales.push({
+      nombre: condicion.nombre,
+      texto,
+      todoOk: ok === resultados.length,
+    });
   }
 
-  const ok = resultados.filter((r) => r.ok).length;
-  const totalChecks = resultados.reduce((n, r) => n + r.checks.length, 0);
-  const okChecks = resultados.reduce(
-    (n, r) => n + r.checks.filter((c) => c.ok).length,
-    0,
-  );
-  console.log(
-    `\n${ok}/${resultados.length} casos completos · ` +
-      `${okChecks}/${totalChecks} criterios`,
-  );
-  process.exit(ok === resultados.length ? 0 : 1);
+  if (totales.length > 1) {
+    console.log('Ablación:');
+    for (const t of totales) {
+      console.log(`  ${t.nombre.padEnd(14)} ${t.texto}`);
+    }
+  }
+  // En una ablación se espera que las condiciones recortadas fallen: el
+  // resultado del proceso lo decide la primera condición (con todo).
+  process.exit(totales[0].todoOk ? 0 : 1);
 }
 
 if (require.main === module) {

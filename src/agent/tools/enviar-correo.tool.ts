@@ -3,7 +3,11 @@ import { Channel, Direction } from '@prisma/client';
 import { EmailService } from '../../email/email.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
-import { factSourcesFor, validateOutgoingMessage } from '../output-validator';
+import {
+  conditionSourcesFor,
+  factSourcesFor,
+  validateOutgoingMessage,
+} from '../output-validator';
 import { stripSystemAnnotation } from '../conversation-history';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_ENVIAR_CORREO } from './tool-names';
@@ -11,7 +15,8 @@ import { collectionFloorRefusal, proactiveTag } from './collection-floor.guard';
 
 /**
  * Envía un correo al lead. Aplica el mismo guardrail que WhatsApp: toda cifra
- * debe venir de un resultado de herramienta de este turno.
+ * debe venir de un resultado de herramienta de este turno. Se revisan asunto
+ * y cuerpo: un "30 % de descuento" en el asunto llega igual al cliente.
  */
 @Injectable()
 export class EnviarCorreoTool implements AgentTool {
@@ -20,8 +25,9 @@ export class EnviarCorreoTool implements AgentTool {
     name: this.name,
     description:
       'Envía un correo electrónico al lead (útil como canal alternativo o para ' +
-      'enviar información más extensa). Toda cifra o compromiso debe estar ' +
-      'respaldado por un resultado de herramienta de este turno.',
+      'enviar información más extensa). Toda cifra, porcentaje, número de ' +
+      'cuotas o compromiso debe estar respaldado por un resultado de ' +
+      'herramienta de este turno.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -53,7 +59,11 @@ export class EnviarCorreoTool implements AgentTool {
       return { content: 'El lead no tiene correo registrado.', isError: true };
     }
 
-    const validation = validateOutgoingMessage(cuerpo, factSourcesFor(ctx));
+    const validation = validateOutgoingMessage(
+      `${asunto}\n${cuerpo}`,
+      factSourcesFor(ctx),
+      conditionSourcesFor(ctx),
+    );
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);
       await this.interactions.register({

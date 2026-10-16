@@ -200,3 +200,24 @@ describe('PanelService notas', () => {
     expect(h.prisma.db.leadNote.delete).not.toHaveBeenCalled();
   });
 });
+
+describe('PanelService memoria', () => {
+  it('un dato que agrega una persona del equipo entra con importancia alta', async () => {
+    // Lo corrigió alguien a propósito: no puede desplazarlo lo que el agente
+    // anote después.
+    const h = buildHarness();
+    await run(() =>
+      h.service.updateMemory(
+        'lead-1',
+        { clave: 'decide', valor: 'el socio, Pedro' },
+        'user-1',
+      ),
+    );
+    expect(h.memory.rememberFact).toHaveBeenCalledWith(
+      'lead-1',
+      'decide',
+      'el socio, Pedro',
+      8,
+    );
+  });
+});

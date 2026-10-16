@@ -170,6 +170,7 @@ export class AgentRouterService {
       const raw = await this.anthropic.complete(
         system,
         `Agentes disponibles:\n${catalogo}\n\nMensaje del cliente:\n"""${message}"""\n\nÍndice del agente:`,
+        { background: true },
       );
       const idx = Number.parseInt(raw.match(/\d+/)?.[0] ?? '', 10);
       if (Number.isInteger(idx) && idx >= 0 && idx < agents.length) {

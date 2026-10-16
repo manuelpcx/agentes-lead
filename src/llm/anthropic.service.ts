@@ -30,6 +30,8 @@ export class AnthropicService {
   private readonly logger = new Logger(AnthropicService.name);
   private readonly client: Anthropic | null;
   private readonly model: string;
+  /** Para tareas de fondo; si no se configura, el mismo `model`. */
+  private readonly backgroundModel: string;
   private readonly effort: EnvVars['ANTHROPIC_EFFORT'];
   private readonly maxTokens: number;
 
@@ -39,6 +41,8 @@ export class AnthropicService {
   ) {
     const apiKey = config.get('ANTHROPIC_API_KEY', { infer: true });
     this.model = config.get('ANTHROPIC_MODEL', { infer: true });
+    this.backgroundModel =
+      config.get('ANTHROPIC_BACKGROUND_MODEL', { infer: true }) || this.model;
     this.effort = config.get('ANTHROPIC_EFFORT', { infer: true });
     this.maxTokens = config.get('ANTHROPIC_MAX_TOKENS', { infer: true });
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
@@ -56,10 +60,20 @@ export class AnthropicService {
   }
 
   /**
-   * Completa un prompt simple (sin herramientas) y devuelve el texto. Se usa
-   * en el análisis batch de Fase 6. Lanza si no hay cliente.
+   * Completa un prompt simple (sin herramientas) y devuelve el texto. Lanza si
+   * no hay cliente.
+   *
+   * `background: true` es para tareas simples y de mucho volumen fuera de la
+   * conversación (resumir la memoria, elegir agente): van al modelo de
+   * `ANTHROPIC_BACKGROUND_MODEL`. El análisis nocturno y el playbook quedan
+   * en el principal: detectar fallas de cumplimiento y redactar un prompt
+   * piden el mejor juicio, y corren pocas veces.
    */
-  async complete(system: string, userText: string): Promise<string> {
+  async complete(
+    system: string,
+    userText: string,
+    opts: { background?: boolean } = {},
+  ): Promise<string> {
     const client = this.client;
     if (!client) {
       throw new Error(
@@ -68,7 +82,7 @@ export class AnthropicService {
     }
     const response = await this.observe(() =>
       client.messages.create({
-        model: this.model,
+        model: opts.background ? this.backgroundModel : this.model,
         max_tokens: this.maxTokens,
         output_config: { effort: 'low' },
         system,

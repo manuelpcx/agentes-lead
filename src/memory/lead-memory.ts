@@ -7,9 +7,24 @@
 export interface MemoryFact {
   clave: string;
   valor: string;
+  /**
+   * 1 a 10, la pone quien guarda el hecho (como en *Generative Agents*). Decide
+   * qué se descarta cuando la memoria se llena: un "no es el titular" no puede
+   * perderse por veinte detalles anotados después.
+   */
+  importancia: number;
   /** ISO del momento en que se guardó (o se actualizó). */
   registradoEn: string;
 }
+
+/** La de un hecho sin importancia declarada (incluidos los guardados antes). */
+export const DEFAULT_IMPORTANCE = 5;
+
+/**
+ * La de un hecho que agrega o corrige una persona desde el panel: lo hizo a
+ * propósito, así que no debería desplazarlo lo que el agente anote después.
+ */
+export const OPERATOR_IMPORTANCE = 8;
 
 /** Tope de hechos por lead: al pasarlo se descartan los más antiguos. */
 export const MAX_FACTS = 20;
@@ -33,6 +48,35 @@ export function normalizeKey(raw: string): string {
     .slice(0, MAX_CLAVE_CHARS);
 }
 
+/** Lleva cualquier valor a una importancia entera de 1 a 10. */
+export function normalizeImportance(raw: unknown): number {
+  // El modelo a veces manda el número como texto ("9").
+  const n = typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : raw;
+  if (typeof n !== 'number' || !Number.isFinite(n)) {
+    return DEFAULT_IMPORTANCE;
+  }
+  return Math.min(10, Math.max(1, Math.round(n)));
+}
+
+/**
+ * Posición del hecho que conviene descartar: el de menor importancia y, entre
+ * iguales, el más antiguo.
+ */
+function leastValuableIndex(facts: MemoryFact[]): number {
+  let peor = 0;
+  for (let i = 1; i < facts.length; i++) {
+    const f = facts[i];
+    const p = facts[peor];
+    if (
+      f.importancia < p.importancia ||
+      (f.importancia === p.importancia && f.registradoEn < p.registradoEn)
+    ) {
+      peor = i;
+    }
+  }
+  return peor;
+}
+
 /** Recorta y limpia un texto de una línea. */
 function clean(text: string, max: number): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, max);
@@ -48,7 +92,10 @@ export function parseFacts(raw: unknown): MemoryFact[] {
     if (!item || typeof item !== 'object') {
       continue;
     }
-    const { clave, valor, registradoEn } = item as Record<string, unknown>;
+    const { clave, valor, importancia, registradoEn } = item as Record<
+      string,
+      unknown
+    >;
     if (typeof clave !== 'string' || typeof valor !== 'string') {
       continue;
     }
@@ -60,6 +107,7 @@ export function parseFacts(raw: unknown): MemoryFact[] {
     out.push({
       clave: key,
       valor: value,
+      importancia: normalizeImportance(importancia),
       registradoEn:
         typeof registradoEn === 'string'
           ? registradoEn
@@ -71,13 +119,15 @@ export function parseFacts(raw: unknown): MemoryFact[] {
 
 /**
  * Agrega o reemplaza un hecho. La misma clave se sobrescribe (lo último que
- * dijo la persona manda) y se mueve al final; pasado el tope, se van los más
- * antiguos.
+ * dijo la persona manda) y se mueve al final. Pasado el tope se descarta el
+ * menos importante (y entre iguales, el más antiguo), que puede ser el mismo
+ * hecho recién agregado si vale menos que todos los demás.
  */
 export function upsertFact(
   facts: MemoryFact[],
   clave: string,
   valor: string,
+  importancia = DEFAULT_IMPORTANCE,
   now = new Date(),
 ): MemoryFact[] {
   const key = normalizeKey(clave);
@@ -85,9 +135,17 @@ export function upsertFact(
   if (!key || !value) {
     return facts;
   }
-  const resto = facts.filter((f) => f.clave !== key);
-  resto.push({ clave: key, valor: value, registradoEn: now.toISOString() });
-  return resto.slice(-MAX_FACTS);
+  const lista = facts.filter((f) => f.clave !== key);
+  lista.push({
+    clave: key,
+    valor: value,
+    importancia: normalizeImportance(importancia),
+    registradoEn: now.toISOString(),
+  });
+  while (lista.length > MAX_FACTS) {
+    lista.splice(leastValuableIndex(lista), 1);
+  }
+  return lista;
 }
 
 /** Quita un hecho por su clave. */

@@ -3,7 +3,11 @@ import { Channel, Direction } from '@prisma/client';
 import { WhatsappService } from '../../whatsapp/whatsapp.service';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
-import { factSourcesFor, validateOutgoingMessage } from '../output-validator';
+import {
+  conditionSourcesFor,
+  factSourcesFor,
+  validateOutgoingMessage,
+} from '../output-validator';
 import { stripSystemAnnotation } from '../conversation-history';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_ENVIAR_WHATSAPP } from './tool-names';
@@ -21,8 +25,9 @@ export class EnviarWhatsAppTool implements AgentTool {
     name: this.name,
     description:
       'Envía un mensaje de texto al cliente por WhatsApp. Es la única forma de ' +
-      'comunicarte con el cliente. Toda cifra o compromiso debe estar ' +
-      'respaldado por un resultado de consultarDato/buscarConocimiento de este turno.',
+      'comunicarte con el cliente. Toda cifra, porcentaje, número de cuotas o ' +
+      'compromiso debe estar respaldado por un resultado de ' +
+      'consultarDato/buscarConocimiento de este turno.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -54,7 +59,11 @@ export class EnviarWhatsAppTool implements AgentTool {
       return { content: 'Falta el parámetro "mensaje".', isError: true };
     }
 
-    const validation = validateOutgoingMessage(mensaje, factSourcesFor(ctx));
+    const validation = validateOutgoingMessage(
+      mensaje,
+      factSourcesFor(ctx),
+      conditionSourcesFor(ctx),
+    );
     if (!validation.allowed) {
       await this.leads.escalateToHuman(ctx.lead.id);
       await this.interactions.register({

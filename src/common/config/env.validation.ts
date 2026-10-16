@@ -48,6 +48,10 @@ const envSchema = z
     ANTHROPIC_API_KEY: z.string().optional(),
     // Por defecto sonnet-5. Para alto volumen se puede usar 'claude-sonnet-5'.
     ANTHROPIC_MODEL: z.string().default('claude-sonnet-5'),
+    // Modelo para tareas de fondo simples (resumen de memoria, elegir agente).
+    // Vacío = el mismo ANTHROPIC_MODEL. Debe aceptar `effort` (p. ej.
+    // claude-haiku-5-5); Haiku 4.5 no lo acepta y respondería 400.
+    ANTHROPIC_BACKGROUND_MODEL: z.string().optional(),
     ANTHROPIC_EFFORT: z
       .enum(['low', 'medium', 'high', 'xhigh', 'max'])
       .default('medium'),

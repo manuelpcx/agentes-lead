@@ -32,7 +32,7 @@ import { ActualizarEstadoLeadTool } from '../agent/tools/actualizar-estado-lead.
 import { CalificarLeadTool } from '../agent/tools/calificar-lead.tool';
 import { CancelarSeguimientoTool } from '../agent/tools/cancelar-seguimiento.tool';
 import { GuardarEnMemoriaTool } from '../agent/tools/guardar-en-memoria.tool';
-import { EvalCase, EvalRun } from './types';
+import { EvalCase, EvalRun, RunOptions } from './types';
 
 /**
  * Mundo de evaluación: monta el turno REAL del agente — el mismo
@@ -81,7 +81,9 @@ function historialAInteracciones(caso: EvalCase) {
 export async function runCase(
   caso: EvalCase,
   anthropic: AnthropicService,
+  opciones: RunOptions = {},
 ): Promise<EvalRun> {
+  const sin = new Set(opciones.sin ?? []);
   const registro: Registro = { acciones: [], mensajes: [], escalado: false };
   const interacciones = historialAInteracciones(caso);
   let systemCapturado = '';
@@ -131,7 +133,11 @@ export async function runCase(
         create: async () => ({ id: 'conv-1' }),
       },
       interaction: {
-        findMany: async () => [...interacciones].reverse(),
+        // Respeta el `take` de la consulta, como Postgres: sin eso un caso
+        // largo le mostraría al modelo todo el historial y la memoria no
+        // tendría nada que demostrar.
+        findMany: async (args?: { take?: number }) =>
+          [...interacciones].reverse().slice(0, args?.take),
         findFirst: async () => null,
         count: async () => interacciones.length,
       },
@@ -162,13 +168,17 @@ export async function runCase(
     findSimilar: async () => [],
   } as unknown as ExampleLibraryService;
 
+  // Ablación: una pieza apagada es como si nunca se hubiera guardado.
   const memory = {
     get: async () => ({
-      summary: caso.memoria?.summary ?? null,
-      facts: (caso.memoria?.facts ?? []).map((f) => ({
-        ...f,
-        registradoEn: new Date().toISOString(),
-      })),
+      summary: sin.has('resumen') ? null : (caso.memoria?.summary ?? null),
+      facts: sin.has('hechos')
+        ? []
+        : (caso.memoria?.facts ?? []).map((f) => ({
+            importancia: 5,
+            ...f,
+            registradoEn: new Date().toISOString(),
+          })),
       updatedAt: null,
     }),
     rememberFact: async (_id: string, clave: string, valor: string) => [

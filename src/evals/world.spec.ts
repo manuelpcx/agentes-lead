@@ -143,6 +143,98 @@ describe('runCase', () => {
   });
 });
 
+describe('runCase — ventana de historial y ablación', () => {
+  /** Un caso con `n` turnos; el primero lleva una marca para buscarlo. */
+  function casoLargo(n: number): EvalCase {
+    const historial: EvalCase['historial'] = [];
+    for (let i = 0; i < n; i++) {
+      historial.push({
+        de: i % 2 === 0 ? 'cliente' : 'agente',
+        texto: i === 0 ? 'MENSAJE-MAS-ANTIGUO' : `mensaje ${i}`,
+        haceMinutos: (n - i) * 10,
+      });
+    }
+    historial.push({ de: 'cliente', texto: 'ULTIMO-MENSAJE', haceMinutos: 1 });
+    return { ...CASO_BASE, historial };
+  }
+
+  function textoVisto(createMessage: jest.Mock): string {
+    return createMessage.mock.calls[0][0].messages
+      .map((m: { content: string }) => m.content)
+      .join('\n');
+  }
+
+  it('como en producción, el modelo solo ve las últimas 30 interacciones', async () => {
+    const { anthropic, createMessage } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    await runCase(casoLargo(40), anthropic);
+
+    const visto = textoVisto(createMessage);
+    expect(visto).toContain('ULTIMO-MENSAJE');
+    expect(visto).not.toContain('MENSAJE-MAS-ANTIGUO');
+  });
+
+  const conMemoria: EvalCase = {
+    ...CASO_BASE,
+    memoria: {
+      summary: 'Volvió buscando ampliar su plan.',
+      facts: [{ clave: 'objecion', valor: 'el plazo' }],
+    },
+  };
+
+  it('sin hechos: el prompt trae el resumen pero no los hechos', async () => {
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(conMemoria, anthropic, { sin: ['hechos'] });
+
+    expect(run.system).toContain('Volvió buscando ampliar su plan.');
+    expect(run.system).not.toContain('objecion: el plazo');
+  });
+
+  it('sin resumen: el prompt trae los hechos pero no el resumen', async () => {
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(conMemoria, anthropic, { sin: ['resumen'] });
+
+    expect(run.system).not.toContain('Volvió buscando ampliar su plan.');
+    expect(run.system).toContain('objecion: el plazo');
+  });
+});
+
+describe('casos largos del banco', () => {
+  const largos = CASOS.filter((c) => c.id.startsWith('memoria-larga'));
+
+  it('hay al menos tres', () => {
+    expect(largos.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(largos.map((c) => [c.id, c] as const))(
+    '%s deja su dato clave fuera de la ventana: solo vuelve por la memoria',
+    async (_id, caso) => {
+      const { anthropic, createMessage } = scripted([
+        toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+      ]);
+
+      const run = await runCase(caso, anthropic);
+
+      const visto = createMessage.mock.calls[0][0].messages
+        .map((m: { content: string }) => m.content)
+        .join('\n');
+      const primero = caso.historial.find((t) => t.de === 'cliente');
+      expect(visto).not.toContain(primero?.texto);
+      for (const f of caso.memoria?.facts ?? []) {
+        expect(run.system).toContain(f.valor);
+      }
+    },
+  );
+});
+
 describe('checksDeterministas', () => {
   const run = {
     acciones: [{ tool: 'consultarDato', input: {} }],

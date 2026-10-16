@@ -123,6 +123,18 @@ describe('AgentRouterService.route (canal → estado → clasificador)', () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
+  it('el clasificador corre en el modelo de tareas de fondo', async () => {
+    // Elegir entre pocos agentes es una tarea simple: no necesita el modelo
+    // que conversa.
+    const { service, complete } = build(
+      [agent({ id: 'ventas' }), agent({ id: 'soporte' })],
+      true,
+    );
+    complete.mockResolvedValue('0');
+    await service.route({ message: 'quiero cotizar' });
+    expect(complete.mock.calls[0][2]).toEqual({ background: true });
+  });
+
   it('si el clasificador falla, cae al desempate determinista', async () => {
     const { service, complete } = build(
       [agent({ id: 'ventas', isDefault: true }), agent({ id: 'soporte' })],

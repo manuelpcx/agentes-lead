@@ -4,12 +4,13 @@ import { TenantContext } from '../common/tenant/tenant-context';
 import { ProviderHealthService } from '../alerts/provider-health.service';
 import { AnthropicService } from './anthropic.service';
 
-function build() {
+function build(extra: Record<string, unknown> = {}) {
   const env: Record<string, unknown> = {
     ANTHROPIC_API_KEY: 'sk-test',
     ANTHROPIC_MODEL: 'claude-test',
     ANTHROPIC_EFFORT: 'medium',
     ANTHROPIC_MAX_TOKENS: 1000,
+    ...extra,
   };
   const config = { get: (k: string) => env[k] } as unknown as ConfigService<
     EnvVars,
@@ -58,5 +59,35 @@ describe('AnthropicService y la salud del proveedor', () => {
       },
       expect.any(Function),
     );
+  });
+});
+
+describe('AnthropicService — modelo para tareas de fondo', () => {
+  it('una tarea de fondo usa ANTHROPIC_BACKGROUND_MODEL', async () => {
+    const h = build({ ANTHROPIC_BACKGROUND_MODEL: 'claude-barato' });
+
+    await h.service.complete('s', 'u', { background: true });
+
+    expect(h.create.mock.calls[0][0].model).toBe('claude-barato');
+  });
+
+  it('sin modelo de fondo configurado, usa el principal', async () => {
+    const h = build();
+
+    await h.service.complete('s', 'u', { background: true });
+
+    expect(h.create.mock.calls[0][0].model).toBe('claude-test');
+  });
+
+  it('lo que no es de fondo sigue en el modelo principal', async () => {
+    const h = build({ ANTHROPIC_BACKGROUND_MODEL: 'claude-barato' });
+
+    await h.service.complete('s', 'u');
+    await h.service.createMessage({ system: 's', messages: [], tools: [] });
+
+    expect(h.create.mock.calls.map((c) => c[0].model)).toEqual([
+      'claude-test',
+      'claude-test',
+    ]);
   });
 });

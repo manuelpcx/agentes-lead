@@ -66,14 +66,18 @@ export class LeadMemoryService {
     };
   }
 
-  /** Guarda (o reemplaza) un hecho. Devuelve la lista resultante. */
+  /**
+   * Guarda (o reemplaza) un hecho. Devuelve la lista resultante, que puede no
+   * incluirlo si la memoria estaba llena de hechos más importantes.
+   */
   async rememberFact(
     leadId: string,
     clave: string,
     valor: string,
+    importancia?: number,
   ): Promise<MemoryFact[]> {
     const actuales = parseFacts(await this.rawFacts(leadId));
-    const facts = upsertFact(actuales, clave, valor);
+    const facts = upsertFact(actuales, clave, valor, importancia);
     await this.save(leadId, { facts });
     return facts;
   }
@@ -158,6 +162,7 @@ export class LeadMemoryService {
         SUMMARY_SYSTEM,
         `LO QUE YA SE SABÍA:\n${previo}\n\nHECHOS REGISTRADOS:\n${hechos}\n\n` +
           `CONVERSACIÓN RECIENTE:\n${transcripcion}`,
+        { background: true },
       );
       if (!resumen.trim()) {
         return;

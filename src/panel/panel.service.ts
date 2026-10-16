@@ -14,6 +14,7 @@ import { AppointmentsService } from '../appointments/appointments.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { AuditService } from '../audit/audit.service';
 import { LeadMemoryService } from '../memory/lead-memory.service';
+import { OPERATOR_IMPORTANCE } from '../memory/lead-memory';
 import { CreateLeadDto, UpdateLeadDto } from './dto/lead.dto';
 import { UpdateLeadMemoryDto } from './dto/lead-memory.dto';
 import { IncomingLeadDto } from '../webhooks/dto/incoming-lead.dto';
@@ -318,7 +319,12 @@ export class PanelService {
       await this.memory.forgetFact(leadId, dto.olvidar);
     }
     if (dto.clave && dto.valor) {
-      await this.memory.rememberFact(leadId, dto.clave, dto.valor);
+      await this.memory.rememberFact(
+        leadId,
+        dto.clave,
+        dto.valor,
+        OPERATOR_IMPORTANCE,
+      );
     }
 
     const despues = await this.memory.get(leadId);

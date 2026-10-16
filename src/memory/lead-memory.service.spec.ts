@@ -261,4 +261,17 @@ describe('LeadMemoryService.refreshSummary', () => {
 
     expect(complete.mock.calls[0][0]).toContain('NO incluyas cifras exactas');
   });
+
+  it('resume con el modelo de tareas de fondo', async () => {
+    // Corre cada 10 interacciones de cada lead: es el mayor volumen de
+    // llamadas fuera del turno.
+    const { service, complete } = buildHarness({
+      row: {},
+      interactions: interacciones,
+    });
+
+    await enTenant(() => service.refreshSummary('lead-1'));
+
+    expect(complete.mock.calls[0][2]).toEqual({ background: true });
+  });
 });
