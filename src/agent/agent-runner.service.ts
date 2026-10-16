@@ -33,6 +33,15 @@ export interface TurnOutcome {
   derived: boolean;
 }
 
+/**
+ * Recordatorio para el modo `auto`: el modelo cerró en texto sin haberle
+ * respondido a nadie. Va una sola vez por turno.
+ */
+const TOOL_REMINDER =
+  'Tu texto no le llega al cliente: solo le llega lo que envías con ' +
+  '"enviarWhatsApp" o "enviarCorreo". Respóndele ahora con una de esas ' +
+  'herramientas, o usa "escalarAHumano" si no puedes ayudarle.';
+
 /** Opciones de un turno de seguimiento. */
 export interface FollowUpOptions {
   /**
@@ -47,6 +56,13 @@ export class AgentRunner {
   private readonly logger = new Logger(AgentRunner.name);
   private readonly maxIterations: number;
   private readonly timeoutMs: number;
+  /**
+   * Cómo se asegura que el turno termine respondiendo. `any` fuerza alguna
+   * herramienta mientras no se haya respondido; `auto` deja elegir al modelo
+   * y, si cierra en texto, le recuerda una vez que use una herramienta. Los
+   * modelos nuevos (Sonnet 5.5, Opus 5.5, Fable 5.1) rechazan `any` con 400.
+   */
+  private readonly toolChoice: 'any' | 'auto';
 
   constructor(
     config: ConfigService<EnvVars, true>,
@@ -65,6 +81,8 @@ export class AgentRunner {
   ) {
     this.maxIterations = config.get('AGENT_MAX_ITERATIONS', { infer: true });
     this.timeoutMs = config.get('AGENT_TIMEOUT_MS', { infer: true });
+    this.toolChoice =
+      config.get('ANTHROPIC_TOOL_CHOICE', { infer: true }) ?? 'any';
   }
 
   /**
@@ -191,6 +209,7 @@ export class AgentRunner {
 
     const deadline = Date.now() + this.timeoutMs;
     let convo = messages;
+    let recordado = false;
 
     for (let i = 0; i < this.maxIterations; i++) {
       if (Date.now() > deadline) {
@@ -205,16 +224,41 @@ export class AgentRunner {
       // de varios silencios que vimos — el modelo pedía un dato con una tool
       // y después no lo relayaba con enviarWhatsApp). Una vez resuelto, se
       // vuelve a 'auto' para permitir que el turno cierre de forma natural.
+      // En modo `auto` nunca se fuerza (ver `toolChoice`).
       const resolved =
         ctx.messageSent || ctx.escalated || (ctx.derived ?? false);
+      const forzar = !resolved && this.toolChoice === 'any';
       const response = await this.anthropic.createMessage({
         system,
         messages: convo,
         tools: toolDefs,
-        toolChoice: resolved ? undefined : { type: 'any' },
+        toolChoice: forzar ? { type: 'any' } : undefined,
       });
 
       if (response.stop_reason !== 'tool_use') {
+        // En `auto` el modelo puede cerrar en texto sin haberle respondido a
+        // nadie (con `any` eso no pasa). Se le recuerda UNA vez; si insiste,
+        // el turno termina y la red de seguridad de abajo escala con aviso.
+        // Solo ante un cierre normal: una negativa o un corte por tokens no
+        // se arreglan insistiendo.
+        if (
+          !resolved &&
+          this.toolChoice === 'auto' &&
+          response.stop_reason === 'end_turn' &&
+          !recordado
+        ) {
+          recordado = true;
+          if (response.content.length > 0) {
+            convo = [
+              ...convo,
+              { role: 'assistant', content: response.content },
+            ];
+          } else {
+            convo = [...convo];
+          }
+          appendSystemInstruction(convo, TOOL_REMINDER);
+          continue;
+        }
         break; // fin del turno (el texto suelto es interno; al cliente se le
         // habla por la herramienta enviarWhatsApp)
       }

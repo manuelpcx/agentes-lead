@@ -177,6 +177,28 @@ describe('runCase — datos del caso para el juez', () => {
   });
 });
 
+describe('runCase — tool_choice', () => {
+  it('por defecto fuerza alguna herramienta, como producción hoy', async () => {
+    const { anthropic, createMessage } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    await runCase(CASO_BASE, anthropic);
+
+    expect(createMessage.mock.calls[0][0].toolChoice).toEqual({ type: 'any' });
+  });
+
+  it('con toolChoice auto corre el turno sin forzar herramientas', async () => {
+    const { anthropic, createMessage } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    await runCase(CASO_BASE, anthropic, { toolChoice: 'auto' });
+
+    expect(createMessage.mock.calls[0][0].toolChoice).toBeUndefined();
+  });
+});
+
 describe('runCase — llamadas', () => {
   it('el agente puede llamar en el mundo, y la llamada queda registrada', async () => {
     // Sin la herramienta, un agente que quiere llamar escala a una persona y

@@ -73,6 +73,8 @@ export const PIEZAS_MEMORIA: readonly PiezaMemoria[] = ['resumen', 'hechos'];
 export interface RunOptions {
   /** Piezas de la memoria que el agente NO recibe en esta corrida. */
   sin?: PiezaMemoria[];
+  /** Igual que `ANTHROPIC_TOOL_CHOICE` en producción. Por defecto `any`. */
+  toolChoice?: 'any' | 'auto';
 }
 
 /** Qué hizo el agente durante el turno. */

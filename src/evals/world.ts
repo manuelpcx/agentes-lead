@@ -291,7 +291,9 @@ export async function runCase(
         ? 8
         : key === 'AGENT_TIMEOUT_MS'
           ? 120_000
-          : undefined,
+          : key === 'ANTHROPIC_TOOL_CHOICE'
+            ? (opciones.toolChoice ?? 'any')
+            : undefined,
   } as unknown as ConfigService<EnvVars, true>;
 
   const memoryQueue = {

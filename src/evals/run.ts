@@ -276,6 +276,14 @@ async function main(): Promise<void> {
   }
 
   const condiciones = condicionesPara(args);
+  // Igual que en producción: se lee del entorno. Para comparar modelos basta
+  // anteponer las variables (`ANTHROPIC_MODEL=… ANTHROPIC_TOOL_CHOICE=auto`).
+  const toolChoice =
+    process.env.ANTHROPIC_TOOL_CHOICE === 'auto' ? 'auto' : 'any';
+  console.log(
+    `Modelo: ${process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5'} · ` +
+      `tool_choice: ${toolChoice}\n`,
+  );
   const totales: Array<{ nombre: string; texto: string; todoOk: boolean }> = [];
   const veces =
     args.repeticiones > 1 ? `, ${args.repeticiones} veces cada uno` : '';
@@ -287,7 +295,9 @@ async function main(): Promise<void> {
     for (const caso of casos) {
       const corridas: EvalResult[] = [];
       for (let i = 0; i < args.repeticiones; i++) {
-        corridas.push(await evaluar(caso, anthropic, { sin: condicion.sin }));
+        corridas.push(
+          await evaluar(caso, anthropic, { sin: condicion.sin, toolChoice }),
+        );
       }
       const agregado = agregarCorridas(corridas);
       agregados.push(agregado);

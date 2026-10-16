@@ -53,7 +53,11 @@ function endTurn() {
 
 function buildHarness(
   configured = true,
-  opts: { voice?: VoiceService; extraTools?: AgentTool[] } = {},
+  opts: {
+    voice?: VoiceService;
+    extraTools?: AgentTool[];
+    toolChoice?: 'any' | 'auto';
+  } = {},
 ) {
   const config = {
     get: (key: string) =>
@@ -61,7 +65,9 @@ function buildHarness(
         ? 6
         : key === 'AGENT_TIMEOUT_MS'
           ? 60000
-          : undefined,
+          : key === 'ANTHROPIC_TOOL_CHOICE'
+            ? opts.toolChoice
+            : undefined,
   } as unknown as ConfigService<EnvVars, true>;
 
   const createMessage = jest.fn();
@@ -283,6 +289,53 @@ describe('AgentRunner.runTurn', () => {
 
     expect(h.createMessage).toHaveBeenCalledTimes(1);
     expect(h.leads.escalateToHuman).toHaveBeenCalledWith('lead-1');
+  });
+
+  describe('con ANTHROPIC_TOOL_CHOICE=auto (modelos que no aceptan forzar herramientas)', () => {
+    // Sonnet 5.5, Opus 5.5 y Fable 5.1 responden 400 a tool_choice "any".
+    it('no fuerza el uso de herramientas', async () => {
+      const h = buildHarness(true, { toolChoice: 'auto' });
+      h.createMessage
+        .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'hola' }))
+        .mockResolvedValue(endTurn());
+
+      await inTenant(() => h.runner.runTurn('lead-1'));
+
+      expect(h.createMessage.mock.calls[0][0].toolChoice).toBeUndefined();
+    });
+
+    it('si termina en texto sin haber respondido, le recuerda una vez que use una herramienta', async () => {
+      const h = buildHarness(true, { toolChoice: 'auto' });
+      h.createMessage
+        .mockResolvedValueOnce(endTurn())
+        .mockResolvedValueOnce(toolUse('enviarWhatsApp', { mensaje: 'hola' }))
+        .mockResolvedValue(endTurn());
+
+      await inTenant(() => h.runner.runTurn('lead-1'));
+
+      const segunda = h.createMessage.mock.calls[1][0].messages;
+      const recordatorio = segunda[segunda.length - 1];
+      expect(recordatorio.role).toBe('user');
+      expect(recordatorio.content).toContain('INSTRUCCIÓN DEL SISTEMA');
+      expect(recordatorio.content).toContain('enviarWhatsApp');
+      expect(h.enviar.execute).toHaveBeenCalledTimes(1);
+      // Respondió con la herramienta: no hace falta el aviso de respaldo.
+      expect(h.whatsapp.send).not.toHaveBeenCalled();
+    });
+
+    it('si vuelve a terminar en texto, no insiste: escala con el aviso', async () => {
+      const h = buildHarness(true, { toolChoice: 'auto' });
+      h.createMessage.mockResolvedValue(endTurn());
+
+      await inTenant(() => h.runner.runTurn('lead-1'));
+
+      expect(h.createMessage).toHaveBeenCalledTimes(2);
+      expect(h.leads.escalateToHuman).toHaveBeenCalledWith('lead-1');
+      expect(h.whatsapp.send).toHaveBeenCalledWith(
+        '+56911111111',
+        FALLBACK_ESCALATION_MESSAGE,
+      );
+    });
   });
 
   it('degrada a escalamiento cuando no hay LLM configurado', async () => {

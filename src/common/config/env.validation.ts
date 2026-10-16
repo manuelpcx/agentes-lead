@@ -52,6 +52,10 @@ const envSchema = z
     // Vacío = el mismo ANTHROPIC_MODEL. Debe aceptar `effort` (p. ej.
     // claude-haiku-5-5); Haiku 4.5 no lo acepta y respondería 400.
     ANTHROPIC_BACKGROUND_MODEL: z.string().optional(),
+    // Cómo se asegura que el turno responda: 'any' fuerza alguna herramienta
+    // (hoy); 'auto' deja elegir al modelo y le recuerda una vez si cierra en
+    // texto. Sonnet 5.5, Opus 5.5 y Fable 5.1 EXIGEN 'auto' (rechazan 'any').
+    ANTHROPIC_TOOL_CHOICE: z.enum(['any', 'auto']).default('any'),
     ANTHROPIC_EFFORT: z
       .enum(['low', 'medium', 'high', 'xhigh', 'max'])
       .default('medium'),
