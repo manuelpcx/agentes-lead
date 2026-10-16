@@ -332,7 +332,9 @@ export class ContextBuilder {
    * turno, así que rige para todos los tipos de agente y también para los que
    * ya existían (los prompts por defecto se copian al crear el agente). Nombra
    * la videollamada porque el banco mostró al agente respetando "no me llames"
-   * al pie de la letra y ofreciendo una videollamada.
+   * al pie de la letra y ofreciendo una videollamada; y prohíbe dejar la
+   * opción abierta porque, ya sin videollamadas, 1 de 5 corridas cerraba con
+   * "si prefieres que te llame, dime".
    */
   private channelPolicy(companyWhatsApp?: string | null): string {
     const destino = companyWhatsApp
@@ -349,8 +351,10 @@ export class ContextBuilder {
       '"respondan este correo".\n' +
       'Si la persona pidió que no la llamen (lo dice el historial o tu memoria), ' +
       'eso incluye videollamadas y cualquier reunión por voz o video: no las ' +
-      'ofrezcas ni uses "iniciarLlamada". Sigue solo por escrito hasta que ella ' +
-      'misma pida que la llamen.'
+      'ofrezcas ni uses "iniciarLlamada". Tampoco dejes la opción abierta ' +
+      '("si prefieres que te llame, avísame") ni digas que sería mejor por ' +
+      'teléfono: ofrece solo el canal escrito. Sigue así hasta que ella misma ' +
+      'pida que la llamen.'
     );
   }
 
