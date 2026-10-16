@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import type { EnvVars } from '../common/config/env.validation';
 import { AnthropicService } from '../llm/anthropic.service';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 import { CASOS } from './cases';
 import { checksDeterministas, juzgar } from './judge';
 import { EvalCase, EvalResult } from './types';
@@ -32,7 +33,12 @@ function buildAnthropic(): AnthropicService {
   const config = {
     get: (key: string) => env[key],
   } as unknown as ConfigService<EnvVars, true>;
-  return new AnthropicService(config);
+  // Las evaluaciones corren sin base de datos ni Redis: no se registra la
+  // salud del proveedor (alertas), solo se ejecuta la llamada.
+  const sinAlertas = {
+    observe: <T>(_target: unknown, send: () => Promise<T>) => send(),
+  } as unknown as ProviderHealthService;
+  return new AnthropicService(config, sinAlertas);
 }
 
 /** Corre un caso completo: turno + comprobaciones + juez. */

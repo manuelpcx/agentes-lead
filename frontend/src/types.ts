@@ -341,3 +341,49 @@ export interface ApiKeySummary {
 export interface CreatedApiKey extends ApiKeySummary {
   key: string;
 }
+
+/** Canal cuyo proveedor se vigila (alertas de proveedores). */
+export type AlertService = 'whatsapp' | 'email' | 'voice' | 'llm';
+
+export interface OwnAlert {
+  id: string;
+  service: AlertService;
+  provider: string;
+  providerLabel: string;
+  reason: string;
+  hint: string | null;
+  openedAt: string;
+  failureCount: number;
+}
+
+/** Sin detalle para un usuario normal; con detalle para un administrador. */
+export interface PlatformAlert {
+  id: string;
+  service: AlertService;
+  openedAt: string;
+  providerLabel?: string;
+  reason?: string;
+  hint?: string | null;
+  failureCount?: number;
+}
+
+export interface PanelAlerts {
+  own: OwnAlert[];
+  platform: PlatformAlert[];
+}
+
+export interface PlatformIncidentRow {
+  id: string;
+  scope: 'company' | 'platform';
+  service: AlertService;
+  provider: string;
+  providerLabel: string;
+  companyName: string | null;
+  kind: string;
+  reason: string;
+  hint: string | null;
+  openedAt: string;
+  resolvedAt: string | null;
+  failureCount: number;
+  affectedCompanies: number;
+}

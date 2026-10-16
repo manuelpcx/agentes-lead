@@ -7,6 +7,7 @@ import { ResendEmailProvider } from './providers/resend.provider';
 import { byoEmailProvider } from './byo-email';
 import { ManagedEmailService } from './managed-email.service';
 import { EmailQuotaService } from './email-quota.service';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 
 /**
  * Fachada de envío de correo de una empresa (la del contexto activo). Por
@@ -26,12 +27,22 @@ export class EmailService {
     private readonly credentials: CredentialsService,
     private readonly managed: ManagedEmailService,
     private readonly quota: EmailQuotaService,
+    private readonly health: ProviderHealthService,
   ) {}
 
   async send(message: EmailMessage): Promise<void> {
-    const byo = byoEmailProvider(await this.credentials.get('email'));
-    if (byo) {
-      return byo.send(message);
+    const cred = await this.credentials.get('email');
+    const byo = byoEmailProvider(cred);
+    if (byo && cred) {
+      return this.health.observe(
+        {
+          service: 'email',
+          provider: cred.provider,
+          scope: 'company',
+          companyId: TenantContext.getCompanyId(),
+        },
+        () => byo.send(message),
+      );
     }
 
     const companyId = TenantContext.requireCompanyId();
@@ -51,12 +62,16 @@ export class EmailService {
           'envió. Se reanuda mañana.',
       );
     }
-    await new ResendEmailProvider(apiKey, sender.from).send({
-      ...message,
-      replyTo: message.replyTo ?? sender.replyTo,
-      // La empresa en cada envío: los eventos de Resend (rebotes, quejas)
-      // vuelven con estas etiquetas y así se sabe de quién son.
-      tags: { ...message.tags, company_id: companyId },
-    });
+    await this.health.observe(
+      { service: 'email', provider: 'resend', scope: 'platform', companyId },
+      () =>
+        new ResendEmailProvider(apiKey, sender.from).send({
+          ...message,
+          replyTo: message.replyTo ?? sender.replyTo,
+          // La empresa en cada envío: los eventos de Resend (rebotes, quejas)
+          // vuelven con estas etiquetas y así se sabe de quién son.
+          tags: { ...message.tags, company_id: companyId },
+        }),
+    );
   }
 }

@@ -1,4 +1,5 @@
 import { whatsappSendError } from './send-error';
+import { ProviderError } from '../../alerts/provider-error';
 
 describe('whatsappSendError', () => {
   it('traduce el motivo conocido de YCloud (sin saldo)', () => {
@@ -39,5 +40,14 @@ describe('whatsappSendError', () => {
     expect(
       whatsappSendError('YCloud', 502, '<html>Bad gateway</html>').message,
     ).toBe('Fallo al enviar WhatsApp (YCloud 502)');
+  });
+
+  it('devuelve un ProviderError con el código HTTP y el del proveedor', () => {
+    const body = JSON.stringify({
+      error: { status: 403, code: 'BALANCE_INSUFFICIENT', message: 'x' },
+    });
+    const e = whatsappSendError('YCloud', 403, body);
+    expect(e).toBeInstanceOf(ProviderError);
+    expect(e).toMatchObject({ status: 403, code: 'BALANCE_INSUFFICIENT' });
   });
 });

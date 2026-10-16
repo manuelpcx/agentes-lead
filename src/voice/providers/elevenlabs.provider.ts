@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ProviderError } from '../../alerts/provider-error';
 import { StartCallParams, VoiceProvider } from './voice-provider.interface';
 
 export const ELEVENLABS_API = 'https://api.elevenlabs.io';
@@ -184,9 +185,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
         `ElevenLabs respondió ${response.status}: ${detail.slice(0, 300)}`,
       );
       // El detalle viaja en el mensaje para verlo en "Acciones del agente".
-      throw new Error(
+      throw new ProviderError(
         `Fallo al iniciar la llamada (ElevenLabs ${response.status}): ` +
           `${detail.slice(0, 300) || '(sin detalle)'}`,
+        response.status,
       );
     }
 
@@ -197,8 +199,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       callSid?: string | null;
       sip_call_id?: string | null;
     };
+    // Sin código HTTP; el texto puede traer el rechazo de Twilio y el
+    // clasificador de alertas lo reconoce.
     if (json.success === false) {
-      throw new Error(
+      throw new ProviderError(
         `Fallo al iniciar la llamada (ElevenLabs): ${json.message ?? '(sin detalle)'}`,
       );
     }
@@ -342,9 +346,10 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
       );
       if (!res.ok) {
         const detail = await res.text().catch(() => '');
-        throw new Error(
+        throw new ProviderError(
           `Fallo al iniciar la llamada (ElevenLabs ${res.status} al leer el ` +
             `número ${id}): ${detail.slice(0, 200) || '(sin detalle)'}`,
+          res.status,
         );
       }
       tipo = String(((await res.json()) as { provider?: string }).provider);

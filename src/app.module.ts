@@ -25,6 +25,7 @@ import { AgentActionsModule } from './agent-actions/agent-actions.module';
 import { AgentModule } from './agent/agent.module';
 import { FollowupModule } from './followup/followup.module';
 import { EmailModule } from './email/email.module';
+import { AlertsModule } from './alerts/alerts.module';
 import { VoiceModule } from './voice/voice.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { CrmEventsModule } from './crm/crm-events.module';
@@ -105,6 +106,7 @@ import { HealthModule } from './health/health.module';
     PromptsModule,
     MemoryModule,
     EmailModule,
+    AlertsModule,
     VoiceModule,
     IntegrationsModule,
     CrmEventsModule,

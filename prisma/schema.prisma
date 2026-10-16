@@ -139,6 +139,7 @@ model Company {
   apiKeys            ApiKey[]
   emailDomain        EmailDomain?
   voiceCalls         VoiceCall[]
+  providerIncidents  ProviderIncident[]
 
   @@index([isActive])
 }
@@ -695,4 +696,37 @@ model StructuredFact {
 
   @@index([companyId, key, isActive])
   @@index([companyId, category])
+}
+
+/// Incidente de un proveedor externo (WhatsApp, correo, voz, IA): se abre
+/// cuando los envíos por una cuenta empiezan a fallar y se cierra con el
+/// primer envío exitoso. Ver `src/alerts/`.
+model ProviderIncident {
+  id                 String    @id @default(uuid()) @db.Uuid
+  /// Empresa dueña de la cuenta; null = cuenta de la plataforma.
+  companyId          String?   @db.Uuid
+  scope              String
+  service            String
+  provider           String
+  kind               String
+  reason             String
+  hint               String?
+  failureCount       Int       @default(1)
+  /// Empresas que sufrieron el incidente (relevante en los de plataforma).
+  affectedCompanyIds String[]  @db.Uuid
+  openedAt           DateTime  @default(now())
+  lastFailureAt      DateTime  @default(now())
+  resolvedAt         DateTime?
+  openNotifiedAt     DateTime?
+  /// Clave permanente (empresa o plataforma + canal + proveedor).
+  key                String
+  /// Copia de `key` mientras está abierto; null al cerrarse. Único: un solo
+  /// incidente abierto por clave (Postgres permite varios NULL).
+  openKey            String?   @unique
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, resolvedAt])
+  @@index([resolvedAt])
+  @@index([key, openedAt])
 }

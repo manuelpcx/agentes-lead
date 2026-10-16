@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ProviderError } from '../../alerts/provider-error';
 import { StartCallParams, VoiceProvider } from './voice-provider.interface';
 
 const VAPI_URL = 'https://api.vapi.ai/call';
@@ -39,7 +40,10 @@ export class VapiVoiceProvider implements VoiceProvider {
       this.logger.error(
         `Vapi respondió ${response.status}: ${detail.slice(0, 300)}`,
       );
-      throw new Error(`Fallo al iniciar la llamada (Vapi ${response.status})`);
+      throw new ProviderError(
+        `Fallo al iniciar la llamada (Vapi ${response.status})`,
+        response.status,
+      );
     }
 
     const json = (await response.json()) as { id?: string };

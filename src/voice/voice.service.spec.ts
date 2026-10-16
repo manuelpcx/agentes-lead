@@ -4,6 +4,7 @@ import type { EnvVars } from '../common/config/env.validation';
 import { TenantContext } from '../common/tenant/tenant-context';
 import { CredentialsService } from '../integrations/credentials.service';
 import { VoiceService } from './voice.service';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 import { VoiceUsageCheck, VoiceUsageService } from './voice-usage.service';
 import { resetElevenLabsCache } from './providers/elevenlabs.provider';
 
@@ -36,13 +37,18 @@ function build(opts: {
     }),
     recordStart: jest.fn().mockResolvedValue(undefined),
   };
+  const health = {
+    observe: jest.fn((_t: unknown, send: () => Promise<unknown>) => send()),
+  };
   return {
     service: new VoiceService(
       credentials,
       usage as unknown as VoiceUsageService,
       config,
+      health as unknown as ProviderHealthService,
     ),
     usage,
+    health,
   };
 }
 
@@ -185,5 +191,46 @@ describe('VoiceService — cuenta propia y sin voz', () => {
       canCall: false,
     });
     expect(h.service.managedAvailable).toBe(false);
+  });
+});
+
+describe('VoiceService y la salud del proveedor', () => {
+  beforeEach(() => resetElevenLabsCache());
+
+  it('la voz gestionada se registra como cuenta de la plataforma', async () => {
+    mockFetch(
+      res(200, { provider: 'twilio' }),
+      res(200, { success: true, conversation_id: 'conv_1' }),
+    );
+    const h = build({});
+    await run(() => h.service.startCall(PARAMS));
+    expect(h.health.observe).toHaveBeenCalledWith(
+      {
+        service: 'voice',
+        provider: 'elevenlabs',
+        scope: 'platform',
+        companyId: 'c1',
+      },
+      expect.any(Function),
+    );
+  });
+
+  it('sin minutos no se llama ni cuenta como fallo del proveedor', async () => {
+    const h = build({
+      check: { allowed: false, reason: 'Se acabaron los minutos.' },
+    });
+    await expect(run(() => h.service.startCall(PARAMS))).rejects.toThrow();
+    expect(h.health.observe).not.toHaveBeenCalled();
+  });
+  it('la cuenta propia se registra como cuenta de la empresa', async () => {
+    mockFetch(res(200, { id: 'call_1' }));
+    const h = build({
+      byo: { provider: 'vapi', isActive: true, secret: 'k', config: {} },
+    });
+    await run(() => h.service.startCall(PARAMS));
+    expect(h.health.observe).toHaveBeenCalledWith(
+      { service: 'voice', provider: 'vapi', scope: 'company', companyId: 'c1' },
+      expect.any(Function),
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { TenantContext } from '../common/tenant/tenant-context';
 import { CredentialsService } from '../integrations/credentials.service';
 import { EmailService } from './email.service';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 import { EmailQuotaService } from './email-quota.service';
 import { ManagedEmailService, PlatformSender } from './managed-email.service';
 
@@ -24,9 +25,18 @@ function build(opts: {
       limit: 500,
     }),
   } as unknown as EmailQuotaService;
+  const health = {
+    observe: jest.fn((_t: unknown, send: () => Promise<unknown>) => send()),
+  };
   return {
-    service: new EmailService(credentials, managed, quota),
+    service: new EmailService(
+      credentials,
+      managed,
+      quota,
+      health as unknown as ProviderHealthService,
+    ),
     quota,
+    health,
   };
 }
 
@@ -119,5 +129,57 @@ describe('EmailService', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(h.quota.consume).not.toHaveBeenCalled();
+  });
+});
+
+describe('EmailService y la salud del proveedor', () => {
+  it('registra la salud: cuenta propia como empresa, gestionado como plataforma', async () => {
+    mockFetch();
+    const propia = build({
+      byo: {
+        provider: 'resend',
+        isActive: true,
+        secret: 're_propia',
+        config: { from: 'a@b.cl' },
+      },
+    });
+    await run(() => propia.service.send(MENSAJE));
+    expect(propia.health.observe).toHaveBeenCalledWith(
+      {
+        service: 'email',
+        provider: 'resend',
+        scope: 'company',
+        companyId: 'c1',
+      },
+      expect.any(Function),
+    );
+
+    const gestionado = build({
+      apiKey: 're_plataforma',
+      sender: { mode: 'shared', from: 'n@plataforma.cl', replyTo: undefined },
+    });
+    await run(() => gestionado.service.send(MENSAJE));
+    expect(gestionado.health.observe).toHaveBeenCalledWith(
+      {
+        service: 'email',
+        provider: 'resend',
+        scope: 'platform',
+        companyId: 'c1',
+      },
+      expect.any(Function),
+    );
+  });
+
+  it('el tope diario no cuenta como fallo del proveedor', async () => {
+    mockFetch();
+    const h = build({
+      apiKey: 're_plataforma',
+      sender: { mode: 'shared', from: 'n@plataforma.cl', replyTo: undefined },
+      allowed: false,
+    });
+    await expect(run(() => h.service.send(MENSAJE))).rejects.toThrow(
+      'Límite diario',
+    );
+    expect(h.health.observe).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
 import type { EnvVars } from '../common/config/env.validation';
+import { TenantContext } from '../common/tenant/tenant-context';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 
 /** Entrada de un turno del modelo: system + historial + herramientas. */
 export interface CreateMessageInput {
@@ -31,7 +33,10 @@ export class AnthropicService {
   private readonly effort: EnvVars['ANTHROPIC_EFFORT'];
   private readonly maxTokens: number;
 
-  constructor(config: ConfigService<EnvVars, true>) {
+  constructor(
+    config: ConfigService<EnvVars, true>,
+    private readonly health: ProviderHealthService,
+  ) {
     const apiKey = config.get('ANTHROPIC_API_KEY', { infer: true });
     this.model = config.get('ANTHROPIC_MODEL', { infer: true });
     this.effort = config.get('ANTHROPIC_EFFORT', { infer: true });
@@ -55,18 +60,21 @@ export class AnthropicService {
    * en el análisis batch de Fase 6. Lanza si no hay cliente.
    */
   async complete(system: string, userText: string): Promise<string> {
-    if (!this.client) {
+    const client = this.client;
+    if (!client) {
       throw new Error(
         'Anthropic no está configurado (falta ANTHROPIC_API_KEY)',
       );
     }
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      output_config: { effort: 'low' },
-      system,
-      messages: [{ role: 'user', content: userText }],
-    });
+    const response = await this.observe(() =>
+      client.messages.create({
+        model: this.model,
+        max_tokens: this.maxTokens,
+        output_config: { effort: 'low' },
+        system,
+        messages: [{ role: 'user', content: userText }],
+      }),
+    );
     return response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
       .map((b) => b.text)
@@ -76,19 +84,35 @@ export class AnthropicService {
 
   /** Ejecuta un turno del modelo con herramientas. Lanza si no hay cliente. */
   async createMessage(input: CreateMessageInput): Promise<Anthropic.Message> {
-    if (!this.client) {
+    const client = this.client;
+    if (!client) {
       throw new Error(
         'Anthropic no está configurado (falta ANTHROPIC_API_KEY)',
       );
     }
-    return this.client.messages.create({
-      model: this.model,
-      max_tokens: this.maxTokens,
-      output_config: { effort: this.effort },
-      system: input.system,
-      tools: input.tools,
-      tool_choice: input.toolChoice,
-      messages: input.messages,
-    });
+    return this.observe(() =>
+      client.messages.create({
+        model: this.model,
+        max_tokens: this.maxTokens,
+        output_config: { effort: this.effort },
+        system: input.system,
+        tools: input.tools,
+        tool_choice: input.toolChoice,
+        messages: input.messages,
+      }),
+    );
+  }
+
+  /** La IA siempre es cuenta de la plataforma. */
+  private observe<T>(send: () => Promise<T>): Promise<T> {
+    return this.health.observe(
+      {
+        service: 'llm',
+        provider: 'anthropic',
+        scope: 'platform',
+        companyId: TenantContext.getCompanyId(),
+      },
+      send,
+    );
   }
 }

@@ -13,6 +13,7 @@ import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CompaniesService } from '../companies/companies.service';
 import { PlatformEmailService } from '../email/platform-email.service';
+import { resolvePanelUrl } from '../common/config/panel-url';
 import { CreateUserDto } from './dto/create-user.dto';
 import { RegisterCompanyDto } from './dto/register-company.dto';
 
@@ -61,13 +62,8 @@ export class AuthService {
     private readonly platformEmail: PlatformEmailService,
     config: ConfigService<EnvVars, true>,
   ) {
-    // Para los enlaces de los correos: PANEL_URL, o el primer origen de CORS
-    // (que en producción es justamente el dominio del panel), o el dev server.
-    this.panelUrl = (
-      config.get('PANEL_URL', { infer: true }) ??
-      config.get('CORS_ORIGIN', { infer: true })?.split(',')[0]?.trim() ??
-      'http://localhost:5173'
-    ).replace(/\/+$/, '');
+    // Para los enlaces de los correos (mismo criterio que las alertas).
+    this.panelUrl = resolvePanelUrl(config);
   }
 
   /**

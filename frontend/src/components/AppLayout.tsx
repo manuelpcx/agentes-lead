@@ -5,6 +5,7 @@ import { useAuth } from '../store/auth';
 import { cn } from './ui';
 import { HelpChatWidget } from './HelpChatWidget';
 import { TourOverlay } from './TourOverlay';
+import { ProviderAlerts } from './ProviderAlerts';
 import { useTour } from '../store/tour';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { AccountModal } from './AccountModal';
@@ -291,6 +292,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
             ))}
           </nav>
         )}
+
+        {selectedCompanyId && <ProviderAlerts companyId={selectedCompanyId} />}
 
         {/* Contenido. El `h-full` del contenedor le da altura definida a la
             pantalla: sin él, el `h-full` de las vistas de chat se resuelve como

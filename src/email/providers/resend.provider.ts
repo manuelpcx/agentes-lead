@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { EmailMessage, EmailProvider } from './email-provider.interface';
+import { ProviderError } from '../../alerts/provider-error';
 
 /**
  * Proveedor de correo vía la API HTTP de Resend (https://resend.com). Se usa en
@@ -39,7 +40,11 @@ export class ResendEmailProvider implements EmailProvider {
       this.logger.error(
         `Resend respondió ${response.status}: ${detail.slice(0, 300)}`,
       );
-      throw new Error(`Fallo al enviar correo (Resend ${response.status})`);
+      throw new ProviderError(
+        `Fallo al enviar correo (Resend ${response.status})`,
+        response.status,
+        errorName(detail),
+      );
     }
   }
 }
@@ -59,4 +64,14 @@ export function resendTags(
       name: clean(name),
       value: clean(String(value)),
     }));
+}
+
+/** `name` del error de Resend (ej. "validation_error"), si viene. */
+function errorName(detail: string): string | undefined {
+  try {
+    const body = JSON.parse(detail) as { name?: unknown };
+    return typeof body.name === 'string' ? body.name : undefined;
+  } catch {
+    return undefined;
+  }
 }

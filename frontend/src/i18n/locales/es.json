@@ -981,7 +981,27 @@
     "creating": "Creando…",
     "demoReady": "Listo. \"{{name}}\" ya puede entrar al panel.",
     "showOnce": "Copia estos datos ahora: no se vuelven a mostrar.",
-    "emailTaken": "Ya existe una cuenta con ese correo. Usa otro."
+    "emailTaken": "Ya existe una cuenta con ese correo. Usa otro.",
+    "incidentsTitle": "Incidentes de proveedores",
+    "incidentsSubtitle": "Abiertos y cerrados en los últimos 7 días.",
+    "incidentsEmpty": "Sin incidentes en los últimos 7 días.",
+    "incidentsError": "No se pudieron cargar los incidentes.",
+    "incColStatus": "Estado",
+    "incColService": "Canal",
+    "incColAccount": "Cuenta",
+    "incColReason": "Motivo",
+    "incColSince": "Desde",
+    "incColDuration": "Duración",
+    "incColFailures": "Fallos",
+    "incColAffected": "Empresas",
+    "incOpen": "Abierto",
+    "incResolved": "Cerrado",
+    "incOngoing": "en curso",
+    "incAccountPlatform": "Plataforma",
+    "incDurationMinutes": "{{count}} min",
+    "incDurationHours": "{{count}} h",
+    "incDurationDays_one": "{{count}} día",
+    "incDurationDays_other": "{{count}} días"
   },
   "ladder": {
     "groupLabel": "Escalera de contacto",
@@ -1011,5 +1031,36 @@
     "cycleNote": "Desde el intento {{next}}, la escalera vuelve a empezar en el paso 1.",
     "customDelays": "Con esperas propias entre intentos: {{list}}.",
     "cobranzaNote": "Cobranza: la ley exige al menos 48 h entre gestiones."
+  },
+  "alerts": {
+    "problem": {
+      "whatsapp": "WhatsApp no está enviando mensajes",
+      "email": "El correo no está enviando mensajes",
+      "voice": "Las llamadas no se están iniciando",
+      "llm": "La IA no está respondiendo"
+    },
+    "platformProblem": {
+      "whatsapp": "WhatsApp tiene un problema de nuestra parte; ya lo estamos revisando.",
+      "email": "El correo tiene un problema de nuestra parte; ya lo estamos revisando.",
+      "voice": "Las llamadas tienen un problema de nuestra parte; ya lo estamos revisando.",
+      "llm": "El asistente tiene un problema de nuestra parte; ya lo estamos revisando."
+    },
+    "service": {
+      "whatsapp": "WhatsApp",
+      "email": "Correo",
+      "voice": "Llamadas",
+      "llm": "IA"
+    },
+    "platformTag": "Plataforma",
+    "sinceMinutes_one": "Desde hace {{count}} minuto",
+    "sinceMinutes_other": "Desde hace {{count}} minutos",
+    "sinceHours_one": "Desde hace {{count}} hora",
+    "sinceHours_other": "Desde hace {{count}} horas",
+    "sinceDays_one": "Desde hace {{count}} día",
+    "sinceDays_other": "Desde hace {{count}} días",
+    "failures_one": "{{count}} envío fallido",
+    "failures_other": "{{count}} envíos fallidos",
+    "goIntegrations": "Ver integraciones",
+    "goPlatform": "Ver incidentes"
   }
 }

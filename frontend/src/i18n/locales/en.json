@@ -981,7 +981,27 @@
     "creating": "Creating…",
     "demoReady": "Done. \"{{name}}\" can sign in now.",
     "showOnce": "Copy these now: they are not shown again.",
-    "emailTaken": "An account with that email already exists. Use another one."
+    "emailTaken": "An account with that email already exists. Use another one.",
+    "incidentsTitle": "Provider incidents",
+    "incidentsSubtitle": "Open and closed in the last 7 days.",
+    "incidentsEmpty": "No incidents in the last 7 days.",
+    "incidentsError": "Couldn't load the incidents.",
+    "incColStatus": "Status",
+    "incColService": "Channel",
+    "incColAccount": "Account",
+    "incColReason": "Reason",
+    "incColSince": "Since",
+    "incColDuration": "Duration",
+    "incColFailures": "Failures",
+    "incColAffected": "Companies",
+    "incOpen": "Open",
+    "incResolved": "Closed",
+    "incOngoing": "ongoing",
+    "incAccountPlatform": "Platform",
+    "incDurationMinutes": "{{count}} min",
+    "incDurationHours": "{{count}} h",
+    "incDurationDays_one": "{{count}} day",
+    "incDurationDays_other": "{{count}} days"
   },
   "ladder": {
     "groupLabel": "Contact ladder",
@@ -1011,5 +1031,36 @@
     "cycleNote": "From attempt {{next}} on, the ladder starts over at step 1.",
     "customDelays": "With its own waits between attempts: {{list}}.",
     "cobranzaNote": "Collections: the law requires at least 48 h between contacts."
+  },
+  "alerts": {
+    "problem": {
+      "whatsapp": "WhatsApp isn't sending messages",
+      "email": "Email isn't sending messages",
+      "voice": "Calls aren't starting",
+      "llm": "The AI isn't responding"
+    },
+    "platformProblem": {
+      "whatsapp": "WhatsApp has a problem on our side; we're already looking into it.",
+      "email": "Email has a problem on our side; we're already looking into it.",
+      "voice": "Calls have a problem on our side; we're already looking into it.",
+      "llm": "The assistant has a problem on our side; we're already looking into it."
+    },
+    "service": {
+      "whatsapp": "WhatsApp",
+      "email": "Email",
+      "voice": "Calls",
+      "llm": "AI"
+    },
+    "platformTag": "Platform",
+    "sinceMinutes_one": "For {{count}} minute",
+    "sinceMinutes_other": "For {{count}} minutes",
+    "sinceHours_one": "For {{count}} hour",
+    "sinceHours_other": "For {{count}} hours",
+    "sinceDays_one": "For {{count}} day",
+    "sinceDays_other": "For {{count}} days",
+    "failures_one": "{{count}} failed send",
+    "failures_other": "{{count}} failed sends",
+    "goIntegrations": "View integrations",
+    "goPlatform": "View incidents"
   }
 }

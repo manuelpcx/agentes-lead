@@ -13,6 +13,7 @@ import { VapiVoiceProvider } from './providers/vapi.provider';
 import { RetellVoiceProvider } from './providers/retell.provider';
 import { ElevenLabsVoiceProvider } from './providers/elevenlabs.provider';
 import { VoiceUsageService } from './voice-usage.service';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 
 /** Por dónde llama una empresa. */
 export type VoiceMode = 'byo' | 'managed' | 'none';
@@ -56,6 +57,7 @@ export class VoiceService {
     private readonly credentials: CredentialsService,
     private readonly usage: VoiceUsageService,
     config: ConfigService<EnvVars, true>,
+    private readonly health: ProviderHealthService,
   ) {
     const get = (k: keyof EnvVars) =>
       (config.get(k, { infer: true }) as string | undefined) || undefined;
@@ -121,7 +123,10 @@ export class VoiceService {
 
     const byo = await this.byoProvider();
     if (byo) {
-      const result = await byo.provider.startCall(params);
+      const result = await this.health.observe(
+        { service: 'voice', provider: byo.name, scope: 'company', companyId },
+        () => byo.provider.startCall(params),
+      );
       if (leadId) {
         await this.usage.recordStart({
           companyId,
@@ -134,7 +139,10 @@ export class VoiceService {
       return result;
     }
 
-    if (!this.managed) {
+    // Copia local: TypeScript no conserva el chequeo de `this.managed`
+    // dentro de la función flecha de `observe`.
+    const managed = this.managed;
+    if (!managed) {
       this.logger.warn(
         'Voz no configurada para la empresa: no se llama (configúralo en el panel).',
       );
@@ -148,14 +156,23 @@ export class VoiceService {
       );
     }
     const agentId =
-      params.agentType === AgentType.COBRANZA && this.managed.agentCobranza
-        ? this.managed.agentCobranza
-        : this.managed.agentDefault;
-    const result = await new ElevenLabsVoiceProvider({
-      apiKey: this.managed.apiKey,
-      agentId,
-      phoneNumberId: this.managed.phoneNumberId,
-    }).startCall(params);
+      params.agentType === AgentType.COBRANZA && managed.agentCobranza
+        ? managed.agentCobranza
+        : managed.agentDefault;
+    const result = await this.health.observe(
+      {
+        service: 'voice',
+        provider: 'elevenlabs',
+        scope: 'platform',
+        companyId,
+      },
+      () =>
+        new ElevenLabsVoiceProvider({
+          apiKey: managed.apiKey,
+          agentId,
+          phoneNumberId: managed.phoneNumberId,
+        }).startCall(params),
+    );
     if (leadId) {
       await this.usage.recordStart({
         companyId,

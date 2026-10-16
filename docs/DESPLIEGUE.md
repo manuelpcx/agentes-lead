@@ -610,3 +610,24 @@ Sin migraciones ni variables nuevas.
 - **El fallo se ve en el panel.** Queda una línea en rojo en la conversación
   del lead con el motivo (por ejemplo, "la cuenta de YCloud no tiene saldo").
   El mismo aviso no se repite dentro de 24 h.
+
+## Alertas de proveedores (2026-10-08)
+
+Si un proveedor deja de funcionar (WhatsApp, correo, voz o IA), se abre un
+incidente y se avisa a quien debe arreglarlo: al dueño de la empresa si la
+cuenta es suya, o a los administradores de la plataforma si es de la
+plataforma. Spec: `docs/superpowers/specs/2026-10-08-alertas-proveedores-design.md`.
+
+- **Migración nueva: `provider_incidents`** (tabla `ProviderIncident`). Se
+  aplica sola al arrancar.
+- **Sin variables nuevas.** Los correos salen por el correo del sistema
+  (`EMAIL_PROVIDER`/`EMAIL_FROM`, el mismo de "recuperar contraseña"), con
+  enlaces a `PANEL_URL`.
+- **Cuándo se abre:** al primer error de cuenta (sin saldo, clave inválida,
+  cuenta suspendida) o a los 3 errores pasajeros seguidos en 15 min. Los
+  errores de un mensaje puntual (teléfono inválido) no abren nada.
+- **Cuándo se cierra:** con el primer envío exitoso por esa cuenta.
+- **Correos:** uno al abrirse (como máximo uno cada 6 h por proveedor) y uno
+  al cerrarse.
+- **Endpoints:** `GET /panel/alerts` (aviso del panel) y
+  `GET /platform/incidents` (mantenedor).

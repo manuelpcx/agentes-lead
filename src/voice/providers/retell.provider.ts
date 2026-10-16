@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ProviderError } from '../../alerts/provider-error';
 import { StartCallParams, VoiceProvider } from './voice-provider.interface';
 
 const RETELL_URL = 'https://api.retellai.com/v2/create-phone-call';
@@ -77,8 +78,9 @@ export class RetellVoiceProvider implements VoiceProvider {
       );
       // El detalle (no solo el status) viaja en el mensaje para que quede
       // visible en "Acciones del agente" del panel sin tener que ir a los logs.
-      throw new Error(
+      throw new ProviderError(
         `Fallo al iniciar la llamada (Retell ${response.status}): ${detail.slice(0, 300) || '(sin detalle)'}`,
+        response.status,
       );
     }
 

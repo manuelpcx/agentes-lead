@@ -17,6 +17,7 @@ import { PlatformService } from './platform.service';
 import { CreateDemoCompanyDto } from './dto/create-demo-company.dto';
 import { SetCompanyActiveDto } from './dto/set-company-active.dto';
 import { SetVoiceLimitDto } from './dto/set-voice-limit.dto';
+import { AlertsQueryService } from '../alerts/alerts-query.service';
 
 /**
  * Mantenedor de la plataforma: el listado de clientes y el alta de cuentas de
@@ -30,7 +31,16 @@ import { SetVoiceLimitDto } from './dto/set-voice-limit.dto';
 @UseGuards(JwtAuthGuard, PlatformAdminGuard)
 @RateLimit({ limit: 60, windowSec: 60, scope: 'auth' })
 export class PlatformController {
-  constructor(private readonly platform: PlatformService) {}
+  constructor(
+    private readonly platform: PlatformService,
+    private readonly alerts: AlertsQueryService,
+  ) {}
+
+  /** Incidentes de proveedores: abiertos y cerrados en los últimos 7 días. */
+  @Get('incidents')
+  listIncidents() {
+    return this.alerts.listForPlatform();
+  }
 
   /** Clientes con su uso: qué activaron y cuándo fue su última actividad. */
   @Get('companies')

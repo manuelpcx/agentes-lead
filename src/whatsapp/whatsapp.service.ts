@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { TenantContext } from '../common/tenant/tenant-context';
 import { CredentialsService } from '../integrations/credentials.service';
+import { ProviderHealthService } from '../alerts/provider-health.service';
 import {
   WhatsappProvider,
   WhatsappTemplateMessage,
@@ -17,29 +19,43 @@ import { YCloudWhatsappProvider } from './providers/ycloud.provider';
 export class WhatsappService {
   private readonly logger = new Logger('WhatsappService');
 
-  constructor(private readonly credentials: CredentialsService) {}
+  constructor(
+    private readonly credentials: CredentialsService,
+    private readonly health: ProviderHealthService,
+  ) {}
 
-  private async provider(): Promise<WhatsappProvider> {
+  /** El proveedor de la empresa y su nombre (null = log, no se vigila). */
+  private async provider(): Promise<{
+    provider: WhatsappProvider;
+    name: string | null;
+  }> {
     const c = await this.credentials.get('whatsapp');
     if (c?.isActive && c.secret) {
       if (c.provider === 'ycloud' && c.config.from) {
-        return new YCloudWhatsappProvider(c.secret, String(c.config.from));
+        return {
+          name: 'ycloud',
+          provider: new YCloudWhatsappProvider(c.secret, String(c.config.from)),
+        };
       }
       if (c.provider === 'meta' && c.config.phoneNumberId) {
-        return new MetaCloudWhatsappProvider(
-          c.secret,
-          String(c.config.phoneNumberId),
-        );
+        return {
+          name: 'meta',
+          provider: new MetaCloudWhatsappProvider(
+            c.secret,
+            String(c.config.phoneNumberId),
+          ),
+        };
       }
     }
     this.logger.warn(
       'WhatsApp no configurado para la empresa: no se envía (configúralo en el panel).',
     );
-    return new LogWhatsappProvider();
+    return { name: null, provider: new LogWhatsappProvider() };
   }
 
   async send(to: string, text: string): Promise<void> {
-    return (await this.provider()).send(to, text);
+    const { provider, name } = await this.provider();
+    return this.observe(name, () => provider.send(to, text));
   }
 
   /** Envía una plantilla aprobada (para iniciar fuera de la ventana de 24h). */
@@ -47,6 +63,21 @@ export class WhatsappService {
     to: string,
     template: WhatsappTemplateMessage,
   ): Promise<void> {
-    return (await this.provider()).sendTemplate(to, template);
+    const { provider, name } = await this.provider();
+    return this.observe(name, () => provider.sendTemplate(to, template));
+  }
+
+  /** WhatsApp siempre es cuenta de la empresa (sus llaves). */
+  private observe<T>(name: string | null, send: () => Promise<T>): Promise<T> {
+    if (!name) return send();
+    return this.health.observe(
+      {
+        service: 'whatsapp',
+        provider: name,
+        scope: 'company',
+        companyId: TenantContext.getCompanyId(),
+      },
+      send,
+    );
   }
 }

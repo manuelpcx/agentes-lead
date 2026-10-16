@@ -300,6 +300,12 @@ HMAC secret. If messages stopped arriving, check this first.
 **Test connection** verifies the credentials before you leave them in
 production.
 
+**Provider alerts.** If WhatsApp, email, calls or the AI stop working, a
+banner shows up at the top of every page: red if the problem is with your
+account (it says why and what to do, e.g. "Top up your YCloud balance"), amber
+if it's on our side. The owner also gets an email. The banner closes by itself
+once the provider works again.
+
 ### MCP access
 
 Create a key to talk to your account from Claude (Desktop or Code) in plain
@@ -348,6 +354,10 @@ days since their last activity.
 The **Voice** column shows each company's call minutes this month against
 its limit. **Change** sets its monthly limit; `0` leaves it without calls.
 Once they run out, its agent stops offering calls and continues by text.
+
+The **Provider incidents** section lists open incidents and those closed in
+the last 7 days, across all companies and the platform: channel, account,
+reason, since when, duration, failures and affected companies.
 
 **Create demo** sets up an empty account with its default agent. It returns
 the email, the password and the webhook secret **once**: copy them right

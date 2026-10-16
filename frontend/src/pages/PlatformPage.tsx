@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { usePolling } from '../hooks/usePolling';
 import { Badge, Button, Card, Field, Input, Modal, PageHeader, cn } from '../components/ui';
+import { IncidentsCard } from '../components/IncidentsCard';
 import type { CompanySummary, DemoCompanyCreated } from '../types';
 
 /**
@@ -150,6 +151,8 @@ export function PlatformPage() {
       )}
 
       <p className="mt-3 text-xs text-slate-400">{t('platform.privacyNote')}</p>
+
+      <IncidentsCard />
 
       {vozDe && (
         <VoiceLimitModal

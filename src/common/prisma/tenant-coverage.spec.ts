@@ -11,6 +11,11 @@ const EXENTOS: Record<string, string> = {
   // Plano de autenticación: siempre se consulta por `raw` con ids explícitos
   // (userId + companyId) ANTES de que exista un contexto de tenant.
   Membership: 'auth-plane, consultado por raw con ids explícitos',
+  // Alertas de proveedores: companyId es opcional (null = cuenta de la
+  // plataforma, que afecta a todas). Se consulta solo por raw y cada lectura
+  // del panel filtra explícitamente por la empresa activa.
+  ProviderIncident:
+    'companyId opcional (null = plataforma); consultado por raw con companyId explícito',
 };
 
 /** Nombres de los modelos del schema que declaran un campo `companyId`. */

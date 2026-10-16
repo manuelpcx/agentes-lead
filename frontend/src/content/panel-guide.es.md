@@ -297,6 +297,12 @@ esto primero.
 
 **Probar conexión** verifica las credenciales antes de dejarlas en producción.
 
+**Avisos de proveedores.** Si WhatsApp, el correo, las llamadas o la IA dejan
+de funcionar, aparece un aviso arriba en todas las páginas: rojo si el problema
+es de tu cuenta (dice el motivo y qué hacer, por ejemplo "Recarga saldo en
+YCloud"), ámbar si es de nuestra parte. Al dueño le llega además un correo. El
+aviso se cierra solo cuando el proveedor vuelve a funcionar.
+
 ### Acceso MCP
 
 Crea una llave para hablarle a tu cuenta desde Claude (Desktop o Code) en
@@ -346,6 +352,10 @@ cuántos días llevan sin actividad.
 La columna **Voz** muestra los minutos de llamadas del mes contra el tope de
 cada empresa. **Cambiar** fija su tope mensual; `0` la deja sin llamadas.
 Cuando se le acaban, su agente deja de ofrecer llamadas y sigue por texto.
+
+La sección **Incidentes de proveedores** lista los abiertos y los cerrados de
+los últimos 7 días, de todas las empresas y de la plataforma: canal, cuenta,
+motivo, desde cuándo, duración, fallos y empresas afectadas.
 
 **Crear demo** da de alta una cuenta vacía con su agente por defecto. Devuelve
 el correo, la contraseña y el secreto de webhook **una sola vez**: cópialos
