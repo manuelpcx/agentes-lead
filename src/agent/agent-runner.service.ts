@@ -274,13 +274,19 @@ export class AgentRunner {
       }
     }
 
-    // Red de seguridad: si el modelo respondió a un mensaje del cliente sin
-    // usar ninguna herramienta (texto suelto, que es interno y no le llega a
-    // nadie), sin esto el cliente se queda sin respuesta y sin ningún rastro
-    // en el historial — el peor resultado posible, peor que un error visible.
-    if (!followUp && !ctx.messageSent && !ctx.escalated && !ctx.derived) {
-      await this.fallbackToHuman(lead, agent.id);
-      ctx.escalated = true;
+    // Red de seguridad: un cliente que escribió nunca se queda en silencio —
+    // el peor resultado posible, peor que un error visible. Dos casos:
+    //  - el modelo terminó sin usar herramientas (texto suelto, que es interno
+    //    y no le llega a nadie): se escala y se avisa;
+    //  - el turno escaló (por la herramienta, o porque el validador bloqueó el
+    //    mensaje) sin haberle escrito nada: ya está escalado, falta el aviso.
+    if (!followUp && !ctx.messageSent && !ctx.derived) {
+      if (ctx.escalated) {
+        await this.sendEscalationNotice(lead, agent.id);
+      } else {
+        await this.fallbackToHuman(lead, agent.id);
+        ctx.escalated = true;
+      }
       ctx.messageSent = true;
     }
 
@@ -371,17 +377,29 @@ export class AgentRunner {
         'sin herramienta). Escalado automático a humano.',
       agentId,
     });
-    if (lead.phone) {
-      await this.whatsapp.send(lead.phone, FALLBACK_ESCALATION_MESSAGE);
-      await this.interactions.register({
-        leadId: lead.id,
-        channel: Channel.whatsapp,
-        direction: Direction.outbound,
-        content: FALLBACK_ESCALATION_MESSAGE,
-        agentId,
-      });
-    }
+    await this.sendEscalationNotice(lead, agentId);
     this.logger.warn(`Lead ${lead.id} escalado: turno terminó sin respuesta`);
+  }
+
+  /**
+   * Le avisa al cliente que lo contactará una persona del equipo. Va por
+   * WhatsApp, el canal de conversación; sin teléfono no hay a dónde avisar.
+   */
+  private async sendEscalationNotice(
+    lead: Lead,
+    agentId: string,
+  ): Promise<void> {
+    if (!lead.phone) {
+      return;
+    }
+    await this.whatsapp.send(lead.phone, FALLBACK_ESCALATION_MESSAGE);
+    await this.interactions.register({
+      leadId: lead.id,
+      channel: Channel.whatsapp,
+      direction: Direction.outbound,
+      content: FALLBACK_ESCALATION_MESSAGE,
+      agentId,
+    });
   }
 
   /** Escala a humano y avisa al cliente cuando el agente no puede operar. */

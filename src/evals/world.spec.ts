@@ -1,4 +1,5 @@
 import { AnthropicService } from '../llm/anthropic.service';
+import { FALLBACK_ESCALATION_MESSAGE } from '../agent/agent.constants';
 import { CASOS } from './cases';
 import { checksDeterministas, juzgar } from './judge';
 import { EvalCase } from './types';
@@ -75,7 +76,11 @@ describe('runCase', () => {
 
     const run = await runCase(CASO_BASE, anthropic);
 
-    expect(run.mensajes).toEqual([]);
+    // El mensaje bloqueado no sale; lo único que recibe el cliente es el
+    // aviso de que lo contactará una persona.
+    expect(run.mensajes).toEqual([
+      { canal: 'whatsapp', texto: FALLBACK_ESCALATION_MESSAGE },
+    ]);
     expect(run.escalado).toBe(true);
   });
 

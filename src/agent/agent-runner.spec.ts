@@ -16,6 +16,7 @@ import type { Queue } from 'bullmq';
 import { LeadMemoryService } from '../memory/lead-memory.service';
 import { LeadMemoryJobData } from '../memory/lead-memory.processor';
 import { VoiceService } from '../voice/voice.service';
+import { FALLBACK_ESCALATION_MESSAGE } from './agent.constants';
 
 /** Corre `fn` dentro de un contexto de tenant (como el processor de la cola). */
 function inTenant<T>(fn: () => Promise<T>): Promise<T> {
@@ -305,6 +306,57 @@ describe('AgentRunner.runTurn', () => {
       '+56911111111',
       expect.any(String),
     );
+  });
+
+  it('si escala sin haberle escrito al cliente, le avisa que lo contactará una persona', async () => {
+    // Caso del banco (repite-dato-del-cliente): el modelo escaló de entrada
+    // y el cliente se quedó sin una sola palabra.
+    const h = buildHarness();
+    h.createMessage.mockResolvedValueOnce(
+      toolUse('escalarAHumano', { motivo: 'pedido incompleto' }),
+    );
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(h.whatsapp.send).toHaveBeenCalledWith(
+      '+56911111111',
+      FALLBACK_ESCALATION_MESSAGE,
+    );
+    expect(h.interactions.register).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'whatsapp',
+        direction: 'outbound',
+        content: FALLBACK_ESCALATION_MESSAGE,
+      }),
+    );
+  });
+
+  it('si ya le había escrito antes de escalar, no le manda otro aviso', async () => {
+    const h = buildHarness();
+    h.createMessage
+      .mockResolvedValueOnce(
+        toolUse('enviarWhatsApp', { mensaje: 'Reviso tu caso' }),
+      )
+      .mockResolvedValueOnce(
+        toolUse('escalarAHumano', { motivo: 'pedido incompleto' }),
+      );
+
+    await inTenant(() => h.runner.runTurn('lead-1'));
+
+    expect(h.whatsapp.send).not.toHaveBeenCalled();
+  });
+
+  it('en un seguimiento proactivo que escala no manda el aviso (el cliente no escribió)', async () => {
+    const h = buildHarness();
+    h.createMessage.mockResolvedValueOnce(
+      toolUse('escalarAHumano', { motivo: 'no sé qué ofrecer' }),
+    );
+
+    await inTenant(() =>
+      h.runner.runFollowUp('lead-1', 'reintenta el contacto'),
+    );
+
+    expect(h.whatsapp.send).not.toHaveBeenCalled();
   });
 
   it('no aplica el respaldo de silencio en turnos de seguimiento proactivo', async () => {
