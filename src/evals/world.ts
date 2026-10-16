@@ -34,6 +34,7 @@ import { CancelarSeguimientoTool } from '../agent/tools/cancelar-seguimiento.too
 import { GuardarEnMemoriaTool } from '../agent/tools/guardar-en-memoria.tool';
 import { IniciarLlamadaTool } from '../agent/tools/iniciar-llamada.tool';
 import { VoiceService } from '../voice/voice.service';
+import { formatLocalDateTime } from '../followup/business-hours';
 import { EvalCase, EvalRun, RunOptions } from './types';
 
 /**
@@ -331,5 +332,47 @@ export async function runCase(
     error = (e as Error).message;
   }
 
-  return { ...registro, system: systemCapturado, error };
+  return {
+    ...registro,
+    system: systemCapturado,
+    datosDelCaso: datosParaElJuez(caso, citas),
+    error,
+  };
+}
+
+/**
+ * Los datos que tenía el agente, escritos para el juez. Las fechas van en la
+ * misma zona y formato que ve el agente, para que el juez compare lo mismo.
+ */
+function datosParaElJuez(
+  caso: EvalCase,
+  citas: Array<{ title: string; startAt: Date }>,
+): string {
+  const partes: string[] = [];
+  if (citas.length > 0) {
+    partes.push(
+      'Citas agendadas:\n' +
+        citas
+          .map(
+            (c) =>
+              `- ${c.title}: ${formatLocalDateTime(c.startAt, 'America/Santiago')}`,
+          )
+          .join('\n'),
+    );
+  }
+  if (caso.datos && Object.keys(caso.datos).length > 0) {
+    partes.push(
+      `Datos de la empresa (consultarDato): ${JSON.stringify(caso.datos)}`,
+    );
+  }
+  if (caso.conocimiento?.length) {
+    partes.push(
+      'Base de conocimiento (buscarConocimiento):\n' +
+        caso.conocimiento.map((c) => `- ${c}`).join('\n'),
+    );
+  }
+  if (caso.lead?.metadata && Object.keys(caso.lead.metadata).length > 0) {
+    partes.push(`Datos del lead: ${JSON.stringify(caso.lead.metadata)}`);
+  }
+  return partes.join('\n\n');
 }

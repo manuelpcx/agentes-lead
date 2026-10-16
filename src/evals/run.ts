@@ -144,6 +144,8 @@ export interface Agregado {
   criterios: CriterioAgregado[];
   /** Lo que envió la primera corrida que falló, para depurar. */
   enviadoEnFallo?: string;
+  /** Herramientas que usó esa misma corrida (con el motivo si escaló). */
+  accionesEnFallo?: string;
 }
 
 /**
@@ -154,6 +156,7 @@ export interface Agregado {
 export function agregarCorridas(resultados: EvalResult[]): Agregado {
   const porCriterio = new Map<string, CriterioAgregado>();
   let enviadoEnFallo: string | undefined;
+  let accionesEnFallo: string | undefined;
 
   for (const r of resultados) {
     for (const check of r.checks) {
@@ -173,6 +176,7 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
     if (!r.ok && enviadoEnFallo === undefined) {
       enviadoEnFallo =
         r.run.mensajes.map((m) => m.texto).join(' | ') || '(nada)';
+      accionesEnFallo = resumirAcciones(r.run.acciones);
     }
   }
 
@@ -182,7 +186,26 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
     completas: resultados.filter((r) => r.ok).length,
     criterios: [...porCriterio.values()],
     ...(enviadoEnFallo !== undefined ? { enviadoEnFallo } : {}),
+    ...(accionesEnFallo !== undefined ? { accionesEnFallo } : {}),
   };
+}
+
+/**
+ * "consultarDato, escalarAHumano (motivo: …)": qué hizo el agente, con el
+ * motivo cuando escaló, que es lo primero que hay que saber de un turno que
+ * terminó sin responderle al cliente.
+ */
+function resumirAcciones(acciones: EvalResult['run']['acciones']): string {
+  if (acciones.length === 0) {
+    return '(ninguna)';
+  }
+  return acciones
+    .map((a) =>
+      typeof a.input.motivo === 'string'
+        ? `${a.tool} (motivo: ${a.input.motivo})`
+        : a.tool,
+    )
+    .join(', ');
 }
 
 /** Corre un caso completo: turno + comprobaciones + juez. */
@@ -219,6 +242,9 @@ function imprimir(agregado: Agregado): void {
     console.log(
       `        ${GRIS}envió: ${agregado.enviadoEnFallo.slice(0, 200)}${RESET}`,
     );
+  }
+  if (agregado.accionesEnFallo !== undefined) {
+    console.log(`        ${GRIS}usó: ${agregado.accionesEnFallo}${RESET}`);
   }
 }
 

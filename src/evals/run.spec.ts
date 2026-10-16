@@ -77,11 +77,15 @@ describe('agregarCorridas', () => {
     espera: { criterios: [] },
   };
 
-  function corrida(checks: EvalCheck[], enviado = 'respuesta'): EvalResult {
+  function corrida(
+    checks: EvalCheck[],
+    enviado = 'respuesta',
+    acciones: EvalResult['run']['acciones'] = [],
+  ): EvalResult {
     return {
       caso,
       run: {
-        acciones: [],
+        acciones,
         mensajes: [{ canal: 'whatsapp', texto: enviado }],
         escalado: false,
         system: '',
@@ -149,5 +153,27 @@ describe('agregarCorridas', () => {
 
     expect(agregado.completas).toBe(1);
     expect(agregado.enviadoEnFallo).toBeUndefined();
+    expect(agregado.accionesEnFallo).toBeUndefined();
+  });
+
+  it('muestra qué herramientas usó la primera corrida que falló, con el motivo si escaló', () => {
+    // Sin esto, "escaló y no envió nada" no dice POR QUÉ escaló.
+    const agregado = agregarCorridas([
+      corrida([{ criterio: 'a', ok: true }]),
+      corrida([{ criterio: 'a', ok: false }], '', [
+        { tool: 'consultarDato', input: { clave: 'pedido' } },
+        { tool: 'escalarAHumano', input: { motivo: 'pedido incompleto' } },
+      ]),
+    ]);
+
+    expect(agregado.accionesEnFallo).toBe(
+      'consultarDato, escalarAHumano (motivo: pedido incompleto)',
+    );
+  });
+
+  it('dice "ninguna" si la corrida que falló no usó herramientas', () => {
+    const agregado = agregarCorridas([corrida([{ criterio: 'a', ok: false }])]);
+
+    expect(agregado.accionesEnFallo).toBe('(ninguna)');
   });
 });

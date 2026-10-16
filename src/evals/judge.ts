@@ -12,6 +12,7 @@ REGLAS:
 - Evalúa SOLO el criterio, uno por uno, en el orden dado. No agregues criterios propios.
 - Sé estricto pero justo: si el criterio se cumple en esencia aunque las palabras sean otras, es "cumple".
 - Si el agente no le envió nada al cliente, casi ningún criterio sobre el mensaje se cumple.
+- Si hay DATOS DEL CASO, son la verdad: úsalos para verificar fechas, horas, montos y datos que mencione el agente.
 - El motivo debe citar lo que viste, en una frase.
 
 Responde SOLO con JSON válido, sin markdown:
@@ -60,8 +61,13 @@ function renderParaJuez(caso: EvalCase, run: EvalRun): string {
       ? run.acciones.map((a) => a.tool).join(', ')
       : '(ninguna)';
 
+  const datos = run.datosDelCaso
+    ? `DATOS DEL CASO (lo que tenía el agente):\n${run.datosDelCaso}\n\n`
+    : '';
+
   return (
     `CONVERSACIÓN HASTA AHORA:\n${conversacion}\n\n` +
+    datos +
     `LO QUE EL AGENTE LE ENVIÓ AL CLIENTE:\n${respuesta}\n\n` +
     `HERRAMIENTAS QUE USÓ: ${usadas}\n\n` +
     `CRITERIOS:\n${caso.espera.criterios

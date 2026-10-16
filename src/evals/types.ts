@@ -82,6 +82,12 @@ export interface EvalRun {
   escalado: boolean;
   /** System prompt completo que vio el modelo (para depurar un fallo). */
   system: string;
+  /**
+   * Los datos que tenía el agente (citas, datos de la empresa, conocimiento,
+   * metadata del lead), escritos para el juez: sin ellos no puede verificar
+   * una fecha o un monto y marca como falla una respuesta correcta.
+   */
+  datosDelCaso?: string;
   error?: string;
 }
 

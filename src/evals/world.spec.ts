@@ -148,6 +148,35 @@ describe('runCase', () => {
   });
 });
 
+describe('runCase — datos del caso para el juez', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('reúne las citas con su fecha local, los datos y el conocimiento', async () => {
+    // Sin esto el juez no puede verificar "la fecha coincide con la cita" y
+    // marca como falla una respuesta correcta.
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(new Date('2026-10-16T18:16:00Z').getTime());
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(
+      {
+        ...CASO_BASE,
+        citas: [{ titulo: 'Demo del plan pro', enHoras: 48 }],
+        conocimiento: ['Se responde dentro de un día hábil.'],
+      },
+      anthropic,
+    );
+
+    // 48 h después, en hora de Santiago (UTC-3 en octubre).
+    expect(run.datosDelCaso).toMatch(/Demo del plan pro.*18 de octubre.*15:16/);
+    expect(run.datosDelCaso).toContain('precio_plan_pro');
+    expect(run.datosDelCaso).toContain('Se responde dentro de un día hábil.');
+  });
+});
+
 describe('runCase — llamadas', () => {
   it('el agente puede llamar en el mundo, y la llamada queda registrada', async () => {
     // Sin la herramienta, un agente que quiere llamar escala a una persona y
@@ -369,6 +398,22 @@ describe('juzgar', () => {
     const checks = await juzgar(caso, run, anthropic);
 
     expect(checks[0].detalle).toContain('timeout');
+  });
+
+  it('le pasa al juez los datos del caso para que pueda verificarlos', async () => {
+    const complete = jest
+      .fn()
+      .mockResolvedValue(
+        JSON.stringify({ resultados: [{ cumple: true }, { cumple: true }] }),
+      );
+
+    await juzgar(
+      caso,
+      { ...run, datosDelCaso: 'Citas agendadas:\n- Demo: domingo 18, 15:16' },
+      { complete } as unknown as AnthropicService,
+    );
+
+    expect(complete.mock.calls[0][1]).toContain('Demo: domingo 18, 15:16');
   });
 
   it('no llama al modelo si el caso no tiene criterios', async () => {
