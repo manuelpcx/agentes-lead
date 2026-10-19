@@ -67,7 +67,11 @@ function buildHarness(
 
   const prisma = {
     db: {
-      interaction: { findFirst: jest.fn().mockResolvedValue(null) },
+      interaction: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        // Respuestas del lead (hora habitual): por defecto, ninguna.
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       lead: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       agent: {
         findFirst: jest.fn().mockResolvedValue({
@@ -592,6 +596,81 @@ describe('FollowUpService — piso legal de cobranza', () => {
     await run(() => h.service.processFollowUp('lead-1'));
     expect(h.agent.runFollowUp).toHaveBeenCalledTimes(1);
     expect(h.interactions.findProactiveSince).not.toHaveBeenCalled();
+  });
+});
+
+describe('FollowUpService — hora habitual del lead', () => {
+  afterEach(() => jest.useRealTimers());
+
+  function at(iso: string) {
+    jest.useFakeTimers({
+      now: new Date(iso),
+      doNotFake: ['nextTick', 'queueMicrotask'],
+    });
+  }
+
+  /** Respuestas del lead a las 21:xx (UTC, la zona de la empresa en el arnés). */
+  const RESPONDE_DE_NOCHE = [
+    { occurredAt: new Date('2026-09-18T21:10:00Z') },
+    { occurredAt: new Date('2026-09-19T21:40:00Z') },
+    { occurredAt: new Date('2026-09-20T22:05:00Z') },
+  ];
+
+  it('corre el próximo seguimiento a la hora en que el lead suele responder', async () => {
+    at('2026-09-23T15:00:00Z');
+    const h = buildHarness({ contactAttempts: 1 });
+    (h.prisma.db.interaction.findMany as jest.Mock).mockResolvedValue(
+      RESPONDE_DE_NOCHE,
+    );
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    // Tocaba en 48 h (25-sep 15:00); suele responder a las 21 → 21:00.
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledWith(
+      'lead-1',
+      new Date('2026-09-25T21:00:00Z'),
+      expect.any(String),
+    );
+  });
+
+  it('sin un hábito claro, el seguimiento queda donde tocaba', async () => {
+    at('2026-09-23T15:00:00Z');
+    const h = buildHarness({ contactAttempts: 1 });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledWith(
+      'lead-1',
+      new Date('2026-09-25T15:00:00Z'),
+      expect.any(String),
+    );
+  });
+
+  it('en cobranza nunca lo adelanta (no puede achicar las 48 h legales)', async () => {
+    at('2026-09-23T15:00:00Z');
+    const h = buildHarness(
+      { contactAttempts: 0 },
+      ALWAYS_OPEN,
+      '',
+      {},
+      'COBRANZA',
+    );
+    // Suele responder a las 9: adelantarlo a las 9:00 dejaría menos de 48 h.
+    (h.prisma.db.interaction.findMany as jest.Mock).mockResolvedValue([
+      { occurredAt: new Date('2026-09-18T09:10:00Z') },
+      { occurredAt: new Date('2026-09-19T09:20:00Z') },
+      { occurredAt: new Date('2026-09-20T09:05:00Z') },
+    ]);
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    // Queda en las 48 h (25-sep 15:00): las 9:00 de ese día serían antes, y
+    // las del día siguiente están más allá del margen.
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalledWith(
+      'lead-1',
+      new Date('2026-09-25T15:00:00Z'),
+      expect.any(String),
+    );
   });
 });
 

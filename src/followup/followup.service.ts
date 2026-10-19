@@ -10,6 +10,7 @@ import {
 import type { EnvVars } from '../common/config/env.validation';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TenantContext } from '../common/tenant/tenant-context';
+import { alinearConHoraHabitual, horaHabitual } from './preferred-hour';
 import { LeadsService } from '../leads/leads.service';
 import { InteractionsService } from '../interactions/interactions.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
@@ -270,7 +271,14 @@ export class FollowUpService {
 
     const primerContacto = lead.contactAttempts === 0;
     const attempt = lead.contactAttempts + 1;
-    const nextTime = this.nextActionTime(now, attempt, eff, cobranza);
+    const nextTime = await this.alignToUsualHour(
+      leadId,
+      this.nextActionTime(now, attempt, eff, cobranza),
+      now,
+      timezone,
+      permitido,
+      cobranza,
+    );
 
     // Escalera de canales: elige el canal de este intento según los datos de
     // contacto del lead (correo es el fiable para leads fríos).
@@ -375,6 +383,47 @@ export class FollowUpService {
     this.logger.log(
       `Seguimiento ejecutado (leadId=${leadId} intento=${attempt} ` +
         `canal=${channel} enviado=${outcome.messageSent})`,
+    );
+  }
+
+  /**
+   * Plan por lead: si la persona suele responder a cierta hora, el próximo
+   * seguimiento se corre hacia esa hora (hasta 12 h, dentro de lo permitido).
+   * En cobranza solo se atrasa, para no achicar el espaciado legal.
+   */
+  private async alignToUsualHour(
+    leadId: string,
+    base: Date,
+    now: Date,
+    timezone: string,
+    permitido: (d: Date) => boolean,
+    cobranza: boolean,
+  ): Promise<Date> {
+    const respuestas = await this.prisma.db.interaction.findMany({
+      where: {
+        leadId,
+        direction: Direction.inbound,
+        channel: { in: CONVERSATION_CHANNELS },
+      },
+      orderBy: { occurredAt: 'desc' },
+      take: 20,
+      select: { occurredAt: true },
+    });
+    const hora = horaHabitual(
+      respuestas.map((r) => r.occurredAt),
+      timezone,
+    );
+    if (hora === null) {
+      return base;
+    }
+    return alinearConHoraHabitual(
+      base,
+      hora,
+      timezone,
+      now,
+      permitido,
+      12,
+      cobranza,
     );
   }
 
