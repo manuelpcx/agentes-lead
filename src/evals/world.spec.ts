@@ -1,3 +1,4 @@
+import { AgentType } from '@prisma/client';
 import { AnthropicService } from '../llm/anthropic.service';
 import { FALLBACK_ESCALATION_MESSAGE } from '../agent/agent.constants';
 import { CASOS } from './cases';
@@ -177,6 +178,53 @@ describe('runCase — datos del caso para el juez', () => {
   });
 });
 
+describe('runCase — mensajes viejos recuperados', () => {
+  // Un dato dicho al principio, 34 mensajes de relleno y una pregunta que lo
+  // necesita: el dato quedó fuera de la ventana de historial.
+  const historial: EvalCase['historial'] = [
+    {
+      de: 'cliente',
+      texto:
+        'Para la cotización: somos 3 sucursales, en Maipú, Ñuñoa y Providencia.',
+      haceMinutos: 5000,
+    },
+  ];
+  for (let i = 0; i < 34; i++) {
+    historial.push({
+      de: i % 2 === 0 ? 'agente' : 'cliente',
+      texto: `mensaje ${i}`,
+      haceMinutos: 4000 - i * 10,
+    });
+  }
+  historial.push({
+    de: 'cliente',
+    texto: '¿me recuerdas para cuántas sucursales era la cotización?',
+    haceMinutos: 1,
+  });
+  const caso: EvalCase = { ...CASO_BASE, historial };
+
+  it('trae al prompt el mensaje viejo que se relaciona con la pregunta', async () => {
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(caso, anthropic);
+
+    expect(run.system).toContain('De conversaciones anteriores');
+    expect(run.system).toContain('somos 3 sucursales, en Maipú');
+  });
+
+  it('sin recuperación, no', async () => {
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(caso, anthropic, { sin: ['recuperacion'] });
+
+    expect(run.system).not.toContain('somos 3 sucursales');
+  });
+});
+
 describe('runCase — tool_choice', () => {
   it('por defecto fuerza alguna herramienta, como producción hoy', async () => {
     const { anthropic, createMessage } = scripted([
@@ -196,6 +244,24 @@ describe('runCase — tool_choice', () => {
     await runCase(CASO_BASE, anthropic, { toolChoice: 'auto' });
 
     expect(createMessage.mock.calls[0][0].toolChoice).toBeUndefined();
+  });
+});
+
+describe('runCase — promesa de pago', () => {
+  it('el agente puede registrar una promesa de pago, y queda registrada', async () => {
+    // Sin la herramienta, el agente de cobranza guarda la promesa en la
+    // memoria y el caso no puede verificar que agende la verificación.
+    const { anthropic } = scripted([
+      toolUse('registrarPromesaPago', { fecha: '2026-10-23' }),
+    ]);
+
+    const run = await runCase(
+      { ...CASO_BASE, agentType: AgentType.COBRANZA },
+      anthropic,
+    );
+
+    expect(run.error).toBeUndefined();
+    expect(run.acciones.map((a) => a.tool)).toEqual(['registrarPromesaPago']);
   });
 });
 
@@ -271,6 +337,25 @@ describe('runCase — ventana de historial y ablación', () => {
 
     expect(run.system).toContain('Volvió buscando ampliar su plan.');
     expect(run.system).not.toContain('objecion: el plazo');
+  });
+
+  it('las conclusiones del caso llegan al prompt; sin reflexiones, no', async () => {
+    const caso: EvalCase = {
+      ...CASO_BASE,
+      memoria: { conclusiones: ['Su problema es de liquidez'] },
+    };
+    const conTodo = scripted([toolUse('enviarWhatsApp', { mensaje: 'hola' })]);
+    const sinReflexiones = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(caso, conTodo.anthropic);
+    const ablado = await runCase(caso, sinReflexiones.anthropic, {
+      sin: ['reflexiones'],
+    });
+
+    expect(run.system).toContain('Su problema es de liquidez');
+    expect(ablado.system).not.toContain('Su problema es de liquidez');
   });
 
   it('sin resumen: el prompt trae los hechos pero no el resumen', async () => {

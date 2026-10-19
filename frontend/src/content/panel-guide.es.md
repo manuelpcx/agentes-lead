@@ -56,7 +56,11 @@ Al entrar a un lead ves:
 - **Memoria del lead**: lo que el agente sabe de esa persona y arrastra entre
   conversaciones, incluso meses después: qué le interesa, objeciones, horarios,
   quién decide. La escribe el agente solo, y **puedes corregirla**: editar el
-  resumen, agregar un dato o borrar uno que esté mal.
+  resumen, agregar un dato o borrar uno que esté mal. Incluye también hasta
+  tres **conclusiones del agente** (por ejemplo, "su problema es de liquidez,
+  no de voluntad"): son hipótesis que deduce de la conversación, cada una
+  respaldada por los mensajes de donde sale, y se rehacen solas a medida que
+  la conversación avanza.
 - **Notas internas**: para tu equipo. El agente las recibe como contexto y no se
   las lee al cliente.
 - **Citas** del lead y **registro de acciones** del agente: qué herramienta usó

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   Agent,
@@ -21,11 +21,13 @@ import {
   HistoryRow,
   buildHistoryWindow,
   formatAge,
+  formatRecalled,
 } from './conversation-history';
 import { TOOL_ENVIAR_CORREO, TOOL_ENVIAR_WHATSAPP } from './tools/tool-names';
 import { formatLocalDateTime } from '../followup/business-hours';
 import { LeadMemoryService } from '../memory/lead-memory.service';
 import { formatMemory } from '../memory/lead-memory';
+import { ConversationRecallService } from '../memory/conversation-recall.service';
 
 /**
  * Renderiza `lead.metadata` (JSON libre que puede llenar la ingesta —p. ej. n8n
@@ -167,7 +169,10 @@ export class ContextBuilder {
     private readonly prompts: PromptService,
     private readonly examples: ExampleLibraryService,
     private readonly memory: LeadMemoryService,
+    private readonly recall: ConversationRecallService,
   ) {}
+
+  private readonly logger = new Logger(ContextBuilder.name);
 
   /**
    * Arma el system prompt en DOS bloques:
@@ -214,9 +219,10 @@ export class ContextBuilder {
       : '';
     const derivacion = await this.handoffNote(agent, lead);
     const memoria = await this.memoryBlock(lead);
+    const recuerdos = await this.recallBlock(lead, timezone);
     const trabajo = await this.workContext(lead, timezone);
     const variable =
-      `${resumen}${metaBloque}${derivacion}${memoria}${trabajo}\n` +
+      `${resumen}${metaBloque}${derivacion}${memoria}${recuerdos}${trabajo}\n` +
       `${OUTPUT_GUARDRAIL_REMINDER}${await this.fewShot(lead)}`;
 
     return [
@@ -225,10 +231,53 @@ export class ContextBuilder {
     ];
   }
 
+  /**
+   * Mensajes viejos que se relacionan con lo último que escribió el cliente:
+   * los que ya salieron de la ventana de historial y que el resumen no guarda
+   * (por regla no lleva cifras ni fechas). Solo se busca si el historial no
+   * cabe entero en la ventana. Si la búsqueda falla, el turno sigue sin ellos.
+   */
+  private async recallBlock(lead: Lead, timezone?: string): Promise<string> {
+    try {
+      const ventana = await this.prisma.db.interaction.findMany({
+        where: { leadId: lead.id, channel: { in: CONVERSATION_CHANNELS } },
+        orderBy: { occurredAt: 'desc' },
+        take: HISTORY_LIMIT,
+        select: { occurredAt: true },
+      });
+      if (ventana.length < HISTORY_LIMIT) {
+        return '';
+      }
+      const ultimo = await this.prisma.db.interaction.findFirst({
+        where: {
+          leadId: lead.id,
+          channel: { in: CONVERSATION_CHANNELS },
+          direction: Direction.inbound,
+        },
+        orderBy: { occurredAt: 'desc' },
+        select: { content: true },
+      });
+      if (!ultimo) {
+        return '';
+      }
+      const recuerdos = await this.recall.recall(
+        lead.id,
+        ultimo.content,
+        ventana[ventana.length - 1].occurredAt,
+      );
+      return formatRecalled(recuerdos, new Date(), timezone);
+    } catch (error) {
+      this.logger.warn(
+        `No se pudieron recuperar mensajes viejos (leadId=${lead.id}): ${(error as Error).message}`,
+      );
+      return '';
+    }
+  }
+
   /** Memoria viva del lead (perfil acumulado). Vacía si nunca se guardó nada. */
   private async memoryBlock(lead: Lead): Promise<string> {
-    const { summary, facts } = await this.memory.get(lead.id);
-    return formatMemory(summary, facts);
+    const { summary, facts, insights } = await this.memory.get(lead.id);
+    return formatMemory(summary, facts, insights);
   }
 
   /**

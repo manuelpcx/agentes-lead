@@ -4,6 +4,8 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PromptService } from '../prompts/prompt.service';
 import { ExampleLibraryService } from '../improvement/example-library.service';
 import { LeadMemoryService } from '../memory/lead-memory.service';
+import { ConversationRecallService } from '../memory/conversation-recall.service';
+import { HISTORY_LIMIT } from './conversation-history';
 
 interface MemoryFactLike {
   clave: string;
@@ -49,6 +51,11 @@ interface HarnessData {
     type: string;
     description: string | null;
   }>;
+  /** Cuántos mensajes hay en la ventana de historial. */
+  ventana?: number;
+  /** Lo último que escribió el cliente. */
+  ultimoEntrante?: string;
+  recuerdos?: jest.Mock;
 }
 
 function buildHarness(data: HarnessData = {}) {
@@ -62,8 +69,21 @@ function buildHarness(data: HarnessData = {}) {
       },
       // `handoffNote` busca el canal system; `fewShot`, el último entrante.
       interaction: {
-        findFirst: jest.fn(({ where }: { where: { channel?: unknown } }) =>
-          Promise.resolve(where.channel === Channel.system ? null : null),
+        findFirst: jest.fn(
+          ({ where }: { where: { channel?: unknown; direction?: unknown } }) =>
+            Promise.resolve(
+              where.channel !== Channel.system &&
+                where.direction === 'inbound' &&
+                data.ultimoEntrante
+                ? { content: data.ultimoEntrante }
+                : null,
+            ),
+        ),
+        // La ventana de historial: del más nuevo al más viejo.
+        findMany: jest.fn().mockResolvedValue(
+          Array.from({ length: data.ventana ?? 0 }, (_, i) => ({
+            occurredAt: new Date(Date.UTC(2026, 9, 10) - i * 3_600_000),
+          })),
         ),
       },
       appointment: {
@@ -87,9 +107,13 @@ function buildHarness(data: HarnessData = {}) {
       .mockResolvedValue(data.memory ?? { summary: null, facts: [] }),
   } as unknown as LeadMemoryService;
 
+  const recuerdos = data.recuerdos ?? jest.fn().mockResolvedValue([]);
+  const recall = { recall: recuerdos } as unknown as ConversationRecallService;
+
   return {
-    builder: new ContextBuilder(prisma, prompts, examples, memory),
+    builder: new ContextBuilder(prisma, prompts, examples, memory, recall),
     agentAction,
+    recuerdos,
   };
 }
 
@@ -254,5 +278,67 @@ describe('ContextBuilder.buildSystem — antecedentes del lead', () => {
     expect(where.tool.notIn).toEqual(
       expect.arrayContaining(['enviarWhatsApp', 'enviarCorreo']),
     );
+  });
+});
+
+describe('ContextBuilder.buildSystem — mensajes viejos recuperados', () => {
+  const viejo = {
+    id: 'i-1',
+    direction: 'inbound',
+    channel: Channel.whatsapp,
+    content: 'Somos 3 sucursales: Maipú, Ñuñoa y Providencia.',
+    occurredAt: new Date('2026-08-11T15:00:00.000Z'),
+    metadata: {},
+    similarity: 0.2,
+  };
+
+  it('trae los mensajes viejos que se relacionan con lo último que escribió', async () => {
+    const recuerdos = jest.fn().mockResolvedValue([viejo]);
+    const { builder } = buildHarness({
+      ventana: HISTORY_LIMIT,
+      ultimoEntrante: '¿para cuántas sucursales era?',
+      recuerdos,
+    });
+
+    const [, variable] = await builder.buildSystem(AGENT, LEAD, null);
+
+    // Busca solo ANTES del mensaje más viejo de la ventana: lo de la ventana
+    // el modelo ya lo ve.
+    const masViejoDeLaVentana = new Date(
+      Date.UTC(2026, 9, 10) - (HISTORY_LIMIT - 1) * 3_600_000,
+    );
+    expect(recuerdos).toHaveBeenCalledWith(
+      'lead-1',
+      '¿para cuántas sucursales era?',
+      masViejoDeLaVentana,
+    );
+    expect(variable.text).toContain('De conversaciones anteriores');
+    expect(variable.text).toContain('Cliente: Somos 3 sucursales');
+  });
+
+  it('si todo el historial cabe en la ventana, no busca nada', async () => {
+    const recuerdos = jest.fn().mockResolvedValue([viejo]);
+    const { builder } = buildHarness({
+      ventana: HISTORY_LIMIT - 1,
+      ultimoEntrante: '¿para cuántas sucursales era?',
+      recuerdos,
+    });
+
+    const [, variable] = await builder.buildSystem(AGENT, LEAD, null);
+
+    expect(recuerdos).not.toHaveBeenCalled();
+    expect(variable.text).not.toContain('De conversaciones anteriores');
+  });
+
+  it('si la búsqueda falla, el turno sigue sin ese bloque', async () => {
+    const { builder } = buildHarness({
+      ventana: HISTORY_LIMIT,
+      ultimoEntrante: '¿para cuántas sucursales era?',
+      recuerdos: jest.fn().mockRejectedValue(new Error('embeddings caídos')),
+    });
+
+    const [, variable] = await builder.buildSystem(AGENT, LEAD, null);
+
+    expect(variable.text).not.toContain('De conversaciones anteriores');
   });
 });

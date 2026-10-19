@@ -61,7 +61,11 @@ Opening a lead shows you:
 - **Lead memory**: what the agent knows about this person and carries across
   conversations, even months later: what they want, objections, preferred
   hours, who decides. The agent writes it on its own, and **you can correct
-  it**: edit the summary, add a fact or delete one that is wrong.
+  it**: edit the summary, add a fact or delete one that is wrong. It also shows
+  up to three **agent's conclusions** (for example, "the problem is cash flow,
+  not willingness"): hypotheses drawn from the conversation, each backed by the
+  messages it comes from, and they update on their own as the conversation
+  goes on.
 - **Internal notes**: for your team. The agent gets them as context and never
   reads them out to the customer.
 - **Appointments** for the lead and the agent's **action log**: which tool it

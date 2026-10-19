@@ -232,7 +232,8 @@ export const CASOS: EvalCase[] = [
   // ─────────────── Datos del propio cliente ───────────────
   {
     id: 'repite-dato-del-cliente',
-    descripcion: 'El cliente da un número de pedido y hay que confirmárselo',
+    descripcion:
+      'Reporta un pedido incompleto: confirmar el número y pasarlo al equipo',
     conocimiento: [
       'Para revisar un pedido, el equipo necesita el número y responde dentro de 24 horas hábiles.',
     ],
@@ -244,10 +245,14 @@ export const CASOS: EvalCase[] = [
       },
     ],
     espera: {
-      escala: false,
+      // El agente no puede revisar un despacho: la única forma de que alguien
+      // resuelva las cajas que faltan es escalar. Lo que se evalúa es que el
+      // cliente reciba un mensaje concreto, no el aviso genérico.
+      escala: true,
       criterios: [
         'le confirma al cliente que entendió el problema del pedido',
         'menciona el número de pedido 458812 para que quede claro de cuál habla',
+        'le dice qué va a pasar ahora (que el equipo lo revisa, idealmente con el plazo)',
       ],
     },
   },
@@ -281,7 +286,53 @@ export const CASOS: EvalCase[] = [
       criterios: [
         'acepta la fecha con respeto, sin presionar ni amenazar',
         'NO ofrece llamarlo en vez de registrar el acuerdo',
-        'si menciona el monto, dice 150.000 y no otro número',
+        'si menciona el monto, es 150.000 (vale escrito 150.000 o 150000) y no otro número',
+      ],
+    },
+  },
+  {
+    // En el caso anterior el agente suele confirmar la fecha antes de
+    // registrarla, como pide la herramienta. Aquí el deudor ya confirmó: lo
+    // que corresponde es registrar la promesa para que el sistema verifique
+    // el pago ese día.
+    id: 'cobranza-promesa-confirmada',
+    descripcion: 'El deudor confirma la fecha de pago',
+    agentType: AgentType.COBRANZA,
+    lead: {
+      metadata: {
+        monto: 150000,
+        vencimiento: '2026-08-15',
+        folio: 'F-4821',
+        link_pago: 'https://pagar.ejemplo.cl/F-4821',
+      },
+    },
+    historial: [
+      {
+        de: 'agente',
+        texto: 'Te escribo por una deuda pendiente.',
+        haceMinutos: 15,
+      },
+      {
+        de: 'cliente',
+        texto: 'el viernes te pago, ando corto este mes',
+        haceMinutos: 10,
+      },
+      {
+        de: 'agente',
+        texto: '¿Confirmamos entonces que pagas este viernes?',
+        haceMinutos: 5,
+      },
+      {
+        de: 'cliente',
+        texto: 'sí, este viernes sin falta',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      usa: ['registrarPromesaPago'],
+      criterios: [
+        'le confirma el acuerdo de pago con respeto',
+        'no le exige pagar antes de la fecha acordada',
       ],
     },
   },
@@ -506,6 +557,44 @@ export const CASOS: EvalCase[] = [
     },
   },
   {
+    // El dato (cuántas sucursales y cuáles) no está en el resumen —por regla
+    // no guarda cifras— ni en los hechos: solo vuelve si se recupera el
+    // mensaje viejo.
+    id: 'memoria-larga-dato-antiguo',
+    descripcion:
+      'Pregunta por un dato que dio hace semanas y que no quedó en la memoria',
+    memoria: {
+      summary:
+        'Dueño de una cadena de pastelerías; evalúa el plan pro para todos sus locales.',
+      facts: [],
+    },
+    historial: [
+      {
+        de: 'cliente',
+        texto:
+          'Para la cotización: somos 3 sucursales, en Maipú, Ñuñoa y Providencia.',
+        haceMinutos: 40000,
+      },
+      {
+        de: 'agente',
+        texto: 'Perfecto, lo tengo.',
+        haceMinutos: 39990,
+      },
+      ...charlaDeRelleno(16, 39000),
+      {
+        de: 'cliente',
+        texto: '¿me recuerdas para cuántas sucursales era la cotización?',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      criterios: [
+        'dice que la cotización era para 3 sucursales',
+        'si nombra las sucursales, son Maipú, Ñuñoa y Providencia (y no otras)',
+      ],
+    },
+  },
+  {
     id: 'memoria-larga-promesa',
     descripcion:
       'El deudor vuelve semanas después de prometer una fecha de pago',
@@ -544,6 +633,53 @@ export const CASOS: EvalCase[] = [
       criterios: [
         'recuerda que el cliente se comprometió a pagar el día 30',
         'no le exige el pago inmediato como si no hubiera un acuerdo',
+      ],
+    },
+  },
+
+  // ─────────────── Reflexiones ───────────────
+  // Lo que se mide es que el agente USE una conclusión (algo que nadie dijo
+  // literalmente) para decidir cómo tratar a la persona. La pregunta del
+  // cliente es neutra a propósito: sin la conclusión, lo natural es dar el
+  // monto y el link; con ella, abrir con las cuotas.
+  {
+    id: 'memoria-reflexion-cuotas',
+    descripcion:
+      'Una conclusión dice que avanza con cuotas; pregunta cuánto debe',
+    agentType: AgentType.COBRANZA,
+    lead: {
+      metadata: {
+        monto: 150000,
+        folio: 'F-4821',
+        link_pago: 'https://pagar.ejemplo.cl/F-4821',
+      },
+    },
+    conocimiento: [
+      'Política de pago: la deuda se puede pagar en hasta 3 cuotas sin interés.',
+    ],
+    memoria: {
+      summary:
+        'Titular de la cuenta; reconoce la deuda y responde con cortesía.',
+      conclusiones: [
+        'Su problema es de liquidez, no de voluntad: cuando se le exigió el total dejó de responder por semanas, y avanzó apenas se le habló de cuotas.',
+      ],
+    },
+    historial: [
+      {
+        de: 'agente',
+        texto: 'Te escribo por tu cuenta pendiente, folio F-4821.',
+        haceMinutos: 60,
+      },
+      {
+        de: 'cliente',
+        texto: 'hola, ¿cuánto es lo que debo?',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      criterios: [
+        'le dice el monto: 150.000 (vale escrito 150.000 o 150000)',
+        'le ofrece de entrada la opción de pagar en cuotas, sin esperar a que el cliente diga que no puede pagar todo',
       ],
     },
   },

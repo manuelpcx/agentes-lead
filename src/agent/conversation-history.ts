@@ -71,9 +71,11 @@ function shortDate(date: Date, timezone: string): string {
 }
 
 /**
- * Antigüedad legible: relativa mientras sea reciente, fecha cuando ya no lo es.
- * Es lo que le permite al agente no saludar como si nada tras dos semanas de
- * silencio, ni decir "como te decía" sobre algo de hace un mes.
+ * Antigüedad legible: siempre relativa, con la fecha al lado pasada la
+ * semana ("hace 5 semanas (13 ago 2026)"). Es lo que le permite al agente no
+ * saludar como si nada tras dos semanas de silencio, ni decir "como te decía"
+ * sobre algo de hace un mes. Con la fecha sola, el modelo tenía que calcular
+ * cuánto había pasado y en la práctica no lo hacía.
  */
 export function formatAge(
   occurredAt: Date,
@@ -96,7 +98,12 @@ export function formatAge(
   if (dias < 7) {
     return `hace ${dias} ${dias === 1 ? 'día' : 'días'}`;
   }
-  return shortDate(occurredAt, timezone);
+  const fecha = shortDate(occurredAt, timezone);
+  if (dias < 60) {
+    const semanas = Math.floor(dias / 7);
+    return `hace ${semanas} ${semanas === 1 ? 'semana' : 'semanas'} (${fecha})`;
+  }
+  return `hace ${Math.floor(dias / 30)} meses (${fecha})`;
 }
 
 /** true si la escribió una persona del equipo desde el panel, no el agente. */
@@ -118,6 +125,45 @@ export function annotate(
   const quien = isFromOperator(row) ? 'Operador · ' : '';
   return `[${quien}${canal} · ${formatAge(row.occurredAt, now, timezone)}] ${row.content}`;
 }
+
+/**
+ * Bloque de mensajes antiguos recuperados por relevancia (ya fuera de la
+ * ventana de historial). Cada uno con su antigüedad y quién lo dijo. Va
+ * marcado como contexto y no como dato verificado, igual que la memoria: una
+ * cifra de aquí se vuelve a comprobar con una herramienta antes de afirmarla.
+ */
+export function formatRecalled(
+  recuerdos: HistoryRow[],
+  now: Date,
+  timezone?: string,
+): string {
+  if (recuerdos.length === 0) {
+    return '';
+  }
+  const lineas = recuerdos.map((r) => {
+    const canal = CHANNEL_LABELS[r.channel] ?? 'WhatsApp';
+    const quien =
+      r.direction === Direction.inbound
+        ? 'Cliente'
+        : isFromOperator(r)
+          ? 'Operador'
+          : 'Tú';
+    return (
+      `- [${canal} · ${formatAge(r.occurredAt, now, timezone)}] ` +
+      `${quien}: ${trimContent(r.content, MAX_RECALLED_CHARS)}`
+    );
+  });
+  return (
+    '\n\n--- De conversaciones anteriores ---\n' +
+    'Mensajes viejos que ya no están en el historial, traídos porque se ' +
+    'relacionan con lo que te acaban de escribir. Úsalos para no pedir de ' +
+    'nuevo lo que la persona ya dijo. Son contexto, no datos verificados.\n' +
+    lineas.join('\n')
+  );
+}
+
+/** Tope por mensaje recuperado: alcanza para el dato, sin desplazar al resto. */
+const MAX_RECALLED_CHARS = 500;
 
 /**
  * Prefijo de las instrucciones que le da el SISTEMA al agente (seguimiento,

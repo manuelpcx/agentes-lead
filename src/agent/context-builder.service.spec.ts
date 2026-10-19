@@ -12,6 +12,7 @@ import { ExampleLibraryService } from '../improvement/example-library.service';
 import { SCHEDULED_CALL_TYPE, PROMISE_PAY_TYPE } from './agent.constants';
 import { HistoryRow } from './conversation-history';
 import { LeadMemoryService } from '../memory/lead-memory.service';
+import { ConversationRecallService } from '../memory/conversation-recall.service';
 
 /** Fila de historial tal como la devuelve la consulta del builder. */
 type HistoryLike = Pick<HistoryRow, 'direction' | 'content'> &
@@ -30,7 +31,10 @@ function buildHarness(interactions: HistoryLike[]) {
   const memory = {
     get: jest.fn().mockResolvedValue({ summary: null, facts: [] }),
   } as unknown as LeadMemoryService;
-  return new ContextBuilder(prisma, prompts, examples, memory);
+  const recall = {
+    recall: jest.fn().mockResolvedValue([]),
+  } as unknown as ConversationRecallService;
+  return new ContextBuilder(prisma, prompts, examples, memory, recall);
 }
 
 describe('formatLeadMetadata', () => {

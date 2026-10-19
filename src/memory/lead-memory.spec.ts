@@ -210,4 +210,32 @@ describe('formatMemory', () => {
 
     expect(out).toContain('- objecion: el plazo');
   });
+
+  it('incluye las conclusiones marcadas como hipótesis, con cuánta evidencia tienen', () => {
+    const out = formatMemory(
+      null,
+      [],
+      [
+        {
+          texto: 'Su problema es de liquidez, no de voluntad',
+          evidencia: ['int-1', 'int-2', 'int-3'],
+          creadaEn: 'x',
+        },
+      ],
+    );
+
+    expect(out).toContain('Su problema es de liquidez, no de voluntad');
+    expect(out).toContain('3 mensajes');
+    expect(out).toMatch(/hip[óo]tesis/i);
+  });
+
+  it('solo con conclusiones no queda vacío', () => {
+    expect(
+      formatMemory(
+        null,
+        [],
+        [{ texto: 'A', evidencia: ['int-1'], creadaEn: 'x' }],
+      ),
+    ).not.toBe('');
+  });
 });

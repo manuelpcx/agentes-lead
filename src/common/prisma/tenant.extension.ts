@@ -12,6 +12,7 @@ export const TENANT_SCOPED_MODELS = new Set<string>([
   'LeadNote',
   'LeadMemory',
   'Interaction',
+  'InteractionEmbedding',
   'Conversation',
   'KnowledgeDocument',
   'KnowledgeChunk',

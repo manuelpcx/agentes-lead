@@ -64,7 +64,12 @@ describe('condicionesPara', () => {
       { nombre: 'completo', sin: [] },
       { nombre: 'sin resumen', sin: ['resumen'] },
       { nombre: 'sin hechos', sin: ['hechos'] },
-      { nombre: 'sin memoria', sin: ['resumen', 'hechos'] },
+      { nombre: 'sin reflexiones', sin: ['reflexiones'] },
+      { nombre: 'sin recuperacion', sin: ['recuperacion'] },
+      {
+        nombre: 'sin memoria',
+        sin: ['resumen', 'hechos', 'reflexiones', 'recuperacion'],
+      },
     ]);
   });
 });

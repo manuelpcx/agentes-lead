@@ -59,7 +59,9 @@ export function LeadMemoryCard({
     setValor('');
   };
 
-  const vacia = !memory.summary && memory.facts.length === 0;
+  const insights = memory.insights ?? [];
+  const vacia =
+    !memory.summary && memory.facts.length === 0 && insights.length === 0;
 
   return (
     <Card className="p-4">
@@ -117,6 +119,29 @@ export function LeadMemoryCard({
             )}
           </div>
         )
+      )}
+
+      {insights.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-1 text-[11px] font-medium text-slate-500">
+            {t('leadDetail.memoryInsights')}
+          </p>
+          <ul className="space-y-1">
+            {insights.map((c) => (
+              <li
+                key={c.texto}
+                className="rounded-lg border border-violet-100 bg-violet-50/60 p-2 text-xs text-slate-700"
+              >
+                {c.texto}{' '}
+                <span className="text-[11px] text-slate-400">
+                  {t('leadDetail.memoryInsightEvidence', {
+                    count: c.evidencia.length,
+                  })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {memory.facts.length > 0 && (

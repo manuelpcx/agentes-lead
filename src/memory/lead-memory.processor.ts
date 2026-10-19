@@ -14,7 +14,7 @@ export interface LeadMemoryJobData {
 }
 
 /**
- * Rehace el resumen del lead fuera del turno. Va en su propia cola a
+ * Rehace el resumen y las conclusiones del lead fuera del turno. Va en su propia cola a
  * propósito: es una llamada extra al modelo, y hacerla dentro del turno le
  * sumaría segundos a la respuesta que el cliente está esperando.
  *
@@ -35,7 +35,7 @@ export class LeadMemoryProcessor extends WorkerHost {
       { companyId, correlationId: correlationId || randomUUID() },
       async () => {
         try {
-          await this.memory.refreshSummary(leadId);
+          await this.memory.refresh(leadId);
         } catch (error) {
           this.logger.warn(
             `Refresco de memoria fallido (leadId=${leadId}): ${(error as Error).message}`,

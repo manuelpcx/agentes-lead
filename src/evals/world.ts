@@ -33,8 +33,17 @@ import { CalificarLeadTool } from '../agent/tools/calificar-lead.tool';
 import { CancelarSeguimientoTool } from '../agent/tools/cancelar-seguimiento.tool';
 import { GuardarEnMemoriaTool } from '../agent/tools/guardar-en-memoria.tool';
 import { IniciarLlamadaTool } from '../agent/tools/iniciar-llamada.tool';
+import { RegistrarPromesaPagoTool } from '../agent/tools/registrar-promesa-pago.tool';
+import { CrmEventsService } from '../crm/crm-events.service';
 import { VoiceService } from '../voice/voice.service';
 import { formatLocalDateTime } from '../followup/business-hours';
+import { LocalEmbeddingsProvider } from '../embeddings/providers/local.provider';
+import {
+  ConversationRecallService,
+  palabrasClave,
+  seleccionarRecuerdos,
+  textoParaIndexar,
+} from '../memory/conversation-recall.service';
 import { EvalCase, EvalRun, RunOptions } from './types';
 
 /**
@@ -145,7 +154,17 @@ export async function runCase(
         // tendría nada que demostrar.
         findMany: async (args?: { take?: number }) =>
           [...interacciones].reverse().slice(0, args?.take),
-        findFirst: async () => null,
+        // El último mensaje del cliente (lo buscan la recuperación y los
+        // ejemplos); cualquier otra búsqueda, como una derivación, no existe.
+        findFirst: async (args?: { where?: { direction?: unknown } }) => {
+          if (args?.where?.direction !== Direction.inbound) {
+            return null;
+          }
+          const ultimo = [...interacciones]
+            .reverse()
+            .find((i) => i.direction === Direction.inbound);
+          return ultimo ? { content: ultimo.content } : null;
+        },
         count: async () => interacciones.length,
       },
       appointment: { findMany: async () => citas },
@@ -185,6 +204,13 @@ export async function runCase(
             importancia: 5,
             ...f,
             registradoEn: new Date().toISOString(),
+          })),
+      insights: sin.has('reflexiones')
+        ? []
+        : (caso.memoria?.conclusiones ?? []).map((texto) => ({
+            texto,
+            evidencia: ['eval-a', 'eval-b'],
+            creadaEn: new Date().toISOString(),
           })),
       updatedAt: null,
     }),
@@ -236,6 +262,11 @@ export async function runCase(
     startCall: async () => ({ callId: 'eval-call' }),
   } as unknown as VoiceService;
 
+  // En el mundo no hay CRM conectado: el evento se descarta.
+  const crmEvents = {
+    emit: async () => undefined,
+  } as unknown as CrmEventsService;
+
   const leads = {
     getById: async () => leadRow,
     escalateToHuman: async () => {
@@ -271,10 +302,48 @@ export async function runCase(
     new CancelarSeguimientoTool(leads, interactions),
     new GuardarEnMemoriaTool(memory),
     new IniciarLlamadaTool(voice, interactions, leads),
+    new RegistrarPromesaPagoTool(leads, interactions, crmEvents),
   ];
 
   const registry = new ToolRegistry(herramientas);
-  const contextBuilder = new ContextBuilder(prisma, prompts, examples, memory);
+  // Recuperación con lo mismo que producción: el embedder local y la misma
+  // selección híbrida. Solo cambia de dónde salen los candidatos (aquí, el
+  // historial del caso; allá, el SQL por vector).
+  const embedder = new LocalEmbeddingsProvider(1024);
+  const recall = {
+    recall: async (_leadId: string, query: string, before: Date) => {
+      if (sin.has('recuperacion') || palabrasClave(query).length === 0) {
+        return [];
+      }
+      const viejas = interacciones
+        .map((row, n) => ({ ...row, id: `eval-${n}` }))
+        .filter((row) => row.occurredAt < before);
+      if (viejas.length === 0) {
+        return [];
+      }
+      const [q, ...docs] = await embedder.embed([
+        query,
+        ...viejas.map(textoParaIndexar),
+      ]);
+      const candidatos = viejas
+        .map((row, n) => ({
+          ...row,
+          // Vectores normalizados: el producto punto es el coseno.
+          similarity: q.reduce((s, v, k) => s + v * docs[n][k], 0),
+        }))
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, 20);
+      return seleccionarRecuerdos(candidatos, query);
+    },
+  } as unknown as ConversationRecallService;
+
+  const contextBuilder = new ContextBuilder(
+    prisma,
+    prompts,
+    examples,
+    memory,
+    recall,
+  );
 
   // Envoltura del constructor de contexto para guardar el system prompt: si un
   // caso falla, lo primero que se quiere ver es qué leyó el modelo.

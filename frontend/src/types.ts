@@ -279,13 +279,24 @@ export interface LeadDetail {
 export interface LeadMemory {
   summary: string | null;
   facts: LeadMemoryFact[];
+  /** Conclusiones del agente; opcional para backends anteriores. */
+  insights?: LeadMemoryInsight[];
   updatedAt: string | null;
 }
 
 export interface LeadMemoryFact {
   clave: string;
   valor: string;
+  importancia?: number;
   registradoEn: string;
+}
+
+/** Conclusión deducida por el agente, con los mensajes que la respaldan. */
+export interface LeadMemoryInsight {
+  texto: string;
+  /** Ids de las interacciones que la respaldan. */
+  evidencia: string[];
+  creadaEn: string;
 }
 
 // ─────────────────── importación desde otro CRM ───────────────────

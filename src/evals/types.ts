@@ -48,6 +48,8 @@ export interface EvalCase {
   memoria?: {
     summary?: string;
     facts?: Array<{ clave: string; valor: string; importancia?: number }>;
+    /** Conclusiones (reflexiones) ya deducidas; en el mundo, con 2 mensajes de evidencia. */
+    conclusiones?: string[];
   };
   /** Datos exactos de la empresa, lo que devuelve `consultarDato`. */
   datos?: Record<string, unknown>;
@@ -65,9 +67,15 @@ export interface EvalCase {
  * Piezas de la memoria que se pueden apagar para medir cuánto aportan
  * (ablación, como en *Generative Agents*).
  */
-export type PiezaMemoria = 'resumen' | 'hechos';
+export type PiezaMemoria =
+  'resumen' | 'hechos' | 'reflexiones' | 'recuperacion';
 
-export const PIEZAS_MEMORIA: readonly PiezaMemoria[] = ['resumen', 'hechos'];
+export const PIEZAS_MEMORIA: readonly PiezaMemoria[] = [
+  'resumen',
+  'hechos',
+  'reflexiones',
+  'recuperacion',
+];
 
 /** Cómo se corre un caso. */
 export interface RunOptions {

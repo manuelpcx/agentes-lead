@@ -6,6 +6,7 @@ import {
   appendSystemInstruction,
   buildHistoryWindow,
   formatAge,
+  formatRecalled,
   isFromOperator,
   stripSystemAnnotation,
 } from './conversation-history';
@@ -42,11 +43,31 @@ describe('formatAge', () => {
     expect(formatAge(hace(3 * 24 * 3_600_000), NOW, TZ)).toBe('hace 3 días');
   });
 
-  it('pasa a fecha cuando ya es de otra semana', () => {
-    const viejo = formatAge(hace(40 * 24 * 3_600_000), NOW, TZ);
+  // Antes, pasados 7 días solo se mostraba la fecha y el modelo tenía que
+  // calcular solo cuánto había pasado; en el banco nunca reconocía que eran
+  // semanas (memoria-retoma, 0 de 12 corridas).
+  const DIA = 24 * 3_600_000;
 
-    expect(viejo).not.toContain('hace');
-    expect(viejo).toContain('2026');
+  it('pasados 7 días dice cuántas semanas, con la fecha', () => {
+    expect(formatAge(hace(40 * DIA), NOW, TZ)).toMatch(
+      /^hace 5 semanas \(13 ago\.? 2026\)$/,
+    );
+  });
+
+  it('una sola semana va en singular', () => {
+    expect(formatAge(hace(8 * DIA), NOW, TZ)).toMatch(/^hace 1 semana \(/);
+  });
+
+  it('pasados dos meses cuenta meses', () => {
+    expect(formatAge(hace(100 * DIA), NOW, TZ)).toMatch(/^hace 3 meses \(/);
+  });
+
+  it('la anotación más larga se sigue pudiendo quitar si el modelo la copia', () => {
+    expect(
+      stripSystemAnnotation(
+        '[Operador · WhatsApp · hace 12 semanas (30 jun 2026)] hola',
+      ),
+    ).toBe('hola');
   });
 
   it('usa la zona horaria del lead, no la del servidor', () => {
@@ -58,6 +79,57 @@ describe('formatAge', () => {
       '12',
     );
     expect(formatAge(instante, muchoDespues, 'Europe/Madrid')).toContain('13');
+  });
+});
+
+describe('formatRecalled', () => {
+  const viejo = {
+    direction: Direction.inbound,
+    channel: Channel.whatsapp,
+    content: 'Somos 3 sucursales: Maipú, Ñuñoa y Providencia.',
+    occurredAt: new Date('2026-08-11T15:00:00.000Z'),
+    metadata: {},
+  };
+
+  it('sin recuerdos no agrega nada', () => {
+    expect(formatRecalled([], NOW, TZ)).toBe('');
+  });
+
+  it('muestra cada mensaje viejo con su antigüedad y quién lo dijo, marcado como contexto', () => {
+    const out = formatRecalled(
+      [
+        viejo,
+        {
+          ...viejo,
+          direction: Direction.outbound,
+          content: 'Perfecto, cotizo para las 3.',
+        },
+      ],
+      NOW,
+      TZ,
+    );
+
+    expect(out).toContain('hace 6 semanas');
+    expect(out).toContain('Cliente: Somos 3 sucursales');
+    expect(out).toContain('Tú: Perfecto, cotizo para las 3.');
+    expect(out).toMatch(/no (son )?datos verificados/i);
+  });
+
+  it('distingue lo que escribió una persona del equipo', () => {
+    const out = formatRecalled(
+      [
+        {
+          ...viejo,
+          direction: Direction.outbound,
+          content: 'Te llamo yo',
+          metadata: { byUserId: 'u-1' },
+        },
+      ],
+      NOW,
+      TZ,
+    );
+
+    expect(out).toContain('Operador: Te llamo yo');
   });
 });
 

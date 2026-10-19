@@ -117,29 +117,30 @@ model Company {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  agents             Agent[]
-  leads              Lead[]
-  interactions       Interaction[]
-  conversations      Conversation[]
-  knowledgeDocuments KnowledgeDocument[]
-  knowledgeChunks    KnowledgeChunk[]
-  structuredFacts    StructuredFact[]
-  promptVersions     PromptVersion[]
-  memberships        Membership[]
-  agentActions       AgentAction[]
-  auditLogs          AuditLog[]
-  appointments       Appointment[]
-  knowledgeGaps      KnowledgeGap[]
-  complianceIssues   ComplianceIssue[]
-  examples           ExampleLibrary[]
-  metrics            AgentMetric[]
-  integrations       Integration[]
-  leadNotes          LeadNote[]
-  leadMemories       LeadMemory[]
-  apiKeys            ApiKey[]
-  emailDomain        EmailDomain?
-  voiceCalls         VoiceCall[]
-  providerIncidents  ProviderIncident[]
+  agents                Agent[]
+  leads                 Lead[]
+  interactions          Interaction[]
+  conversations         Conversation[]
+  knowledgeDocuments    KnowledgeDocument[]
+  knowledgeChunks       KnowledgeChunk[]
+  structuredFacts       StructuredFact[]
+  promptVersions        PromptVersion[]
+  memberships           Membership[]
+  agentActions          AgentAction[]
+  auditLogs             AuditLog[]
+  appointments          Appointment[]
+  knowledgeGaps         KnowledgeGap[]
+  complianceIssues      ComplianceIssue[]
+  examples              ExampleLibrary[]
+  metrics               AgentMetric[]
+  integrations          Integration[]
+  leadNotes             LeadNote[]
+  leadMemories          LeadMemory[]
+  interactionEmbeddings InteractionEmbedding[]
+  apiKeys               ApiKey[]
+  emailDomain           EmailDomain?
+  voiceCalls            VoiceCall[]
+  providerIncidents     ProviderIncident[]
 
   @@index([isActive])
 }
@@ -330,15 +331,16 @@ model Lead {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  agent         Agent          @relation(fields: [agentId], references: [id])
-  interactions  Interaction[]
-  conversations Conversation[]
-  agentActions  AgentAction[]
-  appointments  Appointment[]
-  notes         LeadNote[]
-  memory        LeadMemory?
-  voiceCalls    VoiceCall[]
+  company               Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent                 Agent                  @relation(fields: [agentId], references: [id])
+  interactions          Interaction[]
+  interactionEmbeddings InteractionEmbedding[]
+  conversations         Conversation[]
+  agentActions          AgentAction[]
+  appointments          Appointment[]
+  notes                 LeadNote[]
+  memory                LeadMemory?
+  voiceCalls            VoiceCall[]
 
   @@unique([companyId, externalId])
   @@index([nextActionAt])
@@ -359,13 +361,34 @@ model Interaction {
   metadata       Json      @default("{}")
   occurredAt     DateTime  @default(now())
 
-  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  agent        Agent?        @relation(fields: [agentId], references: [id])
-  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  company      Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agent        Agent?                @relation(fields: [agentId], references: [id])
+  lead         Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  conversation Conversation?         @relation(fields: [conversationId], references: [id])
+  embedding    InteractionEmbedding?
 
   @@index([companyId, leadId])
   @@index([leadId, occurredAt])
+}
+
+/// Embedding de una interacción de conversación, para recuperar mensajes
+/// antiguos por relevancia cuando ya salieron de la ventana de historial.
+/// El vector se escribe y se lee solo por SQL crudo (pgvector), siempre con
+/// `companyId` explícito. Sin índice vectorial: la búsqueda es siempre dentro
+/// de UN lead (cientos de filas a lo más), y el índice por lead basta.
+model InteractionEmbedding {
+  id            String                      @id @default(uuid()) @db.Uuid
+  companyId     String                      @db.Uuid
+  leadId        String                      @db.Uuid
+  interactionId String                      @unique @db.Uuid
+  embedding     Unsupported("vector(1024)")
+  createdAt     DateTime                    @default(now())
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  interaction Interaction @relation(fields: [interactionId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId])
 }
 
 /// Agrupa interacciones de una misma sesión. `analyzedAt` queda null hasta
@@ -630,8 +653,11 @@ model LeadMemory {
   summary        String?
   /// `occurredAt` de la interaccion mas nueva incluida en el resumen.
   summarizedUpto DateTime?
-  /// Hechos clave como lista de `{ clave, valor, registradoEn }`.
+  /// Hechos clave como lista de `{ clave, valor, importancia, registradoEn }`.
   facts          Json      @default("[]")
+  /// Conclusiones (reflexiones) como lista de `{ texto, evidencia, creadaEn }`;
+  /// `evidencia` son ids de las interacciones que respaldan cada una.
+  insights       Json      @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

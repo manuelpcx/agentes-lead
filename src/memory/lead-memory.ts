@@ -2,6 +2,7 @@
  * Lógica pura de la memoria del lead: normalizar claves, mezclar hechos y
  * renderizarlos para el prompt. Sin base de datos, para poder probarla sola.
  */
+import type { Insight } from './insights';
 
 /** Un hecho que el agente aprendió de la conversación. */
 export interface MemoryFact {
@@ -163,6 +164,7 @@ export function removeFact(facts: MemoryFact[], clave: string): MemoryFact[] {
 export function formatMemory(
   summary: string | null | undefined,
   facts: MemoryFact[],
+  insights: Insight[] = [],
 ): string {
   const partes: string[] = [];
   if (summary?.trim()) {
@@ -170,6 +172,22 @@ export function formatMemory(
   }
   if (facts.length > 0) {
     partes.push(facts.map((f) => `- ${f.clave}: ${f.valor}`).join('\n'));
+  }
+  if (insights.length > 0) {
+    // Son inferencias, no dichos: sirven para decidir CÓMO tratar a la
+    // persona, no para afirmárselas como hechos.
+    partes.push(
+      'Conclusiones sobre esta persona (hipótesis deducidas de la ' +
+        'conversación; úsalas para decidir cómo tratarla, no se las digas ' +
+        'como hechos):\n' +
+        insights
+          .map(
+            (i) =>
+              `- ${i.texto} (según ${i.evidencia.length} ` +
+              `${i.evidencia.length === 1 ? 'mensaje' : 'mensajes'})`,
+          )
+          .join('\n'),
+    );
   }
   if (partes.length === 0) {
     return '';
