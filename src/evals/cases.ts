@@ -119,7 +119,7 @@ export const CASOS: EvalCase[] = [
       usa: ['enviarWhatsApp'],
       criterios: [
         'demuestra que recuerda de qué hablaron: menciona el plan pro o el plazo de entrega',
-        'reconoce que pasó bastante tiempo en vez de seguir como si fuera ayer',
+        'no sigue como si la conversación fuera de ayer: saluda reconociendo que la persona vuelve o que pasó tiempo',
         'no le pide al cliente que repita todo desde cero',
       ],
     },
@@ -216,7 +216,9 @@ export const CASOS: EvalCase[] = [
     historial: [
       {
         de: 'cliente',
-        texto: '¿podemos hacer una reunión el próximo martes a las 10?',
+        // "Pasado mañana" no depende del día en que corre el banco: "el
+        // próximo martes" un lunes es ambiguo, y preguntar era lo correcto.
+        texto: '¿podemos hacer una reunión pasado mañana a las 10?',
         haceMinutos: 1,
       },
     ],

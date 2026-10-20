@@ -179,7 +179,9 @@ export function formatMemory(
     partes.push(
       'Conclusiones sobre esta persona (hipótesis deducidas de la ' +
         'conversación; úsalas para decidir cómo tratarla, no se las digas ' +
-        'como hechos):\n' +
+        'como hechos). Actúa según ellas desde tu primer mensaje: si una ' +
+        'sugiere ofrecer algo (cuotas, un plan, una alternativa), búscalo con ' +
+        'tus herramientas y ofrécelo concreto, sin esperar a que lo pida:\n' +
         insights
           .map(
             (i) =>
