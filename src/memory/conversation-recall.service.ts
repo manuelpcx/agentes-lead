@@ -16,7 +16,10 @@ import { HISTORY_LIMIT } from '../agent/conversation-history';
 
 /** Cuántos mensajes antiguos se traen como máximo por turno. */
 export const RECALL_TOP_K = 4;
-/** Umbral de similitud, el mismo de la base de conocimiento. Depende del embedder. */
+/**
+ * Umbral de similitud por defecto (el del embedder local). En producción manda
+ * el del embedder activo (`EmbeddingsService.recallMinSimilarity`).
+ */
 export const RECALL_MIN_SIMILARITY = 0.3;
 /** O bien: comparte al menos la mitad de las palabras clave de la consulta. */
 export const RECALL_MIN_COBERTURA = 0.5;
@@ -107,14 +110,14 @@ function coberturaLexica(claves: string[], texto: string): number {
 export function seleccionarRecuerdos(
   candidatos: RecalledInteraction[],
   query: string,
+  minSimilarity = RECALL_MIN_SIMILARITY,
 ): RecalledInteraction[] {
   const claves = palabrasClave(query);
   return candidatos
     .map((c) => ({ c, cobertura: coberturaLexica(claves, c.content) }))
     .filter(
       ({ c, cobertura }) =>
-        c.similarity >= RECALL_MIN_SIMILARITY ||
-        cobertura >= RECALL_MIN_COBERTURA,
+        c.similarity >= minSimilarity || cobertura >= RECALL_MIN_COBERTURA,
     )
     .sort(
       (a, b) =>
@@ -153,9 +156,24 @@ export class ConversationRecallService {
   ) {}
 
   /**
+   * Sin vector, o con uno de otro modelo: los dos hay que (re)indexarlos. Un
+   * vector de otro embedder no se puede comparar con los del activo.
+   */
+  private sinVectorVigente() {
+    return [
+      { embedding: { is: null } },
+      {
+        embedding: {
+          is: { embeddingModel: { not: this.embeddings.modelId } },
+        },
+      },
+    ];
+  }
+
+  /**
    * Embebe, en un solo lote, las interacciones de conversación del lead que
-   * todavía no tienen embedding (las más nuevas primero, hasta
-   * `MAX_INDEX_BATCH`). Corre en segundo plano. Devuelve cuántas indexó.
+   * todavía no tienen un vector del modelo activo (las más nuevas primero,
+   * hasta `MAX_INDEX_BATCH`). Corre en segundo plano. Devuelve cuántas indexó.
    */
   async indexPending(leadId: string): Promise<number> {
     const companyId = TenantContext.requireCompanyId();
@@ -163,7 +181,7 @@ export class ConversationRecallService {
       where: {
         leadId,
         channel: { in: CONVERSATION_CHANNELS },
-        embedding: { is: null },
+        OR: this.sinVectorVigente(),
       },
       orderBy: { occurredAt: 'desc' },
       take: MAX_INDEX_BATCH,
@@ -173,17 +191,21 @@ export class ConversationRecallService {
       return 0;
     }
 
+    const modelo = this.embeddings.modelId;
     const vectores = await this.embeddings.embedDocuments(
       pendientes.map(textoParaIndexar),
     );
     for (let n = 0; n < pendientes.length; n++) {
       const vector = `[${vectores[n].join(',')}]`;
-      // pgvector no pasa por Prisma: SQL crudo con companyId explícito. Si
-      // otro proceso ya la indexó, se ignora.
+      // pgvector no pasa por Prisma: SQL crudo con companyId explícito. Si ya
+      // había un vector de otro modelo, se reemplaza; si otro proceso ya la
+      // indexó con este mismo, queda como está.
       await this.prisma.raw.$executeRaw`
-        INSERT INTO "InteractionEmbedding" ("id", "companyId", "leadId", "interactionId", "embedding")
-        VALUES (gen_random_uuid(), ${companyId}::uuid, ${leadId}::uuid, ${pendientes[n].id}::uuid, ${vector}::vector)
-        ON CONFLICT ("interactionId") DO NOTHING
+        INSERT INTO "InteractionEmbedding" ("id", "companyId", "leadId", "interactionId", "embedding", "embeddingModel")
+        VALUES (gen_random_uuid(), ${companyId}::uuid, ${leadId}::uuid, ${pendientes[n].id}::uuid, ${vector}::vector, ${modelo})
+        ON CONFLICT ("interactionId") DO UPDATE
+          SET "embedding" = EXCLUDED."embedding", "embeddingModel" = EXCLUDED."embeddingModel"
+          WHERE "InteractionEmbedding"."embeddingModel" <> EXCLUDED."embeddingModel"
       `;
     }
     return pendientes.length;
@@ -210,7 +232,7 @@ export class ConversationRecallService {
         leadId,
         channel: { in: CONVERSATION_CHANNELS },
         occurredAt: { lt: limite },
-        embedding: { is: null },
+        OR: this.sinVectorVigente(),
       },
     });
     return sinIndexar > 0;
@@ -231,6 +253,7 @@ export class ConversationRecallService {
       return [];
     }
     const companyId = TenantContext.requireCompanyId();
+    const modelo = this.embeddings.modelId;
     const vector = `[${(await this.embeddings.embedQuery(query)).join(',')}]`;
 
     const filas = await this.prisma.raw.$queryRaw<RawRecalled[]>`
@@ -240,6 +263,7 @@ export class ConversationRecallService {
       JOIN "Interaction" i ON i.id = e."interactionId"
       WHERE e."companyId" = ${companyId}::uuid
         AND e."leadId" = ${leadId}::uuid
+        AND e."embeddingModel" = ${modelo}
         AND i."occurredAt" < ${before}
       ORDER BY e.embedding <=> ${vector}::vector
       LIMIT ${RECALL_CANDIDATOS}
@@ -248,6 +272,7 @@ export class ConversationRecallService {
     return seleccionarRecuerdos(
       filas.map((f) => ({ ...f, similarity: Number(f.similarity) })),
       query,
+      this.embeddings.recallMinSimilarity,
     );
   }
 }

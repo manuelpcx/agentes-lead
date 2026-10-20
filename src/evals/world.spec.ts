@@ -5,6 +5,7 @@ import { CASOS } from './cases';
 import { checksDeterministas, juzgar } from './judge';
 import { EvalCase } from './types';
 import { runCase } from './world';
+import { palabrasClave } from '../memory/conversation-recall.service';
 
 /**
  * Prueba del propio banco de evaluaciones. Corre el harness completo con un
@@ -367,6 +368,43 @@ describe('runCase — ventana de historial y ablación', () => {
 
     expect(run.system).not.toContain('Volvió buscando ampliar su plan.');
     expect(run.system).toContain('objecion: el plazo');
+  });
+});
+
+describe('caso de recuperación por sentido del banco', () => {
+  const caso = CASOS.find((c) => c.id === 'memoria-larga-por-sentido')!;
+  const dato = caso.historial[0].texto;
+  const pregunta = caso.historial.at(-1)!.texto;
+
+  it('la pregunta no comparte palabras clave con el dato: no hay atajo léxico', () => {
+    const delDato = new Set(palabrasClave(dato));
+
+    expect(palabrasClave(pregunta).filter((p) => delDato.has(p))).toEqual([]);
+  });
+
+  it('con el embedder local no se recupera: es lo que el caso mide', async () => {
+    const { anthropic, createMessage } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(caso, anthropic);
+
+    const visto = createMessage.mock.calls[0][0].messages
+      .map((m: { content: string }) => m.content)
+      .join('\n');
+    expect(visto).not.toContain(dato);
+    expect(run.system).not.toContain('Marcela');
+  });
+
+  it('deja anotados los candidatos de la recuperación para depurar', async () => {
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(caso, anthropic);
+
+    expect(run.recuerdos).toHaveLength(3);
+    expect(run.recuerdos?.[0]).toMatch(/^[✓·] \d\.\d{3} /);
   });
 });
 

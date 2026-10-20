@@ -71,6 +71,16 @@ describe('seleccionarRecuerdos', () => {
     expect(out.map((r) => r.id)).toEqual(['sucursales']);
   });
 
+  it('acepta el umbral del embedder', () => {
+    const out = seleccionarRecuerdos(
+      [recuerdo('a', 1, 0.5), recuerdo('b', 2, 0.7)],
+      SIN_RELACION,
+      0.6,
+    );
+
+    expect(out.map((r) => r.id)).toEqual(['b']);
+  });
+
   it(`se queda con los ${RECALL_TOP_K} más parecidos y los ordena por fecha`, () => {
     const out = seleccionarRecuerdos(
       [
@@ -100,6 +110,7 @@ function buildHarness(
     ventana?: number;
     sinIndexar?: number;
     filas?: RecalledInteraction[];
+    minSimilarity?: number;
   } = {},
 ) {
   const findMany = jest.fn(async (args: { select?: { content?: boolean } }) =>
@@ -124,6 +135,8 @@ function buildHarness(
   const embeddings = {
     embedDocuments,
     embedQuery,
+    modelId: 'voyage:voyage-3.5:1024',
+    recallMinSimilarity: opts.minSimilarity ?? 0.3,
   } as unknown as EmbeddingsService;
 
   return {
@@ -161,8 +174,37 @@ describe('ConversationRecallService.indexPending', () => {
     expect(h.$executeRaw).toHaveBeenCalledTimes(2);
     const valores = h.$executeRaw.mock.calls[0].slice(1) as unknown[];
     expect(valores).toEqual(
-      expect.arrayContaining(['company-1', 'lead-1', 'i-1']),
+      expect.arrayContaining([
+        'company-1',
+        'lead-1',
+        'i-1',
+        'voyage:voyage-3.5:1024',
+      ]),
     );
+  });
+
+  it('cuenta como pendiente lo indexado con otro modelo, y lo reemplaza', async () => {
+    const h = buildHarness({
+      pendientes: [{ id: 'i-1', direction: Direction.inbound, content: 'x' }],
+    });
+
+    await enTenant(() => h.service.indexPending('lead-1'));
+
+    const where = (
+      h.findMany.mock.calls[0][0] as unknown as { where: { OR: unknown[] } }
+    ).where;
+    expect(where.OR).toEqual([
+      { embedding: { is: null } },
+      {
+        embedding: {
+          is: { embeddingModel: { not: 'voyage:voyage-3.5:1024' } },
+        },
+      },
+    ]);
+    // Si ya existía el vector viejo, se sobrescribe con el del modelo actual.
+    const [plantilla] = h.$executeRaw.mock.calls[0] as unknown as [string[]];
+    const sql = plantilla.join('?');
+    expect(sql).toContain('DO UPDATE');
   });
 
   it('sin nada pendiente no llama al proveedor de embeddings', async () => {
@@ -190,6 +232,21 @@ describe('ConversationRecallService.needsIndexing', () => {
     await expect(
       enTenant(() => h.service.needsIndexing('lead-1')),
     ).resolves.toBe(true);
+  });
+
+  it('también cuenta los indexados con otro modelo', async () => {
+    const h = buildHarness({ ventana: HISTORY_LIMIT, sinIndexar: 1 });
+
+    await enTenant(() => h.service.needsIndexing('lead-1'));
+
+    const where = (
+      h.count.mock.calls[0] as unknown as [{ where: { OR: unknown[] } }]
+    )[0].where;
+    expect(where.OR).toContainEqual({
+      embedding: {
+        is: { embeddingModel: { not: 'voyage:voyage-3.5:1024' } },
+      },
+    });
   });
 
   it('no hace falta si lo que salió de la ventana ya está indexado', async () => {
@@ -225,8 +282,27 @@ describe('ConversationRecallService.recall', () => {
     expect(h.embedQuery).toHaveBeenCalledWith('¿para cuántas sucursales era?');
     const valores = h.$queryRaw.mock.calls[0].slice(1) as unknown[];
     expect(valores).toEqual(
-      expect.arrayContaining(['company-1', 'lead-1', antes]),
+      expect.arrayContaining([
+        'company-1',
+        'lead-1',
+        antes,
+        'voyage:voyage-3.5:1024',
+      ]),
     );
     expect(out.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('usa el umbral del embedder activo', async () => {
+    // Con Voyage, un 0,8 puede no bastar si el umbral calibrado es más alto.
+    const h = buildHarness({
+      filas: [recuerdo('a', 3, 0.8)],
+      minSimilarity: 0.85,
+    });
+
+    const out = await enTenant(() =>
+      h.service.recall('lead-1', '¿para cuántas sucursales era?', new Date()),
+    );
+
+    expect(out).toEqual([]);
   });
 });

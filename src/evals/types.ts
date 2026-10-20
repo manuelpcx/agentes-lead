@@ -110,6 +110,11 @@ export interface EvalRun {
    * pidió y los hechos no estaban apagados.
    */
   hechosExtraidos?: string[];
+  /**
+   * Los mensajes viejos más parecidos a la consulta, como "✓ 0.312 texto"
+   * (✓ = entró al contexto). Solo si la recuperación llegó a buscar.
+   */
+  recuerdos?: string[];
   error?: string;
 }
 

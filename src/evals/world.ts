@@ -38,7 +38,10 @@ import { RegistrarPromesaPagoTool } from '../agent/tools/registrar-promesa-pago.
 import { CrmEventsService } from '../crm/crm-events.service';
 import { VoiceService } from '../voice/voice.service';
 import { formatLocalDateTime } from '../followup/business-hours';
-import { LocalEmbeddingsProvider } from '../embeddings/providers/local.provider';
+import {
+  buildEmbeddingsProvider,
+  embeddingsSettingsFromEnv,
+} from '../embeddings/providers/build-provider';
 import {
   ConversationRecallService,
   palabrasClave,
@@ -66,6 +69,8 @@ import { EvalCase, EvalRun, RunOptions } from './types';
  */
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
+/** Candidatos de la recuperación que se muestran al depurar un fallo. */
+const MAX_RECUERDOS_EN_REPORTE = 3;
 const LEAD_ID = '00000000-0000-4000-8000-000000000002';
 const AGENT_ID = '00000000-0000-4000-8000-000000000003';
 
@@ -362,10 +367,12 @@ export async function runCase(
   ];
 
   const registry = new ToolRegistry(herramientas);
-  // Recuperación con lo mismo que producción: el embedder local y la misma
-  // selección híbrida. Solo cambia de dónde salen los candidatos (aquí, el
-  // historial del caso; allá, el SQL por vector).
-  const embedder = new LocalEmbeddingsProvider(1024);
+  // Recuperación con lo mismo que producción: el embedder configurado
+  // (`EMBEDDINGS_*`, local por defecto), su umbral y la misma selección
+  // híbrida. Solo cambia de dónde salen los candidatos (aquí, el historial
+  // del caso; allá, el SQL por vector).
+  const embedder = buildEmbeddingsProvider(embeddingsSettingsFromEnv());
+  let recuerdos: string[] | undefined;
   const recall = {
     recall: async (_leadId: string, query: string, before: Date) => {
       if (sin.has('recuperacion') || palabrasClave(query).length === 0) {
@@ -377,10 +384,11 @@ export async function runCase(
       if (viejas.length === 0) {
         return [];
       }
-      const [q, ...docs] = await embedder.embed([
-        query,
-        ...viejas.map(textoParaIndexar),
-      ]);
+      const [q] = await embedder.embed([query], 'query');
+      const docs = await embedder.embed(
+        viejas.map(textoParaIndexar),
+        'document',
+      );
       const candidatos = viejas
         .map((row, n) => ({
           ...row,
@@ -389,7 +397,21 @@ export async function runCase(
         }))
         .sort((a, b) => b.similarity - a.similarity)
         .slice(0, 20);
-      return seleccionarRecuerdos(candidatos, query);
+      const elegidos = seleccionarRecuerdos(
+        candidatos,
+        query,
+        embedder.recallMinSimilarity,
+      );
+      // Para depurar: los más parecidos, con su similitud y si entraron.
+      const ids = new Set(elegidos.map((e) => e.id));
+      recuerdos = candidatos
+        .slice(0, MAX_RECUERDOS_EN_REPORTE)
+        .map(
+          (c) =>
+            `${ids.has(c.id) ? '✓' : '·'} ${c.similarity.toFixed(3)} ` +
+            c.content.slice(0, 60),
+        );
+      return elegidos;
     },
   } as unknown as ConversationRecallService;
 
@@ -463,6 +485,7 @@ export async function runCase(
     ...registro,
     system: systemCapturado,
     datosDelCaso: datosParaElJuez(caso, citas),
+    ...(recuerdos ? { recuerdos } : {}),
     // Solo lo que anotó la extracción: lo que traía el caso queda con fecha 0.
     ...(hechosDeFondo
       ? {

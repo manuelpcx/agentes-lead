@@ -13,6 +13,27 @@ export interface EmbeddingsProvider {
   readonly dimension: number;
 
   /**
+   * Qué produjo el vector (`local:1024`, `voyage:voyage-3.5:1024`). Se guarda
+   * junto a cada vector: dos modelos distintos no son comparables, así que
+   * solo se busca entre los del modelo activo y el resto se reindexa.
+   */
+  readonly id: string;
+
+  /**
+   * Similitud coseno desde la que un fragmento de la base de conocimiento
+   * cuenta como parecido. Cada embedder reparte los puntajes distinto: el 0,3
+   * del local es ruido en uno semántico.
+   */
+  readonly minSimilarity: number;
+
+  /**
+   * Lo mismo para los mensajes viejos de la conversación. Va aparte porque un
+   * mensaje corto puntúa bastante menos que un párrafo, aun respondiendo
+   * igual de bien (`npm run embeddings:calibrar`).
+   */
+  readonly recallMinSimilarity: number;
+
+  /**
    * Convierte textos en vectores. `inputType` optimiza recuperación en
    * proveedores que lo soportan (Voyage); otros lo ignoran.
    */

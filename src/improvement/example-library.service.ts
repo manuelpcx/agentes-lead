@@ -19,6 +19,14 @@ export interface PendingExample {
   createdAt: Date;
 }
 
+/** Lo que se embebe de un ejemplo (al guardarlo y al reindexarlo). */
+export function textoDeEjemplo(
+  situation: string,
+  agentResponse: string,
+): string {
+  return `${situation}\n${agentResponse}`;
+}
+
 @Injectable()
 export class ExampleLibraryService {
   constructor(
@@ -34,16 +42,16 @@ export class ExampleLibraryService {
   ): Promise<void> {
     const companyId = TenantContext.requireCompanyId();
     const [embedding] = await this.embeddings.embedDocuments([
-      `${situation}\n${agentResponse}`,
+      textoDeEjemplo(situation, agentResponse),
     ]);
     const vector = `[${embedding.join(',')}]`;
     const id = randomUUID();
     await this.prisma.raw.$executeRaw`
       INSERT INTO "ExampleLibrary"
-        (id, "companyId", situation, "agentResponse", outcome, embedding, "isApproved", "usageCount", "createdAt")
+        (id, "companyId", situation, "agentResponse", outcome, embedding, "embeddingModel", "isApproved", "usageCount", "createdAt")
       VALUES
         (${id}::uuid, ${companyId}::uuid, ${situation}, ${agentResponse}, ${outcome},
-         ${vector}::vector, false, 0, now())
+         ${vector}::vector, ${this.embeddings.modelId}, false, 0, now())
     `;
   }
 
@@ -56,6 +64,7 @@ export class ExampleLibraryService {
       SELECT situation, "agentResponse"
       FROM "ExampleLibrary"
       WHERE "companyId" = ${companyId}::uuid AND "isApproved" = true
+        AND "embeddingModel" = ${this.embeddings.modelId}
       ORDER BY embedding <=> ${vector}::vector
       LIMIT ${topK}
     `;

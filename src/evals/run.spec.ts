@@ -182,6 +182,19 @@ describe('agregarCorridas', () => {
     expect(agregado.accionesEnFallo).toBe('(ninguna)');
   });
 
+  it('muestra los candidatos de la recuperación de la corrida que falló', () => {
+    const fallo = corrida([{ criterio: 'a', ok: false }]);
+    fallo.run.recuerdos = ['· 0.290 Cliente: la encargada es Marcela'];
+
+    expect(agregarCorridas([fallo]).recuerdosEnFallo).toEqual([
+      '· 0.290 Cliente: la encargada es Marcela',
+    ]);
+    expect(
+      agregarCorridas([corrida([{ criterio: 'a', ok: false }])])
+        .recuerdosEnFallo,
+    ).toBeUndefined();
+  });
+
   it('muestra lo que anotó la extracción de fondo en la corrida que falló', () => {
     const fallo = corrida([{ criterio: 'a', ok: false }]);
     fallo.run.hechosExtraidos = ['quien_decide: su socia'];

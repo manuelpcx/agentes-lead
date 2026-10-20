@@ -3,6 +3,9 @@ import {
   EmbeddingInputType,
 } from './embeddings-provider.interface';
 
+/** Similitud mínima del embedder local: solapamiento de palabras. */
+export const LOCAL_MIN_SIMILARITY = 0.3;
+
 /**
  * Embedder local determinista basado en *feature hashing* (hashing trick). No
  * es semántico como un modelo real, pero SÍ captura solapamiento léxico: textos
@@ -11,7 +14,19 @@ import {
  * texto produce siempre el mismo vector.
  */
 export class LocalEmbeddingsProvider implements EmbeddingsProvider {
-  constructor(readonly dimension: number) {}
+  readonly id: string;
+  readonly minSimilarity: number;
+  readonly recallMinSimilarity: number;
+
+  constructor(
+    readonly dimension: number,
+    opciones: { minSimilarity?: number; recallMinSimilarity?: number } = {},
+  ) {
+    this.id = `local:${dimension}`;
+    this.minSimilarity = opciones.minSimilarity ?? LOCAL_MIN_SIMILARITY;
+    this.recallMinSimilarity =
+      opciones.recallMinSimilarity ?? LOCAL_MIN_SIMILARITY;
+  }
 
   async embed(
     texts: string[],

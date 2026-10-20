@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
 /**
+ * Un umbral de similitud opcional. Vacío (`VARIABLE=` en el .env) cuenta como
+ * no puesto: coaccionado sería 0 y cualquier resultado pasaría.
+ */
+const similitud = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.coerce.number().min(0).max(1).optional(),
+);
+
+/**
  * Esquema de variables de entorno. Se valida al arrancar (fail-fast): si algo
  * falta o es inválido, el proceso no levanta. Así evitamos arrancar a medias.
  */
@@ -39,8 +48,20 @@ const envSchema = z
     // 'local' = embedder determinista sin API key (dev). 'voyage' = Voyage AI.
     EMBEDDINGS_PROVIDER: z.enum(['local', 'voyage']).default('local'),
     EMBEDDINGS_MODEL: z.string().default('voyage-3.5'),
-    // Debe coincidir con la dimensión de la columna vector en la BD (1024).
-    EMBEDDINGS_DIMENSION: z.coerce.number().int().positive().default(1024),
+    // Las columnas `vector` de la BD son de 1024: otra dimensión no cabe.
+    EMBEDDINGS_DIMENSION: z.coerce
+      .number()
+      .int()
+      .refine((d) => d === 1024, {
+        message:
+          'EMBEDDINGS_DIMENSION debe ser 1024 (la columna vector de la BD)',
+      })
+      .default(1024),
+    // Similitud mínima de la base de conocimiento y de los mensajes viejos.
+    // Sin valor, la calibrada del proveedor. Se mide con
+    // `npm run embeddings:calibrar`.
+    EMBEDDINGS_MIN_SIMILARITY: similitud,
+    EMBEDDINGS_RECALL_MIN_SIMILARITY: similitud,
     VOYAGE_API_KEY: z.string().optional(),
 
     // ── Agente / LLM (Fase 3) ──

@@ -21,6 +21,7 @@ interface ChunkInsert {
   documentId: string;
   content: string;
   embedding: number[];
+  embeddingModel: string;
   chunkIndex: number;
 }
 
@@ -173,6 +174,7 @@ export class KnowledgeDocumentService {
         documentId,
         content: chunks[i],
         embedding: embeddings[i],
+        embeddingModel: this.embeddings.modelId,
         chunkIndex: i,
       });
     }
@@ -186,11 +188,11 @@ export class KnowledgeDocumentService {
     const vectorLiteral = `[${chunk.embedding.join(',')}]`;
     await tx.$executeRaw`
       INSERT INTO "KnowledgeChunk"
-        (id, "companyId", "documentId", content, embedding, "chunkIndex", metadata, "createdAt")
+        (id, "companyId", "documentId", content, embedding, "embeddingModel", "chunkIndex", metadata, "createdAt")
       VALUES
         (${id}::uuid, ${chunk.companyId}::uuid, ${chunk.documentId}::uuid,
-         ${chunk.content}, ${vectorLiteral}::vector, ${chunk.chunkIndex},
-         '{}'::jsonb, now())
+         ${chunk.content}, ${vectorLiteral}::vector, ${chunk.embeddingModel},
+         ${chunk.chunkIndex}, '{}'::jsonb, now())
     `;
   }
 }

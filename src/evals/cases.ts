@@ -639,6 +639,46 @@ export const CASOS: EvalCase[] = [
     },
   },
 
+  // Igual que el anterior, pero la pregunta no comparte NINGUNA palabra clave
+  // con el mensaje viejo ("persona de compras" vs. "encargada de
+  // adquisiciones"): solo un embedder semántico lo recupera. Con el local
+  // falla, y es lo esperado; mide lo que aporta Voyage.
+  {
+    id: 'memoria-larga-por-sentido',
+    descripcion:
+      'Pregunta con otras palabras por un dato de hace semanas que no quedó en la memoria',
+    memoria: {
+      summary:
+        'Administra una cadena de pastelerías; evalúa el plan pro para su empresa.',
+      facts: [],
+    },
+    historial: [
+      {
+        de: 'cliente',
+        texto:
+          'Si necesitan algo formal, la encargada de adquisiciones es Marcela Rojas.',
+        haceMinutos: 40000,
+      },
+      {
+        de: 'agente',
+        texto: 'Anotado, gracias.',
+        haceMinutos: 39990,
+      },
+      ...charlaDeRelleno(16, 39000),
+      {
+        de: 'cliente',
+        texto: '¿cómo se llamaba la persona de compras que te mencioné?',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      criterios: [
+        'dice que la persona es Marcela Rojas (la encargada de adquisiciones)',
+        'no inventa otro nombre ni dice que no tiene esa información',
+      ],
+    },
+  },
+
   // ─────────────── Hechos automáticos ───────────────
   // El dato clave se dijo hace semanas, el agente nunca lo guardó y quedó
   // fuera de la ventana de historial. Lo único que puede traerlo es la

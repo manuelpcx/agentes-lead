@@ -377,18 +377,21 @@ model Interaction {
 /// `companyId` explícito. Sin índice vectorial: la búsqueda es siempre dentro
 /// de UN lead (cientos de filas a lo más), y el índice por lead basta.
 model InteractionEmbedding {
-  id            String                      @id @default(uuid()) @db.Uuid
-  companyId     String                      @db.Uuid
-  leadId        String                      @db.Uuid
-  interactionId String                      @unique @db.Uuid
-  embedding     Unsupported("vector(1024)")
-  createdAt     DateTime                    @default(now())
+  id             String                      @id @default(uuid()) @db.Uuid
+  companyId      String                      @db.Uuid
+  leadId         String                      @db.Uuid
+  interactionId  String                      @unique @db.Uuid
+  embedding      Unsupported("vector(1024)")
+  /// Qué modelo produjo el vector (`local:1024`, `voyage:voyage-3.5:1024`).
+  embeddingModel String
+  createdAt      DateTime                    @default(now())
 
   company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
   lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
   interaction Interaction @relation(fields: [interactionId], references: [id], onDelete: Cascade)
 
   @@index([companyId, leadId])
+  @@index([embeddingModel])
 }
 
 /// Agrupa interacciones de una misma sesión. `analyzedAt` queda null hasta
@@ -438,20 +441,23 @@ model KnowledgeDocument {
 /// es `Unsupported`: se inserta y se consulta por SQL crudo (Prisma no maneja el
 /// tipo `vector`). El índice HNSW se crea en la migración.
 model KnowledgeChunk {
-  id         String                      @id @default(uuid()) @db.Uuid
-  companyId  String                      @db.Uuid
-  documentId String                      @db.Uuid
-  content    String
-  embedding  Unsupported("vector(1024)")
-  chunkIndex Int
-  metadata   Json                        @default("{}")
-  createdAt  DateTime                    @default(now())
+  id             String                      @id @default(uuid()) @db.Uuid
+  companyId      String                      @db.Uuid
+  documentId     String                      @db.Uuid
+  content        String
+  embedding      Unsupported("vector(1024)")
+  /// Qué modelo produjo el vector; solo se busca entre los del modelo activo.
+  embeddingModel String
+  chunkIndex     Int
+  metadata       Json                        @default("{}")
+  createdAt      DateTime                    @default(now())
 
   company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([documentId])
+  @@index([embeddingModel])
 }
 
 /// Usuario del panel (auth-plane, transversal a empresas).
@@ -581,19 +587,22 @@ model ComplianceIssue {
 /// Biblioteca de ejemplos de buenas respuestas (Fase 6). Con embedding para
 /// recuperar los más similares e inyectarlos como few-shot en tiempo de ejecución.
 model ExampleLibrary {
-  id            String                      @id @default(uuid()) @db.Uuid
-  companyId     String                      @db.Uuid
-  situation     String
-  agentResponse String
-  outcome       String
-  embedding     Unsupported("vector(1024)")
-  isApproved    Boolean                     @default(false)
-  usageCount    Int                         @default(0)
-  createdAt     DateTime                    @default(now())
+  id             String                      @id @default(uuid()) @db.Uuid
+  companyId      String                      @db.Uuid
+  situation      String
+  agentResponse  String
+  outcome        String
+  embedding      Unsupported("vector(1024)")
+  /// Qué modelo produjo el vector; solo se busca entre los del modelo activo.
+  embeddingModel String
+  isApproved     Boolean                     @default(false)
+  usageCount     Int                         @default(0)
+  createdAt      DateTime                    @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([companyId, isApproved])
+  @@index([embeddingModel])
 }
 
 /// Métrica agregada por empresa/día (Fase 6).

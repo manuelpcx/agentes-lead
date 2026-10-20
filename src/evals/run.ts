@@ -150,6 +150,8 @@ export interface Agregado {
   accionesEnFallo?: string;
   /** Lo que anotó la extracción de fondo en esa corrida, si corrió. */
   hechosEnFallo?: string;
+  /** Los candidatos de la recuperación en esa corrida, si buscó. */
+  recuerdosEnFallo?: string[];
 }
 
 /**
@@ -162,6 +164,7 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
   let enviadoEnFallo: string | undefined;
   let accionesEnFallo: string | undefined;
   let hechosEnFallo: string | undefined;
+  let recuerdosEnFallo: string[] | undefined;
 
   for (const r of resultados) {
     for (const check of r.checks) {
@@ -182,6 +185,7 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
       enviadoEnFallo =
         r.run.mensajes.map((m) => m.texto).join(' | ') || '(nada)';
       accionesEnFallo = resumirAcciones(r.run.acciones);
+      recuerdosEnFallo = r.run.recuerdos;
       if (r.run.hechosExtraidos !== undefined) {
         hechosEnFallo = r.run.hechosExtraidos.join(' | ') || '(ninguno)';
       }
@@ -196,6 +200,7 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
     ...(enviadoEnFallo !== undefined ? { enviadoEnFallo } : {}),
     ...(accionesEnFallo !== undefined ? { accionesEnFallo } : {}),
     ...(hechosEnFallo !== undefined ? { hechosEnFallo } : {}),
+    ...(recuerdosEnFallo !== undefined ? { recuerdosEnFallo } : {}),
   };
 }
 
@@ -254,6 +259,12 @@ function imprimir(agregado: Agregado): void {
   }
   if (agregado.accionesEnFallo !== undefined) {
     console.log(`        ${GRIS}usó: ${agregado.accionesEnFallo}${RESET}`);
+  }
+  if (agregado.recuerdosEnFallo !== undefined) {
+    console.log(`        ${GRIS}recordó (✓ = entró):${RESET}`);
+    for (const r of agregado.recuerdosEnFallo) {
+      console.log(`          ${GRIS}${r}${RESET}`);
+    }
   }
   if (agregado.hechosEnFallo !== undefined) {
     console.log(`        ${GRIS}anotó: ${agregado.hechosEnFallo}${RESET}`);

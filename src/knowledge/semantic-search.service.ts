@@ -18,8 +18,6 @@ export interface SearchOptions {
 }
 
 const DEFAULT_TOP_K = 5;
-/** Umbral por defecto. Ajustable por consulta; depende del embedder. */
-const DEFAULT_MIN_SIMILARITY = 0.3;
 
 interface RawRow {
   chunkId: string;
@@ -47,7 +45,11 @@ export class SemanticSearchService {
   ): Promise<SearchResult[]> {
     const companyId = TenantContext.requireCompanyId();
     const topK = options.topK ?? DEFAULT_TOP_K;
-    const minSimilarity = options.minSimilarity ?? DEFAULT_MIN_SIMILARITY;
+    // Por defecto, el umbral del embedder activo: cada modelo reparte los
+    // puntajes distinto.
+    const minSimilarity =
+      options.minSimilarity ?? this.embeddings.minSimilarity;
+    const modelo = this.embeddings.modelId;
 
     const vector = await this.embeddings.embedQuery(query);
     const vectorLiteral = `[${vector.join(',')}]`;
@@ -64,6 +66,7 @@ export class SemanticSearchService {
       JOIN "KnowledgeDocument" d ON d.id = c."documentId"
       WHERE c."companyId" = ${companyId}::uuid
         AND d."isActive" = true
+        AND c."embeddingModel" = ${modelo}
       ORDER BY c.embedding <=> ${vectorLiteral}::vector
       LIMIT ${topK}
     `;

@@ -647,3 +647,44 @@ plataforma. Spec: `docs/superpowers/specs/2026-10-08-alertas-proveedores-design.
 - **Costo.** Cada refresco suma una llamada (hechos) a las dos que ya hacía
   (resumen y conclusiones), todas con el modelo de fondo
   (`ANTHROPIC_BACKGROUND_MODEL`), y ahora hay más refrescos por lead.
+
+## Embeddings con Voyage (2026-10-20)
+
+El embedder local solo ve palabras compartidas: "¿hasta qué hora atienden?"
+y "nuestro horario es de 9 a 18" le parecen ajenos (similitud 0). Con Voyage,
+la base de conocimiento, los ejemplos y la recuperación de mensajes viejos
+buscan por sentido.
+
+- **Migración nueva: `embedding_model`.** Agrega `embeddingModel` a
+  `KnowledgeChunk`, `ExampleLibrary` e `InteractionEmbedding`, y marca todo lo
+  existente como `local:1024`. Se aplica sola al arrancar. Es segura aunque no
+  cambies de proveedor.
+- **Los vectores no se mezclan.** Cada búsqueda compara solo vectores del
+  modelo activo. Al arrancar, `EmbeddingsReindexService` rehace en segundo
+  plano los de otro modelo (de a 100, reintenta cada 10 min si Voyage falla).
+  Mientras tanto, lo que falta reindexar no aparece en las búsquedas: con
+  pocos documentos son segundos.
+- **Para activarlo** (en Railway):
+  1. Crea una API key en Voyage AI (dashboard.voyageai.com).
+  2. `VOYAGE_API_KEY=<la key>` y `EMBEDDINGS_PROVIDER=voyage`.
+     `EMBEDDINGS_MODEL` queda en `voyage-3.5` (también sirve `voyage-4`).
+  3. Despliega y revisa el log: `Vectores rehechos con voyage:voyage-3.5:1024`.
+  4. Calibra los umbrales: `npm run embeddings:calibrar` dentro del
+     contenedor. Hay dos, porque un párrafo de la base de conocimiento puntúa
+     bastante más que un mensaje corto del cliente: `EMBEDDINGS_MIN_SIMILARITY`
+     (conocimiento, 0.55 por defecto con Voyage) y
+     `EMBEDDINGS_RECALL_MIN_SIMILARITY` (mensajes, 0.3). Son pisos, no cortes:
+     la búsqueda toma primero lo más parecido, así que el umbral solo tiene
+     que quedar bajo lo relevante. Si el script sugiere otro piso, ponlo en
+     esa variable. Calibrado el 2026-10-20 con voyage-3.5: ordenó bien 12 de
+     12 pares.
+- **Volver atrás** es quitar `EMBEDDINGS_PROVIDER` (vuelve a `local`): los
+  vectores se rehacen solos con el local.
+- **`EMBEDDINGS_DIMENSION` tiene que ser 1024**, la de las columnas; la app no
+  arranca con otro valor.
+- **Costo:** Voyage cobra por token (revisa el precio vigente y la cuota
+  gratis en su sitio). La reindexación inicial son unos pocos miles de
+  mensajes y fragmentos, cada uno de a lo más 2.000 caracteres.
+- **Evals:** el banco usa el mismo embedder que configuren las variables, así
+  que `memoria-larga-dato-antiguo` mide la recuperación con Voyage si está
+  activo.

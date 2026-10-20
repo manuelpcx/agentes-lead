@@ -22,6 +22,7 @@
     "prisma:studio": "prisma studio",
     "test:mcp": "node --test \"mcp/*.test.mjs\"",
     "eval": "nest build && node dist/evals/run.js",
+    "embeddings:calibrar": "nest build && node dist/embeddings/calibrate.js",
     "sync:guides": "node scripts/sync-guides.mjs"
   },
   "dependencies": {

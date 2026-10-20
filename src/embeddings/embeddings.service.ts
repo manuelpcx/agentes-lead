@@ -20,6 +20,21 @@ export class EmbeddingsService {
     return this.provider.dimension;
   }
 
+  /** Qué modelo produce los vectores; se guarda junto a cada uno. */
+  get modelId(): string {
+    return this.provider.id;
+  }
+
+  /** Similitud mínima para considerar parecido un resultado (según el modelo). */
+  get minSimilarity(): number {
+    return this.provider.minSimilarity;
+  }
+
+  /** Igual, para recuperar mensajes viejos de la conversación. */
+  get recallMinSimilarity(): number {
+    return this.provider.recallMinSimilarity;
+  }
+
   /** Embeddings para fragmentos de documentos (indexación). */
   async embedDocuments(texts: string[]): Promise<number[][]> {
     return this.provider.embed(texts, 'document');

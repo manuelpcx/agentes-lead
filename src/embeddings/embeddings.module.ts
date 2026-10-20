@@ -2,12 +2,12 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { EnvVars } from '../common/config/env.validation';
 import { EmbeddingsService } from './embeddings.service';
+import { EmbeddingsReindexService } from './embeddings-reindex.service';
 import {
   EMBEDDINGS_PROVIDER,
   EmbeddingsProvider,
 } from './providers/embeddings-provider.interface';
-import { LocalEmbeddingsProvider } from './providers/local.provider';
-import { VoyageEmbeddingsProvider } from './providers/voyage.provider';
+import { buildEmbeddingsProvider } from './providers/build-provider';
 
 /**
  * Módulo global de embeddings. Selecciona el proveedor según configuración:
@@ -20,24 +20,24 @@ import { VoyageEmbeddingsProvider } from './providers/voyage.provider';
     {
       provide: EMBEDDINGS_PROVIDER,
       inject: [ConfigService],
-      useFactory: (
-        config: ConfigService<EnvVars, true>,
-      ): EmbeddingsProvider => {
-        const dimension = config.get('EMBEDDINGS_DIMENSION', { infer: true });
-        const provider = config.get('EMBEDDINGS_PROVIDER', { infer: true });
-
-        if (provider === 'voyage') {
-          // La validación de entorno garantiza la key cuando provider=voyage.
-          const apiKey = config.get('VOYAGE_API_KEY', {
+      useFactory: (config: ConfigService<EnvVars, true>): EmbeddingsProvider =>
+        // La validación de entorno garantiza la key cuando provider=voyage.
+        buildEmbeddingsProvider({
+          provider: config.get('EMBEDDINGS_PROVIDER', { infer: true }),
+          model: config.get('EMBEDDINGS_MODEL', { infer: true }),
+          dimension: config.get('EMBEDDINGS_DIMENSION', { infer: true }),
+          voyageApiKey: config.get('VOYAGE_API_KEY', { infer: true }),
+          minSimilarity: config.get('EMBEDDINGS_MIN_SIMILARITY', {
             infer: true,
-          }) as string;
-          const model = config.get('EMBEDDINGS_MODEL', { infer: true });
-          return new VoyageEmbeddingsProvider(apiKey, model, dimension);
-        }
-        return new LocalEmbeddingsProvider(dimension);
-      },
+          }),
+          recallMinSimilarity: config.get('EMBEDDINGS_RECALL_MIN_SIMILARITY', {
+            infer: true,
+          }),
+        }),
     },
     EmbeddingsService,
+    // Al arrancar, rehace los vectores que quedaron de otro modelo.
+    EmbeddingsReindexService,
   ],
   exports: [EmbeddingsService],
 })
