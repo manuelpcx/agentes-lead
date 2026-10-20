@@ -384,11 +384,17 @@ export async function runCase(
       if (viejas.length === 0) {
         return [];
       }
-      const [q] = await embedder.embed([query], 'query');
-      const docs = await embedder.embed(
-        viejas.map(textoParaIndexar),
-        'document',
-      );
+      let q: number[];
+      let docs: number[][];
+      try {
+        [q] = await embedder.embed([query], 'query');
+        docs = await embedder.embed(viejas.map(textoParaIndexar), 'document');
+      } catch (error) {
+        // En producción el turno sigue sin recuerdos y solo queda un warn,
+        // que el banco no muestra: sin esto, un 429 parece un agente olvidadizo.
+        recuerdos = [`error del embedder: ${(error as Error).message}`];
+        throw error;
+      }
       const candidatos = viejas
         .map((row, n) => ({
           ...row,

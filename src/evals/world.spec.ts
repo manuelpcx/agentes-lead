@@ -6,6 +6,7 @@ import { checksDeterministas, juzgar } from './judge';
 import { EvalCase } from './types';
 import { runCase } from './world';
 import { palabrasClave } from '../memory/conversation-recall.service';
+import { LocalEmbeddingsProvider } from '../embeddings/providers/local.provider';
 
 /**
  * Prueba del propio banco de evaluaciones. Corre el harness completo con un
@@ -405,6 +406,27 @@ describe('caso de recuperación por sentido del banco', () => {
 
     expect(run.recuerdos).toHaveLength(3);
     expect(run.recuerdos?.[0]).toMatch(/^[✓·] \d\.\d{3} /);
+  });
+
+  it('si el embedder falla, el turno sigue y el error queda a la vista', async () => {
+    // Un 429 de Voyage: en producción solo deja un warn, que el banco calla.
+    const espia = jest
+      .spyOn(LocalEmbeddingsProvider.prototype, 'embed')
+      .mockRejectedValue(new Error('Fallo al generar embeddings (Voyage 429)'));
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    try {
+      const run = await runCase(caso, anthropic);
+
+      expect(run.error).toBeUndefined();
+      expect(run.recuerdos).toEqual([
+        'error del embedder: Fallo al generar embeddings (Voyage 429)',
+      ]);
+    } finally {
+      espia.mockRestore();
+    }
   });
 });
 
