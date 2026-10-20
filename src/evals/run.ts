@@ -40,6 +40,8 @@ function buildAnthropic(): AnthropicService {
   const env: Record<string, unknown> = {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
+    // El de las tareas de fondo (extracción de hechos); sin él, el del turno.
+    ANTHROPIC_BACKGROUND_MODEL: process.env.ANTHROPIC_BACKGROUND_MODEL,
     ANTHROPIC_EFFORT: process.env.ANTHROPIC_EFFORT ?? 'medium',
     ANTHROPIC_MAX_TOKENS: Number(process.env.ANTHROPIC_MAX_TOKENS ?? 4096),
   };
@@ -146,6 +148,8 @@ export interface Agregado {
   enviadoEnFallo?: string;
   /** Herramientas que usó esa misma corrida (con el motivo si escaló). */
   accionesEnFallo?: string;
+  /** Lo que anotó la extracción de fondo en esa corrida, si corrió. */
+  hechosEnFallo?: string;
 }
 
 /**
@@ -157,6 +161,7 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
   const porCriterio = new Map<string, CriterioAgregado>();
   let enviadoEnFallo: string | undefined;
   let accionesEnFallo: string | undefined;
+  let hechosEnFallo: string | undefined;
 
   for (const r of resultados) {
     for (const check of r.checks) {
@@ -177,6 +182,9 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
       enviadoEnFallo =
         r.run.mensajes.map((m) => m.texto).join(' | ') || '(nada)';
       accionesEnFallo = resumirAcciones(r.run.acciones);
+      if (r.run.hechosExtraidos !== undefined) {
+        hechosEnFallo = r.run.hechosExtraidos.join(' | ') || '(ninguno)';
+      }
     }
   }
 
@@ -187,6 +195,7 @@ export function agregarCorridas(resultados: EvalResult[]): Agregado {
     criterios: [...porCriterio.values()],
     ...(enviadoEnFallo !== undefined ? { enviadoEnFallo } : {}),
     ...(accionesEnFallo !== undefined ? { accionesEnFallo } : {}),
+    ...(hechosEnFallo !== undefined ? { hechosEnFallo } : {}),
   };
 }
 
@@ -245,6 +254,9 @@ function imprimir(agregado: Agregado): void {
   }
   if (agregado.accionesEnFallo !== undefined) {
     console.log(`        ${GRIS}usó: ${agregado.accionesEnFallo}${RESET}`);
+  }
+  if (agregado.hechosEnFallo !== undefined) {
+    console.log(`        ${GRIS}anotó: ${agregado.hechosEnFallo}${RESET}`);
   }
 }
 

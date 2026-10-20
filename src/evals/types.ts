@@ -51,6 +51,13 @@ export interface EvalCase {
     /** Conclusiones (reflexiones) ya deducidas; en el mundo, con 2 mensajes de evidencia. */
     conclusiones?: string[];
   };
+  /**
+   * Corre antes del turno la extracción de hechos REAL (el trabajo de fondo,
+   * con el modelo de fondo) sobre el historial previo al último mensaje, y le
+   * pasa al agente lo que anotó. Mide la memoria que se llena sola, sin que
+   * el agente haya llamado a `guardarEnMemoria`.
+   */
+  extraerHechos?: boolean;
   /** Datos exactos de la empresa, lo que devuelve `consultarDato`. */
   datos?: Record<string, unknown>;
   /** Fragmentos de la base de conocimiento, lo que devuelve `buscarConocimiento`. */
@@ -98,6 +105,11 @@ export interface EvalRun {
    * una fecha o un monto y marca como falla una respuesta correcta.
    */
   datosDelCaso?: string;
+  /**
+   * "clave: valor" de lo que anotó la extracción de fondo, si el caso la
+   * pidió y los hechos no estaban apagados.
+   */
+  hechosExtraidos?: string[];
   error?: string;
 }
 

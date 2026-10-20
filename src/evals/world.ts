@@ -10,6 +10,7 @@ import { getDefaultPrompt } from '../prompts/default-prompts';
 import { ExampleLibraryService } from '../improvement/example-library.service';
 import { LeadMemoryService } from '../memory/lead-memory.service';
 import { LeadMemoryJobData } from '../memory/lead-memory.processor';
+import { MemoryFact, parseFacts } from '../memory/lead-memory';
 import { StructuredFactsService } from '../knowledge/structured-facts.service';
 import { SemanticSearchService } from '../knowledge/semantic-search.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
@@ -88,6 +89,53 @@ function historialAInteracciones(caso: EvalCase) {
     occurredAt: minutosAtras(turno.haceMinutos ?? 0),
     metadata: turno.de === 'operador' ? { byUserId: 'u-1' } : {},
   }));
+}
+
+/**
+ * Corre la extracción de hechos REAL de `LeadMemoryService` — mismo prompt,
+ * mismo parseo y misma mezcla que producción — sobre una memoria en memoria.
+ * Ve el historial sin el último mensaje del cliente: en producción el trabajo
+ * de fondo corrió después de los turnos anteriores, no de este.
+ */
+async function extraerHechosDeFondo(
+  caso: EvalCase,
+  interacciones: ReturnType<typeof historialAInteracciones>,
+  anthropic: AnthropicService,
+): Promise<MemoryFact[]> {
+  const previas = interacciones.slice(0, -1);
+  let fila: { id: string; facts: unknown } | null = {
+    id: 'mem-eval',
+    facts: (caso.memoria?.facts ?? []).map((f) => ({
+      importancia: 5,
+      ...f,
+      registradoEn: new Date(0).toISOString(),
+    })),
+  };
+  const prisma = {
+    db: {
+      leadMemory: {
+        findFirst: async () => fila,
+        update: async ({ data }: { data: { facts?: unknown } }) => {
+          fila = { ...fila!, ...data };
+          return fila;
+        },
+      },
+      interaction: {
+        findMany: async (args?: { take?: number }) =>
+          [...previas].reverse().slice(0, args?.take),
+      },
+    },
+  } as unknown as PrismaService;
+  const service = new LeadMemoryService(
+    prisma,
+    anthropic,
+    {} as ConversationRecallService,
+  );
+  await TenantContext.run(
+    { companyId: COMPANY_ID, correlationId: `eval-hechos-${caso.id}` },
+    () => service.refreshFacts(LEAD_ID),
+  );
+  return parseFacts(fila?.facts);
 }
 
 /**
@@ -194,17 +242,25 @@ export async function runCase(
     findSimilar: async () => [],
   } as unknown as ExampleLibraryService;
 
+  // La memoria que se llenó sola: corre antes del turno, como el trabajo de
+  // fondo que en producción ya pasó. Con los hechos apagados no corre.
+  let hechosDeFondo: MemoryFact[] | undefined;
+  if (caso.extraerHechos && !sin.has('hechos')) {
+    hechosDeFondo = await extraerHechosDeFondo(caso, interacciones, anthropic);
+  }
+
   // Ablación: una pieza apagada es como si nunca se hubiera guardado.
   const memory = {
     get: async () => ({
       summary: sin.has('resumen') ? null : (caso.memoria?.summary ?? null),
       facts: sin.has('hechos')
         ? []
-        : (caso.memoria?.facts ?? []).map((f) => ({
+        : (hechosDeFondo ??
+          (caso.memoria?.facts ?? []).map((f) => ({
             importancia: 5,
             ...f,
             registradoEn: new Date().toISOString(),
-          })),
+          }))),
       insights: sin.has('reflexiones')
         ? []
         : (caso.memoria?.conclusiones ?? []).map((texto) => ({
@@ -407,6 +463,14 @@ export async function runCase(
     ...registro,
     system: systemCapturado,
     datosDelCaso: datosParaElJuez(caso, citas),
+    // Solo lo que anotó la extracción: lo que traía el caso queda con fecha 0.
+    ...(hechosDeFondo
+      ? {
+          hechosExtraidos: hechosDeFondo
+            .filter((f) => f.registradoEn !== new Date(0).toISOString())
+            .map((f) => `${f.clave}: ${f.valor}`),
+        }
+      : {}),
     error,
   };
 }

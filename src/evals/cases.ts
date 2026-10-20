@@ -639,6 +639,52 @@ export const CASOS: EvalCase[] = [
     },
   },
 
+  // ─────────────── Hechos automáticos ───────────────
+  // El dato clave se dijo hace semanas, el agente nunca lo guardó y quedó
+  // fuera de la ventana de historial. Lo único que puede traerlo es la
+  // extracción de fondo (`extraerHechos`), que corre de verdad antes del
+  // turno. El último mensaje no comparte palabras con el dato, para que la
+  // recuperación de mensajes viejos no lo rescate por su cuenta.
+  {
+    id: 'memoria-hechos-automaticos',
+    descripcion:
+      'Nadie guardó que decide la socia; la extracción de fondo debe anotarlo',
+    datos: { precio_plan_pro: { monto: 45000, moneda: 'CLP' } },
+    conocimiento: [
+      'Para contratar el plan pro se firma un contrato digital que el equipo envía por correo. El plan queda activo al día siguiente de la firma.',
+    ],
+    extraerHechos: true,
+    memoria: {
+      summary:
+        'Interesada en el plan pro; ya resolvió sus dudas de funcionalidades y soporte.',
+    },
+    historial: [
+      {
+        de: 'cliente',
+        texto:
+          'Ojo, yo no firmo nada: la que decide es mi socia Carla, a ella hay que mandarle la propuesta.',
+        haceMinutos: 40000,
+      },
+      {
+        de: 'agente',
+        texto: 'Perfecto, lo tengo en cuenta.',
+        haceMinutos: 39990,
+      },
+      ...charlaDeRelleno(16, 39000),
+      {
+        de: 'cliente',
+        texto: 'Ya, me convenció. ¿Cómo cerramos?',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      criterios: [
+        'menciona a Carla, la socia, o propone enviarle la propuesta o sumarla antes de dar el cierre por hecho',
+        'no presiona para cerrar solo con el cliente',
+      ],
+    },
+  },
+
   // ─────────────── Reflexiones ───────────────
   // Lo que se mide es que el agente USE una conclusión (algo que nadie dijo
   // literalmente) para decidir cómo tratar a la persona. La pregunta del

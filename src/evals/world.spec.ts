@@ -370,6 +370,28 @@ describe('runCase — ventana de historial y ablación', () => {
   });
 });
 
+describe('caso de hechos automáticos del banco', () => {
+  const caso = CASOS.find((c) => c.id === 'memoria-hechos-automaticos')!;
+  const dato = caso.historial[0].texto;
+
+  it('el dato solo llega por la extracción: ni por la ventana ni por la recuperación', async () => {
+    const { anthropic, createMessage } = scripted(
+      [toolUse('enviarWhatsApp', { mensaje: 'hola' })],
+      '{"hechos": []}',
+    );
+
+    const run = await runCase(caso, anthropic);
+
+    const visto = createMessage.mock.calls[0][0].messages
+      .map((m: { content: string }) => m.content)
+      .join('\n');
+    expect(visto).not.toContain(dato);
+    expect(run.system).not.toContain('Carla');
+    // La extracción sí lo vio.
+    expect((anthropic.complete as jest.Mock).mock.calls[0][1]).toContain(dato);
+  });
+});
+
 describe('casos largos del banco', () => {
   const largos = CASOS.filter((c) => c.id.startsWith('memoria-larga'));
 
@@ -401,7 +423,80 @@ describe('casos largos del banco', () => {
   );
 });
 
+describe('runCase — hechos extraídos en segundo plano', () => {
+  const CASO_EXTRAE: EvalCase = {
+    ...CASO_BASE,
+    extraerHechos: true,
+    historial: [
+      { de: 'cliente', texto: 'lo decide mi socia Carla', haceMinutos: 600 },
+      { de: 'agente', texto: 'Entendido.', haceMinutos: 599 },
+      { de: 'cliente', texto: '¿cómo cerramos?', haceMinutos: 1 },
+    ],
+  };
+  const HECHOS = JSON.stringify({
+    hechos: [
+      { clave: 'quien_decide', valor: 'su socia Carla', importancia: 9 },
+    ],
+  });
+
+  it('corre la extracción real antes del turno y el agente ve el hecho', async () => {
+    const { anthropic } = scripted([], HECHOS);
+
+    const run = await runCase(CASO_EXTRAE, anthropic);
+
+    expect(run.hechosExtraidos).toEqual(['quien_decide: su socia Carla']);
+    expect(run.system).toContain('- quien_decide: su socia Carla');
+  });
+
+  it('la extracción no ve el último mensaje: el trabajo corrió antes', async () => {
+    const { anthropic } = scripted([], HECHOS);
+
+    await runCase(CASO_EXTRAE, anthropic);
+
+    const complete = (anthropic.complete as jest.Mock).mock.calls[0];
+    expect(complete[1]).toContain('Cliente: lo decide mi socia Carla');
+    expect(complete[1]).not.toContain('¿cómo cerramos?');
+    expect(complete[2]).toEqual({ background: true });
+  });
+
+  it('con los hechos apagados no extrae nada', async () => {
+    const { anthropic } = scripted([], HECHOS);
+
+    const run = await runCase(CASO_EXTRAE, anthropic, { sin: ['hechos'] });
+
+    expect(anthropic.complete).not.toHaveBeenCalled();
+    expect(run.hechosExtraidos).toBeUndefined();
+    expect(run.system).not.toContain('quien_decide');
+  });
+
+  it('un caso sin la marca no gasta la llamada de extracción', async () => {
+    const { anthropic } = scripted([], HECHOS);
+
+    const run = await runCase(CASO_BASE, anthropic);
+
+    expect(anthropic.complete).not.toHaveBeenCalled();
+    expect(run.hechosExtraidos).toBeUndefined();
+  });
+});
+
 describe('checksDeterministas', () => {
+  it('falla si la extracción de fondo corrió y no anotó nada', () => {
+    const run = {
+      acciones: [],
+      mensajes: [],
+      escalado: false,
+      system: '',
+      hechosExtraidos: [],
+    };
+
+    expect(checksDeterministas(CASO_BASE, run)).toEqual([
+      expect.objectContaining({
+        criterio: 'la extracción de fondo anotó algún hecho',
+        ok: false,
+      }),
+    ]);
+  });
+
   const run = {
     acciones: [{ tool: 'consultarDato', input: {} }],
     mensajes: [],

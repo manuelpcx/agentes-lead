@@ -92,6 +92,15 @@ export function checksDeterministas(caso: EvalCase, run: EvalRun): EvalCheck[] {
     });
   }
 
+  // Si la extracción no anotó nada, el resto del caso ya no mide la memoria
+  // automática: el agente responde sin el dato.
+  if (run.hechosExtraidos !== undefined) {
+    checks.push({
+      criterio: 'la extracción de fondo anotó algún hecho',
+      ok: run.hechosExtraidos.length > 0,
+    });
+  }
+
   for (const tool of caso.espera.usa ?? []) {
     checks.push({
       criterio: `usa ${tool}`,

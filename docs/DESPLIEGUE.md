@@ -231,7 +231,7 @@ despliegue**: todos traen un valor por defecto que funciona tal cual.
 - **Costo.** El resumen es una llamada adicional al modelo cada 10
   interacciones de un mismo lead, con esfuerzo bajo y fuera del turno. Para
   cambiar la frecuencia, `REFRESH_EVERY_INTERACTIONS` en
-  `src/memory/lead-memory.service.ts`.
+  `src/memory/refresh-triggers.ts`.
 - **Herramienta nueva `guardarEnMemoria`.** Queda habilitada por defecto en los
   agentes nuevos. Para los agentes que ya existen, agrégala en **Agentes →
   Herramientas** si quieres que la usen.
@@ -631,3 +631,19 @@ plataforma. Spec: `docs/superpowers/specs/2026-10-08-alertas-proveedores-design.
   al cerrarse.
 - **Endpoints:** `GET /panel/alerts` (aviso del panel) y
   `GET /platform/incidents` (mantenedor).
+
+## Memoria: hechos automáticos y refresco por eventos (2026-10-20)
+
+- **Sin migraciones ni variables nuevas.**
+- **Hechos automáticos.** El trabajo de fondo de la memoria ahora relee la
+  conversación y anota los hechos duraderos que el agente no guardó con
+  `guardarEnMemoria`. Nunca baja la importancia de un hecho existente (los que
+  agrega una persona desde el panel quedan en 8 o más). Lógica en
+  `src/memory/fact-extraction.ts`.
+- **Refresco por eventos.** Además de cada 10 mensajes, la memoria se rehace
+  tras una llamada, al escalar, registrar una promesa de pago o derivar, y
+  cuando el cliente vuelve a escribir tras más de 7 días. Un lead nuevo tiene
+  su primer resumen con 3 mensajes. Reglas en `src/memory/refresh-triggers.ts`.
+- **Costo.** Cada refresco suma una llamada (hechos) a las dos que ya hacía
+  (resumen y conclusiones), todas con el modelo de fondo
+  (`ANTHROPIC_BACKGROUND_MODEL`), y ahora hay más refrescos por lead.

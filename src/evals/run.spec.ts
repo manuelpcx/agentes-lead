@@ -181,4 +181,20 @@ describe('agregarCorridas', () => {
 
     expect(agregado.accionesEnFallo).toBe('(ninguna)');
   });
+
+  it('muestra lo que anotó la extracción de fondo en la corrida que falló', () => {
+    const fallo = corrida([{ criterio: 'a', ok: false }]);
+    fallo.run.hechosExtraidos = ['quien_decide: su socia'];
+    const vacia = corrida([{ criterio: 'a', ok: false }]);
+    vacia.run.hechosExtraidos = [];
+
+    expect(agregarCorridas([fallo]).hechosEnFallo).toBe(
+      'quien_decide: su socia',
+    );
+    expect(agregarCorridas([vacia]).hechosEnFallo).toBe('(ninguno)');
+    // Un caso sin extracción no muestra la línea.
+    expect(
+      agregarCorridas([corrida([{ criterio: 'a', ok: false }])]).hechosEnFallo,
+    ).toBeUndefined();
+  });
 });

@@ -31,6 +31,10 @@ function buildHarness(
     configured?: boolean;
     complete?: jest.Mock;
     needsIndexing?: boolean;
+    /** Llamadas nuevas desde el último resumen. */
+    calls?: number;
+    /** Escalamientos, promesas o derivaciones desde el último resumen. */
+    eventos?: number;
   } = {},
 ) {
   const rows: Row[] = options.row
@@ -75,10 +79,17 @@ function buildHarness(
     db: {
       leadMemory,
       interaction: {
-        findMany: jest.fn(async () =>
-          [...(options.interactions ?? [])].reverse(),
+        findMany: jest.fn(async (args?: { take?: number }) =>
+          [...(options.interactions ?? [])].reverse().slice(0, args?.take),
         ),
-        count: jest.fn(async () => options.count ?? 0),
+        count: jest.fn(async (args?: { where?: { channel?: unknown } }) =>
+          args?.where?.channel === 'call'
+            ? (options.calls ?? 0)
+            : (options.count ?? 0),
+        ),
+      },
+      agentAction: {
+        count: jest.fn(async () => options.eventos ?? 0),
       },
     },
   } as unknown as PrismaService;
@@ -197,9 +208,92 @@ describe('LeadMemoryService.needsRefresh', () => {
     );
   });
 
+  const resumido = { summarizedUpto: new Date('2026-10-01T12:00:00Z') };
+
   it('no refresca con pocas interacciones nuevas', async () => {
     const { service } = buildHarness({
+      row: resumido,
       count: REFRESH_EVERY_INTERACTIONS - 1,
+    });
+
+    await expect(enTenant(() => service.needsRefresh('lead-1'))).resolves.toBe(
+      false,
+    );
+  });
+
+  it('un lead sin resumen tiene el primero con pocos mensajes', async () => {
+    const { service } = buildHarness({ count: 3 });
+
+    await expect(enTenant(() => service.needsRefresh('lead-1'))).resolves.toBe(
+      true,
+    );
+  });
+
+  it('refresca tras una llamada aunque falten mensajes', async () => {
+    const { service } = buildHarness({ row: resumido, count: 2, calls: 1 });
+
+    await expect(enTenant(() => service.needsRefresh('lead-1'))).resolves.toBe(
+      true,
+    );
+  });
+
+  it('refresca tras escalar, una promesa de pago o una derivación', async () => {
+    const { service } = buildHarness({ row: resumido, count: 2, eventos: 1 });
+
+    await expect(enTenant(() => service.needsRefresh('lead-1'))).resolves.toBe(
+      true,
+    );
+  });
+
+  it('refresca cuando el cliente vuelve tras un silencio largo', async () => {
+    const { service } = buildHarness({
+      row: resumido,
+      count: 2,
+      interactions: [
+        {
+          direction: 'outbound',
+          content: '¿seguimos?',
+          occurredAt: new Date('2026-10-01T12:00:00Z'),
+        },
+        {
+          direction: 'inbound',
+          content: 'hola, perdón la demora',
+          occurredAt: new Date('2026-10-12T09:00:00Z'),
+        },
+        {
+          direction: 'outbound',
+          content: '¡hola de nuevo!',
+          occurredAt: new Date('2026-10-12T09:01:00Z'),
+        },
+      ],
+    });
+
+    await expect(enTenant(() => service.needsRefresh('lead-1'))).resolves.toBe(
+      true,
+    );
+  });
+
+  it('una conversación seguida sin eventos no refresca', async () => {
+    const { service } = buildHarness({
+      row: resumido,
+      count: 2,
+      interactions: [
+        {
+          direction: 'outbound',
+          content: '¿seguimos?',
+          occurredAt: new Date('2026-10-01T12:00:00Z'),
+        },
+        {
+          direction: 'inbound',
+          content: 'sí',
+          occurredAt: new Date('2026-10-01T12:10:00Z'),
+        },
+        {
+          direction: 'outbound',
+          content: 'perfecto',
+          occurredAt: new Date('2026-10-01T12:11:00Z'),
+        },
+      ],
     });
 
     await expect(enTenant(() => service.needsRefresh('lead-1'))).resolves.toBe(
@@ -414,6 +508,119 @@ describe('LeadMemoryService.refreshInsights', () => {
   });
 });
 
+describe('LeadMemoryService.refreshFacts', () => {
+  const interacciones = [
+    {
+      direction: 'inbound',
+      content: 'lo tiene que aprobar mi socia',
+      occurredAt: new Date('2026-10-01T10:00:00.000Z'),
+    },
+  ];
+  const respuesta = (hechos: unknown[]) =>
+    jest.fn().mockResolvedValue(JSON.stringify({ hechos }));
+
+  it('anota lo que el agente no guardó', async () => {
+    const { service, rows } = buildHarness({
+      row: { facts: [] },
+      interactions: interacciones,
+      complete: respuesta([
+        { clave: 'quien_decide', valor: 'su socia', importancia: 9 },
+      ]),
+    });
+
+    await enTenant(() => service.refreshFacts('lead-1'));
+
+    expect(rows[0].facts).toEqual([
+      expect.objectContaining({
+        clave: 'quien_decide',
+        valor: 'su socia',
+        importancia: 9,
+      }),
+    ]);
+  });
+
+  it('le muestra al modelo los hechos ya registrados y la conversación', async () => {
+    const { service, complete } = buildHarness({
+      row: {
+        facts: [
+          {
+            clave: 'producto',
+            valor: 'plan pro',
+            importancia: 7,
+            registradoEn: '2026-09-01T00:00:00.000Z',
+          },
+        ],
+      },
+      interactions: interacciones,
+      complete: respuesta([]),
+    });
+
+    await enTenant(() => service.refreshFacts('lead-1'));
+
+    const [, user, opts] = complete.mock.calls[0];
+    expect(user).toContain('- producto: plan pro');
+    expect(user).toContain('Cliente: lo tiene que aprobar mi socia');
+    expect(opts).toEqual({ background: true });
+  });
+
+  it('no degrada un hecho que puso una persona desde el panel', async () => {
+    const { service, rows } = buildHarness({
+      row: {
+        facts: [
+          {
+            clave: 'canal',
+            valor: 'no llamar',
+            importancia: 8,
+            registradoEn: '2026-09-01T00:00:00.000Z',
+          },
+        ],
+      },
+      interactions: interacciones,
+      complete: respuesta([
+        { clave: 'canal', valor: 'prefiere correo', importancia: 3 },
+      ]),
+    });
+
+    await enTenant(() => service.refreshFacts('lead-1'));
+
+    expect(rows[0].facts).toEqual([
+      expect.objectContaining({ valor: 'prefiere correo', importancia: 8 }),
+    ]);
+  });
+
+  it('si la respuesta no se puede leer, deja la memoria como estaba', async () => {
+    const { service, leadMemory } = buildHarness({
+      row: { facts: [] },
+      interactions: interacciones,
+      complete: jest.fn().mockResolvedValue('no sé'),
+    });
+
+    await enTenant(() => service.refreshFacts('lead-1'));
+
+    expect(leadMemory.update).not.toHaveBeenCalled();
+  });
+
+  it('no rompe nada si el modelo falla', async () => {
+    const { service } = buildHarness({
+      row: { facts: [] },
+      interactions: interacciones,
+      complete: jest.fn().mockRejectedValue(new Error('caído')),
+    });
+
+    await expect(
+      enTenant(() => service.refreshFacts('lead-1')),
+    ).resolves.toBeUndefined();
+  });
+
+  it('sin conversación no llama al modelo', async () => {
+    const { service, complete } = buildHarness({ row: {}, interactions: [] });
+
+    await enTenant(() => service.refreshFacts('lead-1'));
+
+    expect(complete).not.toHaveBeenCalled();
+  });
+});
+
 describe('LeadMemoryService.refresh', () => {
   it('si no toca resumir, solo indexa los mensajes', async () => {
     const { service, complete, recall } = buildHarness({
@@ -428,7 +635,7 @@ describe('LeadMemoryService.refresh', () => {
     expect(recall.indexPending).toHaveBeenCalledWith('lead-1');
   });
 
-  it('rehace el resumen, después las conclusiones, y al final indexa', async () => {
+  it('extrae hechos, rehace el resumen, después las conclusiones, y al final indexa', async () => {
     const { service, rows, recall } = buildHarness({
       count: REFRESH_EVERY_INTERACTIONS,
       row: {},
@@ -442,6 +649,11 @@ describe('LeadMemoryService.refresh', () => {
       ],
       complete: jest
         .fn()
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            hechos: [{ clave: 'saludo', valor: 'saluda', importancia: 2 }],
+          }),
+        )
         .mockResolvedValueOnce('Resumen nuevo.')
         .mockResolvedValueOnce(
           JSON.stringify({
@@ -452,6 +664,9 @@ describe('LeadMemoryService.refresh', () => {
 
     await enTenant(() => service.refresh('lead-1'));
 
+    expect(rows[0].facts).toEqual([
+      expect.objectContaining({ clave: 'saludo', valor: 'saluda' }),
+    ]);
     expect(rows[0].summary).toBe('Resumen nuevo.');
     expect(rows[0].insights).toEqual([
       expect.objectContaining({ texto: 'A', evidencia: ['i-1'] }),

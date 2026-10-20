@@ -66,6 +66,15 @@ Dos reglas para que el banco siga siendo útil:
 El historial siempre termina con un turno del cliente: es el mensaje al que el
 agente tiene que responder.
 
+## Memoria que se llena sola
+
+Con `extraerHechos: true`, antes del turno corre la extracción de hechos
+**real** de `LeadMemoryService` (mismo prompt y mismo modelo de fondo,
+`ANTHROPIC_BACKGROUND_MODEL`) sobre el historial sin el último mensaje, y el
+agente recibe lo que anotó. Suma una comprobación determinista ("la
+extracción de fondo anotó algún hecho") y, si el caso falla, el reporte
+muestra `anotó:` con lo extraído. Con `--sin=hechos` la extracción no corre.
+
 ## Cuándo correrlo
 
 Antes de activar una versión nueva de prompt, y después de tocar el contexto
