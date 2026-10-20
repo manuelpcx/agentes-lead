@@ -3,8 +3,11 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { EmbeddingsService } from './embeddings.service';
 import {
   EmbeddingsReindexService,
+  ESPERA_POR_LIMITE_MS,
+  MAX_ESPERAS_POR_LIMITE,
   REINDEX_BATCH,
 } from './embeddings-reindex.service';
+import { EmbeddingsRateLimitError } from './providers/embeddings-provider.interface';
 
 const MODELO = 'voyage:voyage-3.5:1024';
 
@@ -64,8 +67,18 @@ function buildHarness(tablas: {
     embedDocuments,
   } as unknown as EmbeddingsService;
 
+  const service = new EmbeddingsReindexService(prisma, embeddings);
+  // Sin esperas reales: se registra cuánto habría esperado.
+  const esperar = jest
+    .spyOn(
+      service as unknown as { esperar: (ms: number) => Promise<void> },
+      'esperar',
+    )
+    .mockResolvedValue(undefined);
+
   return {
-    service: new EmbeddingsReindexService(prisma, embeddings),
+    service,
+    esperar,
     embedDocuments,
     $executeRaw,
     estado,
@@ -146,5 +159,60 @@ describe('EmbeddingsReindexService.reindexAll', () => {
       ejemplos: 0,
       interacciones: 0,
     });
+  });
+
+  it('ante el límite de uso espera y sigue con el mismo lote', async () => {
+    const h = buildHarness({ chunks: [{ id: 'c-1', texto: 'x' }] });
+    h.embedDocuments
+      .mockRejectedValueOnce(new EmbeddingsRateLimitError('Voyage 429'))
+      .mockRejectedValueOnce(new EmbeddingsRateLimitError('Voyage 429'));
+
+    await expect(h.service.reindexAll()).resolves.toMatchObject({
+      fragmentos: 1,
+    });
+    expect(h.esperar).toHaveBeenCalledTimes(2);
+    expect(h.esperar).toHaveBeenCalledWith(ESPERA_POR_LIMITE_MS);
+    expect(h.estado.KnowledgeChunk[0].m).toBe(MODELO);
+  });
+
+  it('las esperas se cuentan seguidas: un lote que pasa reinicia la cuenta', async () => {
+    const chunks = Array.from({ length: REINDEX_BATCH * 2 }, (_, i) => ({
+      id: `c-${i}`,
+      texto: `f${i}`,
+    }));
+    const h = buildHarness({ chunks });
+    // Choca casi el tope antes de cada lote; nunca llega a rendirse.
+    for (let lote = 0; lote < 2; lote++) {
+      for (let n = 0; n < MAX_ESPERAS_POR_LIMITE - 1; n++) {
+        h.embedDocuments.mockRejectedValueOnce(
+          new EmbeddingsRateLimitError('Voyage 429'),
+        );
+      }
+      h.embedDocuments.mockImplementationOnce(async (texts: string[]) =>
+        texts.map(() => [0.1]),
+      );
+    }
+
+    await expect(h.service.reindexAll()).resolves.toMatchObject({
+      fragmentos: REINDEX_BATCH * 2,
+    });
+  });
+
+  it('si el límite no cede, se rinde y queda para el reintento largo', async () => {
+    const h = buildHarness({ chunks: [{ id: 'c-1', texto: 'x' }] });
+    h.embedDocuments.mockRejectedValue(
+      new EmbeddingsRateLimitError('Voyage 429'),
+    );
+
+    await expect(h.service.reindexAll()).rejects.toThrow('Voyage 429');
+    expect(h.esperar).toHaveBeenCalledTimes(MAX_ESPERAS_POR_LIMITE);
+  });
+
+  it('otros errores no esperan: abortan de inmediato', async () => {
+    const h = buildHarness({ chunks: [{ id: 'c-1', texto: 'x' }] });
+    h.embedDocuments.mockRejectedValueOnce(new Error('Voyage 401'));
+
+    await expect(h.service.reindexAll()).rejects.toThrow('Voyage 401');
+    expect(h.esperar).not.toHaveBeenCalled();
   });
 });

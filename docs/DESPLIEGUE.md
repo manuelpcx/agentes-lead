@@ -661,11 +661,17 @@ buscan por sentido.
   cambies de proveedor.
 - **Los vectores no se mezclan.** Cada búsqueda compara solo vectores del
   modelo activo. Al arrancar, `EmbeddingsReindexService` rehace en segundo
-  plano los de otro modelo (de a 100, reintenta cada 10 min si Voyage falla).
+  plano los de otro modelo, de a 100. Si Voyage responde 429 (límite de uso),
+  espera un minuto y sigue con el mismo lote (hasta 10 veces seguidas); ante
+  otros errores, reintenta cada 10 min.
   Mientras tanto, lo que falta reindexar no aparece en las búsquedas: con
   pocos documentos son segundos.
 - **Para activarlo** (en Railway):
-  1. Crea una API key en Voyage AI (dashboard.voyageai.com).
+  1. Crea una API key en Voyage AI (dashboard.voyageai.com) y **agrega un
+     método de pago** en Billing. Sin él, la cuenta queda en 3 peticiones y
+     10K tokens por minuto: cada turno hace hasta 3 llamadas, así que con
+     más de una conversación activa la búsqueda empieza a fallar (pasó el
+     2026-10-20). La cuota gratis de tokens se mantiene igual.
   2. `VOYAGE_API_KEY=<la key>` y `EMBEDDINGS_PROVIDER=voyage`.
      `EMBEDDINGS_MODEL` queda en `voyage-3.5` (también sirve `voyage-4`).
   3. Despliega y revisa el log: `Vectores rehechos con voyage:voyage-3.5:1024`.

@@ -1,6 +1,13 @@
 /** Tipo de entrada para proveedores que distinguen documento vs. consulta. */
 export type EmbeddingInputType = 'document' | 'query';
 
+/**
+ * El proveedor rechazó por límite de uso (429) y sus reintentos cortos no
+ * alcanzaron. Pasajero: quien pueda esperar (la reindexación) espera y
+ * reintenta; un turno sigue sin embeddings.
+ */
+export class EmbeddingsRateLimitError extends Error {}
+
 /** Token de inyección del proveedor de embeddings activo. */
 export const EMBEDDINGS_PROVIDER = Symbol('EMBEDDINGS_PROVIDER');
 

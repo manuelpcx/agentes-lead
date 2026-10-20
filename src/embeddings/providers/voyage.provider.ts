@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import {
   EmbeddingsProvider,
   EmbeddingInputType,
+  EmbeddingsRateLimitError,
 } from './embeddings-provider.interface';
 
 const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
@@ -120,8 +121,12 @@ export class VoyageEmbeddingsProvider implements EmbeddingsProvider {
       );
       const mensaje = `Fallo al generar embeddings (Voyage ${response.status})`;
       // 429 (límite de uso) y 5xx son pasajeros; el resto no va a cambiar.
-      const pasajero = response.status === 429 || response.status >= 500;
-      throw pasajero ? new Error(mensaje) : new ErrorDefinitivo(mensaje);
+      if (response.status === 429) {
+        throw new EmbeddingsRateLimitError(mensaje);
+      }
+      throw response.status >= 500
+        ? new Error(mensaje)
+        : new ErrorDefinitivo(mensaje);
     }
 
     const json = (await response.json()) as VoyageResponse;

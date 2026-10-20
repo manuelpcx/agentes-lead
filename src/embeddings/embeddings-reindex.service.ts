@@ -4,12 +4,21 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { textoParaIndexar } from '../memory/conversation-recall.service';
 import { textoDeEjemplo } from '../improvement/example-library.service';
 import { EmbeddingsService } from './embeddings.service';
+import { EmbeddingsRateLimitError } from './providers/embeddings-provider.interface';
 
 /** Vectores por lote: una petición al proveedor y otras tantas escrituras. */
 export const REINDEX_BATCH = 100;
 /** Espera antes de reintentar si el proveedor falló (p. ej. clave mal puesta). */
 const REINTENTO_MS = 10 * 60_000;
 const MAX_INTENTOS = 6;
+/**
+ * Ante un límite de uso (429) se espera un minuto y se repite el mismo lote:
+ * los límites del proveedor son por minuto. Abortar y volver en 10 min no
+ * avanzaría nunca con una cuota baja (p. ej. 3 peticiones por minuto).
+ */
+export const ESPERA_POR_LIMITE_MS = 60_000;
+/** Esperas seguidas antes de rendirse y dejarlo para el reintento largo. */
+export const MAX_ESPERAS_POR_LIMITE = 10;
 
 /** Cuántos vectores se rehicieron, por tabla. */
 export interface ReindexResult {
@@ -116,6 +125,31 @@ export class EmbeddingsReindexService implements OnApplicationBootstrap {
   }
 
   /**
+   * Embebe un lote esperando lo necesario si el proveedor pide calma. Solo la
+   * reindexación hace esto: corre en segundo plano y no tiene apuro.
+   */
+  private async embedConPaciencia(textos: string[]): Promise<number[][]> {
+    for (let esperas = 0; ; esperas++) {
+      try {
+        return await this.embeddings.embedDocuments(textos);
+      } catch (error) {
+        if (
+          !(error instanceof EmbeddingsRateLimitError) ||
+          esperas >= MAX_ESPERAS_POR_LIMITE
+        ) {
+          throw error;
+        }
+        await this.esperar(ESPERA_POR_LIMITE_MS);
+      }
+    }
+  }
+
+  /** Aparte para que los tests no esperen de verdad. */
+  protected esperar(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms).unref());
+  }
+
+  /**
    * Lee un lote de filas de otro modelo, las embebe juntas y las escribe.
    * Termina cuando no quedan, o cuando un lote no escribió nada (otro proceso
    * se adelantó): así nunca gira en falso.
@@ -132,7 +166,7 @@ export class EmbeddingsReindexService implements OnApplicationBootstrap {
       if (filas.length === 0) {
         return total;
       }
-      const vectores = await this.embeddings.embedDocuments(filas.map(texto));
+      const vectores = await this.embedConPaciencia(filas.map(texto));
       let escritas = 0;
       for (let n = 0; n < filas.length; n++) {
         escritas += await escribir(

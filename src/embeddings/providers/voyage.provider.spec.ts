@@ -1,4 +1,5 @@
 import { VoyageEmbeddingsProvider, VOYAGE_BATCH_SIZE } from './voyage.provider';
+import { EmbeddingsRateLimitError } from './embeddings-provider.interface';
 
 const DIM = 4;
 
@@ -101,6 +102,19 @@ describe('VoyageEmbeddingsProvider', () => {
 
     await expect(provider().embed(['a'])).rejects.toThrow('Voyage 401');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el límite de uso persiste, lo dice con un error propio', async () => {
+    // La reindexación lo distingue para esperar en vez de abortar.
+    fetchMock.mockResolvedValue(respuesta([], 429));
+
+    const error = await provider()
+      .embed(['a'])
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(EmbeddingsRateLimitError);
+    expect((error as Error).message).toContain('Voyage 429');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('se rinde tras los reintentos', async () => {
