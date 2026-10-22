@@ -47,6 +47,16 @@ export interface ImportPreview {
   truncated: number;
 }
 
+/** Filas ya leídas, vengan de un CSV o de la API del cliente. */
+export interface ImportTable {
+  headers: string[];
+  rows: string[][];
+  /** Filas que superaban el tope y quedaron fuera. */
+  truncated: number;
+  /** Número con que se reporta la primera fila de datos (CSV: 2). */
+  firstDataRow?: number;
+}
+
 /** Qué hacer con un lead que ya existe en nuestra base. */
 export type DuplicateMode = 'update' | 'skip';
 
@@ -179,6 +189,23 @@ export class LeadImportService {
     if (parsed.headers.length === 0 || parsed.rows.length === 0) {
       throw new BadRequestException('El archivo no trae contactos.');
     }
+    return this.importTable(parsed, options, userId);
+  }
+
+  /**
+   * El corazón de la importación, sea cual sea el origen de las filas: un CSV
+   * o la respuesta de la API del cliente (`LeadSourcesService`), ya llevada a
+   * cabeceras + filas. Valida, deduplica, cruza con lo existente y escribe.
+   */
+  async importTable(
+    table: ImportTable,
+    options: ImportOptions,
+    userId: string,
+    audit: { action?: string; detalle?: Record<string, unknown> } = {},
+  ): Promise<ImportResult> {
+    const parsed = table;
+    // En un CSV la fila 1 es la cabecera; en una API el primer registro es el 1.
+    const primeraFila = table.firstDataRow ?? 2;
     const mapped = new Set(Object.values(options.mapping));
     if (!mapped.has('phone') && !mapped.has('email')) {
       throw new BadRequestException(
@@ -193,8 +220,7 @@ export class LeadImportService {
     let skipped = 0;
 
     parsed.rows.forEach((cells, index) => {
-      // +2: la fila 1 del archivo es la cabecera y el índice parte en 0.
-      const row = index + 2;
+      const row = index + primeraFila;
       const result = this.prepareRow(cells, parsed.headers, options, row);
       if ('reason' in result) {
         failed++;
@@ -249,9 +275,10 @@ export class LeadImportService {
 
     await this.audit.record({
       userId,
-      action: 'import_leads',
+      action: audit.action ?? 'import_leads',
       entity: 'Lead',
       newValue: {
+        ...(audit.detalle ?? {}),
         archivo: options.fileName ?? null,
         origen: options.source ?? null,
         total: result.total,

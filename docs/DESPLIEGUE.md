@@ -734,3 +734,26 @@ fecha y estado, no un hecho más de la memoria. Lógica en
   o, sin correo, con la plantilla de seguimiento. El agente tiene una regla
   fija: lo que la persona pide para después se agenda en el mismo turno.
 - **Evals:** `npm run eval -- compromiso` (4 casos).
+
+## Fuentes de leads por API (2026-10-22)
+
+Botón **"Cargar nuevos leads"** en la Bandeja: consulta las APIs del cliente
+y trae lo nuevo. Se configura en **Integraciones → Fuente de leads (API)**
+(solo OWNER): una lista de URLs con nombre y un token Bearer, guardado cifrado.
+Sin URLs configuradas, el botón queda desactivado.
+
+- **Sin migraciones ni variables nuevas.** Se guarda como integración del
+  canal `leads`.
+- **Adaptación automática:** encuentra la lista en la respuesta (arreglo o
+  `data`/`leads`/`items`/`results`…), aplana objetos anidados y reconoce
+  nombre, teléfono, correo e id por su nombre (camelCase, snake_case, español
+  o inglés; el RUT como id si no viene otro). Lo demás va a la metadata.
+- **Solo lo nuevo:** lo que ya existe (id, teléfono o correo) no se toca. Si
+  la API acepta un filtro de fecha, se configura el nombre del parámetro y se
+  envía la fecha de la última carga exitosa de cada fuente.
+- **Los leads nuevos los contacta el agente**, escalonados de a uno por
+  minuto (igual que la importación con contacto automático).
+- **Seguridad:** solo `https` a hosts públicos (sin redirecciones, 20 s y
+  5 MB como máximo), una carga a la vez por empresa, 6 cargas por minuto, y
+  auditoría de cada configuración y carga.
+- **Fuera por ahora:** paginación (una llamada por URL) y carga programada.

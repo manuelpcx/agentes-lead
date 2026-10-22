@@ -210,6 +210,44 @@
     "email": "Email",
     "call": "Call"
   },
+  "leadSources": {
+    "load": {
+      "button": "Load new leads",
+      "loading": "Loading…",
+      "disabledHint": "Set up lead sources in Integrations to enable this button.",
+      "title": "Lead load",
+      "summary_one": "{{count}} new lead was created.",
+      "summary_other": "{{count}} new leads were created.",
+      "ok": "Loaded",
+      "failed": "Failed",
+      "detail": "Received {{recibidos}} · new {{creados}} · already existing {{existentes}} · errors {{errores}}",
+      "rowError": "Record {{row}}: {{reason}}",
+      "footer": "The agent contacts new leads, one per minute.",
+      "configure": "View sources",
+      "error": "Could not load. Try again."
+    },
+    "config": {
+      "title": "Lead source (API)",
+      "subtitle": "URLs of your system where the inbox “Load new leads” button fetches leads from. Name, phone, email and id are detected automatically; everything else is kept as lead data.",
+      "empty": "No sources yet. Add the first one.",
+      "name": "Name",
+      "namePlaceholder": "Overdue accounts",
+      "url": "URL",
+      "remove": "Remove",
+      "add": "Add source",
+      "lastLoad": "Last load: {{fecha}}",
+      "never": "never",
+      "token": "Token (Bearer)",
+      "tokenHint": "Sent as “Authorization: Bearer …” and stored encrypted.",
+      "tokenSaved": "A token is saved. Leave it empty to keep it.",
+      "dateParam": "Date parameter (optional)",
+      "dateParamHint": "If your API filters by date (e.g. ?since=…), enter the parameter name and only what is new since the last load is requested.",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved.",
+      "saveError": "Could not save."
+    }
+  },
   "inbox": {
     "title": "Conversation inbox",
     "subtitle": "Every lead and their last message, live.",

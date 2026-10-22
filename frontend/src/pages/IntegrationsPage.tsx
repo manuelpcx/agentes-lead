@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import { ApiKeysCard } from '../components/ApiKeysCard';
+import { LeadSourcesCard } from '../components/LeadSourcesCard';
 import { WebhookSetup, type WebhookInfo } from '../components/WebhookSetup';
 import { ManagedEmailCard } from '../components/ManagedEmailCard';
 import { ManagedVoiceCard } from '../components/ManagedVoiceCard';
@@ -446,6 +447,11 @@ export function IntegrationsPage() {
             />
           }
         />
+      </div>
+
+      {/* Fuentes de leads por API: alimentan el botón "Cargar nuevos leads". */}
+      <div className="mt-6">
+        <LeadSourcesCard />
       </div>
 
       {/* Acceso por llave de API: lo usa el servidor MCP (ver `mcp/`). */}

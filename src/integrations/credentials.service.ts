@@ -6,7 +6,13 @@ import { TenantContext } from '../common/tenant/tenant-context';
 import { assertSafeOutboundUrl } from '../common/safe-url';
 
 /** Canales que pueden tener credenciales propias por empresa. */
-export type IntegrationChannel = 'whatsapp' | 'email' | 'voice' | 'crm';
+export type IntegrationChannel =
+  | 'whatsapp'
+  | 'email'
+  | 'voice'
+  | 'crm'
+  // Fuentes de leads por API (LeadSourcesService): URLs + token del cliente.
+  | 'leads';
 
 /** Credencial resuelta (secretos YA descifrados). Solo para uso interno del backend. */
 export interface ResolvedCredential {

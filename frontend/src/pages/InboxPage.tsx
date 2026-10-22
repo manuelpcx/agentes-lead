@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { QualificationBadge } from '../components/QualificationBadge';
 import { LeadFormModal } from '../components/LeadFormModal';
 import { ImportLeadsModal } from '../components/ImportLeadsModal';
+import { LoadLeadsButton } from '../components/LoadLeadsButton';
 import { Badge, Button, Input, PageHeader, Select } from '../components/ui';
 import type { LeadListItem, LeadStatus } from '../types';
 
@@ -71,6 +72,7 @@ export function InboxPage() {
                 </option>
               ))}
             </Select>
+            <LoadLeadsButton onLoaded={() => setNonce((n) => n + 1)} />
             <Button variant="secondary" onClick={() => setImporting(true)}>
               {t('inbox.importLeads')}
             </Button>

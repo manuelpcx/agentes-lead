@@ -210,6 +210,44 @@
     "email": "Correo",
     "call": "Llamada"
   },
+  "leadSources": {
+    "load": {
+      "button": "Cargar nuevos leads",
+      "loading": "Cargando…",
+      "disabledHint": "Configura las fuentes de leads en Integraciones para activar este botón.",
+      "title": "Carga de leads",
+      "summary_one": "Se creó {{count}} lead nuevo.",
+      "summary_other": "Se crearon {{count}} leads nuevos.",
+      "ok": "Cargada",
+      "failed": "Con error",
+      "detail": "Recibidos {{recibidos}} · nuevos {{creados}} · ya existentes {{existentes}} · con error {{errores}}",
+      "rowError": "Registro {{row}}: {{reason}}",
+      "footer": "Los leads nuevos los contacta el agente, de a uno por minuto.",
+      "configure": "Ver fuentes",
+      "error": "No se pudo cargar. Intenta de nuevo."
+    },
+    "config": {
+      "title": "Fuente de leads (API)",
+      "subtitle": "Las URLs de tu sistema desde donde el botón “Cargar nuevos leads” de la bandeja trae leads. Se reconocen solos el nombre, teléfono, correo e id; el resto queda como datos del lead.",
+      "empty": "Todavía no hay fuentes. Agrega la primera.",
+      "name": "Nombre",
+      "namePlaceholder": "Cartera vencida",
+      "url": "URL",
+      "remove": "Quitar",
+      "add": "Agregar fuente",
+      "lastLoad": "Última carga: {{fecha}}",
+      "never": "nunca",
+      "token": "Token (Bearer)",
+      "tokenHint": "Se envía como “Authorization: Bearer …” y se guarda cifrado.",
+      "tokenSaved": "Hay un token guardado. Déjalo vacío para mantenerlo.",
+      "dateParam": "Parámetro de fecha (opcional)",
+      "dateParamHint": "Si tu API filtra por fecha (ej. ?desde=…), escribe el nombre del parámetro y solo se pedirá lo nuevo desde la última carga.",
+      "save": "Guardar",
+      "saving": "Guardando…",
+      "saved": "Guardado.",
+      "saveError": "No se pudo guardar."
+    }
+  },
   "inbox": {
     "title": "Bandeja de conversaciones",
     "subtitle": "Cada lead y su último mensaje, en vivo.",

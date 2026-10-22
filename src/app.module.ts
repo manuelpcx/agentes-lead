@@ -38,6 +38,7 @@ import { PanelModule } from './panel/panel.module';
 import { PanelAdminModule } from './panel-admin/panel-admin.module';
 import { PlatformModule } from './platform/platform.module';
 import { ImportModule } from './import/import.module';
+import { LeadSourcesModule } from './lead-sources/lead-sources.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { ApiModule } from './api/api.module';
 import { HealthModule } from './health/health.module';
@@ -143,6 +144,7 @@ import { HealthModule } from './health/health.module';
     PanelAdminModule,
     PlatformModule,
     ImportModule,
+    LeadSourcesModule,
 
     // Acceso de integraciones sin usuario humano (servidor MCP).
     ApiKeysModule,

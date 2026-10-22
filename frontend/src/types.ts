@@ -398,3 +398,34 @@ export interface PlatformIncidentRow {
   failureCount: number;
   affectedCompanies: number;
 }
+
+/** Una fuente de leads por API (Integraciones → Fuente de leads). */
+export interface LeadSource {
+  nombre: string;
+  url: string;
+  /** ISO de la última carga exitosa. */
+  ultimaCarga?: string;
+}
+
+/** Lo que devuelve GET /panel/lead-sources (nunca trae el token). */
+export interface LeadSourcesView {
+  fuentes: LeadSource[];
+  parametroFecha: string | null;
+  tokenConfigurado: boolean;
+  /** Hay al menos una fuente: el botón "Cargar nuevos leads" se activa. */
+  lista: boolean;
+}
+
+/** Resultado de una fuente al apretar "Cargar nuevos leads". */
+export interface LeadSourceLoadResult {
+  nombre: string;
+  ok: boolean;
+  recibidos: number;
+  resultado?: {
+    created: number;
+    skipped: number;
+    failed: number;
+    errors: Array<{ row: number; reason: string }>;
+  };
+  error?: string;
+}
