@@ -15,6 +15,7 @@ interface Row {
   summarizedUpto: Date | null;
   facts: unknown;
   insights?: unknown;
+  commitments?: unknown;
   updatedAt: Date;
 }
 
@@ -123,6 +124,7 @@ describe('LeadMemoryService.get', () => {
       summary: null,
       facts: [],
       insights: [],
+      commitments: [],
       updatedAt: null,
     });
   });
@@ -179,6 +181,73 @@ describe('LeadMemoryService.rememberFact', () => {
 
     expect(leadMemory.update).toHaveBeenCalled();
     expect(leadMemory.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('LeadMemoryService — compromisos', () => {
+  const AHORA = new Date('2026-10-20T18:00:00Z');
+  const pago = {
+    tipo: 'pago' as const,
+    texto: 'paga la cuota',
+    fecha: '2026-10-24',
+    venceEn: new Date('2026-10-24T13:00:00Z'),
+  };
+
+  it('guarda el compromiso y lo lee de vuelta', async () => {
+    const { service, rows } = buildHarness({ row: {} });
+
+    const { compromiso } = await enTenant(() =>
+      service.addCommitment('lead-1', pago, AHORA),
+    );
+
+    expect(compromiso).toMatchObject({ id: 'c1', estado: 'pendiente' });
+    const vista = await enTenant(() => service.get('lead-1'));
+    expect(vista.commitments).toEqual([compromiso]);
+    expect(rows[0].commitments).toEqual([compromiso]);
+  });
+
+  it('crea la fila si el lead no tenía memoria', async () => {
+    const { service, leadMemory } = buildHarness();
+
+    await enTenant(() => service.addCommitment('lead-1', pago, AHORA));
+
+    expect(leadMemory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        commitments: [expect.objectContaining({ id: 'c1' })],
+      }),
+    });
+  });
+
+  it('resuelve un compromiso por su id', async () => {
+    const { service } = buildHarness({ row: {} });
+    await enTenant(() => service.addCommitment('lead-1', pago, AHORA));
+
+    const r = await enTenant(() =>
+      service.resolveCommitment('lead-1', 'c1', 'cumplido', AHORA),
+    );
+
+    expect(r?.estado).toBe('cumplido');
+    await expect(
+      enTenant(() => service.resolveCommitment('lead-1', 'c9', 'cumplido')),
+    ).resolves.toBeNull();
+  });
+
+  it('el próximo pendiente es el que el seguimiento tiene que respetar', async () => {
+    const { service } = buildHarness({ row: {} });
+    await enTenant(() => service.addCommitment('lead-1', pago, AHORA));
+
+    await expect(
+      enTenant(() => service.nextPendingCommitment('lead-1', AHORA)),
+    ).resolves.toMatchObject({ id: 'c1' });
+    // Pasada la fecha ya no es "próximo": toca retomarlo.
+    await expect(
+      enTenant(() =>
+        service.nextPendingCommitment(
+          'lead-1',
+          new Date('2026-10-25T00:00:00Z'),
+        ),
+      ),
+    ).resolves.toBeNull();
   });
 });
 

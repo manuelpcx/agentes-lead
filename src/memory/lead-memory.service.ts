@@ -12,6 +12,15 @@ import {
   upsertFact,
 } from './lead-memory';
 import { Insight, parseInsights, parseInsightsResponse } from './insights';
+import {
+  Compromiso,
+  EstadoCompromiso,
+  TipoCompromiso,
+  agregarCompromiso,
+  parseCompromisos,
+  proximoPendiente,
+  resolverCompromiso,
+} from './commitments';
 import { ConversationRecallService } from './conversation-recall.service';
 import { mergeExtractedFacts, parseFactsResponse } from './fact-extraction';
 import {
@@ -23,6 +32,7 @@ import {
 import {
   TOOL_DERIVAR_A_AGENTE,
   TOOL_ESCALAR_A_HUMANO,
+  TOOL_PROGRAMAR_RECONTACTO,
   TOOL_REGISTRAR_PROMESA_PAGO,
 } from '../agent/tools/tool-names';
 
@@ -31,6 +41,7 @@ export interface LeadMemoryView {
   summary: string | null;
   facts: MemoryFact[];
   insights: Insight[];
+  commitments: Compromiso[];
   updatedAt: Date | null;
 }
 
@@ -41,6 +52,7 @@ export { REFRESH_EVERY_INTERACTIONS };
 const EVENTOS_CLAVE = [
   TOOL_ESCALAR_A_HUMANO,
   TOOL_REGISTRAR_PROMESA_PAGO,
+  TOOL_PROGRAMAR_RECONTACTO,
   TOOL_DERIVAR_A_AGENTE,
 ];
 
@@ -61,7 +73,9 @@ const FACTS_WINDOW = 40;
 
 const FACTS_SYSTEM = `Eres el archivista de un equipo comercial y de cobranza. Recibes los hechos que ya están registrados sobre una persona y su conversación reciente, y anotas los datos DURADEROS que falten o hayan cambiado: lo que servirá para retomar la relación dentro de semanas.
 
-QUÉ ANOTAR: qué producto o servicio le interesa, su objeción, quién decide, su plazo, su presupuesto, cómo y cuándo prefiere que la contacten (o por dónde no), si no es el titular, compromisos que asumió.
+QUÉ ANOTAR: qué producto o servicio le interesa, su objeción, quién decide, su plazo, su presupuesto, cómo y cuándo prefiere que la contacten (o por dónde no), si no es el titular.
+
+NO ANOTES compromisos con fecha ("te pago el viernes", "escríbeme el lunes"): se registran aparte, con su fecha, y como hecho quedarían vigentes para siempre.
 
 REGLAS:
 - Solo lo que la persona dijo o dio a entender claramente. No inventes ni supongas.
@@ -69,7 +83,7 @@ REGLAS:
 - Nada del momento (saludos, "ahora estoy ocupado") ni datos sensibles: salud, religión, política, orientación sexual, origen étnico, contraseñas, números de tarjeta o cuenta.
 - clave: corta, en minúsculas con guiones bajos (ej. "producto_de_interes", "horario_preferido").
 - valor: una frase breve.
-- importancia de 1 a 10: 9-10 compromisos y restricciones (promesa de pago, no contactar por un canal, no es el titular, quién decide); 6-8 datos del negocio (presupuesto, objeción, plazo, producto); 1-5 detalles prescindibles.
+- importancia de 1 a 10: 9-10 restricciones (no contactar por un canal, no es el titular, quién decide); 6-8 datos del negocio (presupuesto, objeción, plazo, producto); 1-5 detalles prescindibles.
 - Hasta 5 hechos. Si no hay nada nuevo, devuelve una lista vacía.
 
 Responde SOLO con JSON válido, sin markdown:
@@ -111,14 +125,73 @@ export class LeadMemoryService {
   async get(leadId: string): Promise<LeadMemoryView> {
     const row = await this.prisma.db.leadMemory.findFirst({
       where: { leadId },
-      select: { summary: true, facts: true, insights: true, updatedAt: true },
+      select: {
+        summary: true,
+        facts: true,
+        insights: true,
+        commitments: true,
+        updatedAt: true,
+      },
     });
     return {
       summary: row?.summary ?? null,
       facts: parseFacts(row?.facts),
       insights: parseInsights(row?.insights),
+      commitments: parseCompromisos(row?.commitments),
       updatedAt: row?.updatedAt ?? null,
     };
+  }
+
+  /**
+   * Registra un compromiso con fecha. Uno nuevo del mismo tipo reemplaza al
+   * pendiente anterior (ver `agregarCompromiso`).
+   */
+  async addCommitment(
+    leadId: string,
+    nuevo: {
+      tipo: TipoCompromiso;
+      texto: string;
+      fecha: string;
+      venceEn: Date;
+      hora?: string;
+    },
+    now = new Date(),
+  ): Promise<{ compromiso: Compromiso; reemplazados: Compromiso[] }> {
+    const actuales = parseCompromisos(await this.rawCommitments(leadId));
+    const { lista, compromiso, reemplazados } = agregarCompromiso(
+      actuales,
+      nuevo,
+      now,
+    );
+    await this.save(leadId, { commitments: lista });
+    return { compromiso, reemplazados };
+  }
+
+  /** Marca un compromiso como resuelto; `null` si no existe ese id. */
+  async resolveCommitment(
+    leadId: string,
+    id: string,
+    estado: Exclude<EstadoCompromiso, 'pendiente'>,
+    now = new Date(),
+  ): Promise<Compromiso | null> {
+    const actuales = parseCompromisos(await this.rawCommitments(leadId));
+    const r = resolverCompromiso(actuales, id, estado, now);
+    if (!r) {
+      return null;
+    }
+    await this.save(leadId, { commitments: r.lista });
+    return r.compromiso;
+  }
+
+  /** El próximo compromiso pendiente que aún no llega (lo usa el seguimiento). */
+  async nextPendingCommitment(
+    leadId: string,
+    now = new Date(),
+  ): Promise<Compromiso | null> {
+    return proximoPendiente(
+      parseCompromisos(await this.rawCommitments(leadId)),
+      now,
+    );
   }
 
   /**
@@ -433,6 +506,14 @@ export class LeadMemoryService {
 
   // ─────────────────────── privados ───────────────────────
 
+  private async rawCommitments(leadId: string): Promise<unknown> {
+    const row = await this.prisma.db.leadMemory.findFirst({
+      where: { leadId },
+      select: { commitments: true },
+    });
+    return row?.commitments;
+  }
+
   private async rawFacts(leadId: string): Promise<unknown> {
     const row = await this.prisma.db.leadMemory.findFirst({
       where: { leadId },
@@ -448,6 +529,7 @@ export class LeadMemoryService {
       summary?: string | null;
       facts?: MemoryFact[];
       insights?: Insight[];
+      commitments?: Compromiso[];
       summarizedUpto?: Date;
     },
   ): Promise<void> {
@@ -470,6 +552,7 @@ export class LeadMemoryService {
         summary: data.summary ?? null,
         facts: data.facts ?? [],
         insights: data.insights ?? [],
+        commitments: data.commitments ?? [],
         summarizedUpto: data.summarizedUpto ?? null,
       },
     });

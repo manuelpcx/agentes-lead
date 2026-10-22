@@ -35,6 +35,15 @@ import { CancelarSeguimientoTool } from '../agent/tools/cancelar-seguimiento.too
 import { GuardarEnMemoriaTool } from '../agent/tools/guardar-en-memoria.tool';
 import { IniciarLlamadaTool } from '../agent/tools/iniciar-llamada.tool';
 import { RegistrarPromesaPagoTool } from '../agent/tools/registrar-promesa-pago.tool';
+import { ProgramarRecontactoTool } from '../agent/tools/programar-recontacto.tool';
+import { ActualizarCompromisoTool } from '../agent/tools/actualizar-compromiso.tool';
+import {
+  Compromiso,
+  agregarCompromiso,
+  fechaLocal,
+  proximoPendiente,
+  resolverCompromiso,
+} from '../memory/commitments';
 import { CrmEventsService } from '../crm/crm-events.service';
 import { VoiceService } from '../voice/voice.service';
 import { formatLocalDateTime } from '../followup/business-hours';
@@ -69,6 +78,8 @@ import { EvalCase, EvalRun, RunOptions } from './types';
  */
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
+/** La zona del lead y de la empresa en el mundo de evaluación. */
+const TZ_DEL_CASO = 'America/Santiago';
 /** Candidatos de la recuperación que se muestran al depurar un fallo. */
 const MAX_RECUERDOS_EN_REPORTE = 3;
 const LEAD_ID = '00000000-0000-4000-8000-000000000002';
@@ -254,6 +265,26 @@ export async function runCase(
     hechosDeFondo = await extraerHechosDeFondo(caso, interacciones, anthropic);
   }
 
+  // Compromisos del caso, vivos durante el turno: las herramientas los
+  // agregan y resuelven con la misma lógica que producción.
+  let compromisos: Compromiso[] = (caso.memoria?.compromisos ?? []).map(
+    (c, n) => {
+      const dia = new Date(Date.now() + c.enDias * 24 * 3_600_000);
+      return {
+        id: `c${n + 1}`,
+        tipo: c.tipo,
+        texto: c.texto,
+        fecha: fechaLocal(dia, TZ_DEL_CASO),
+        venceEn: dia.toISOString(),
+        estado: c.estado ?? 'pendiente',
+        creadoEn: new Date(Date.now() - 7 * 24 * 3_600_000).toISOString(),
+        ...(c.estado && c.estado !== 'pendiente'
+          ? { resueltoEn: new Date().toISOString() }
+          : {}),
+      };
+    },
+  );
+
   // Ablación: una pieza apagada es como si nunca se hubiera guardado.
   const memory = {
     get: async () => ({
@@ -273,8 +304,30 @@ export async function runCase(
             evidencia: ['eval-a', 'eval-b'],
             creadaEn: new Date().toISOString(),
           })),
+      commitments: compromisos,
       updatedAt: null,
     }),
+    addCommitment: async (
+      _id: string,
+      nuevo: Parameters<typeof agregarCompromiso>[1],
+    ) => {
+      const r = agregarCompromiso(compromisos, nuevo);
+      compromisos = r.lista;
+      return r;
+    },
+    resolveCommitment: async (
+      _id: string,
+      id: string,
+      estado: Parameters<typeof resolverCompromiso>[2],
+    ) => {
+      const r = resolverCompromiso(compromisos, id, estado);
+      if (!r) {
+        return null;
+      }
+      compromisos = r.lista;
+      return r.compromiso;
+    },
+    nextPendingCommitment: async () => proximoPendiente(compromisos),
     rememberFact: async (_id: string, clave: string, valor: string) => [
       { clave, valor, registradoEn: new Date().toISOString() },
     ],
@@ -363,7 +416,9 @@ export async function runCase(
     new CancelarSeguimientoTool(leads, interactions),
     new GuardarEnMemoriaTool(memory),
     new IniciarLlamadaTool(voice, interactions, leads),
-    new RegistrarPromesaPagoTool(leads, interactions, crmEvents),
+    new RegistrarPromesaPagoTool(leads, interactions, crmEvents, memory),
+    new ProgramarRecontactoTool(leads, memory),
+    new ActualizarCompromisoTool(leads, memory),
   ];
 
   const registry = new ToolRegistry(herramientas);

@@ -711,3 +711,51 @@ describe('banco de casos', () => {
     }
   });
 });
+
+describe('runCase — compromisos con fecha', () => {
+  it('el agente ve los compromisos del caso, lo vencido como algo a verificar', async () => {
+    const caso = CASOS.find(
+      (c) => c.id === 'compromiso-vencido-sin-confirmar',
+    )!;
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(caso, anthropic);
+
+    expect(run.system).toContain('Compromisos con esta persona');
+    expect(run.system).toContain('[c1] Pago: "Pagar el total de la deuda"');
+    expect(run.system).toContain('NO asumas que se cumplió');
+  });
+
+  it('las herramientas de compromisos funcionan en el mundo', async () => {
+    const caso = CASOS.find((c) => c.id === 'compromiso-confirma-pago')!;
+    const { anthropic } = scripted([
+      toolUse('actualizarCompromiso', { id: 'c1', estado: 'cumplido' }),
+      toolUse('enviarWhatsApp', { mensaje: '¡Gracias por avisar!' }),
+    ]);
+
+    const run = await runCase(caso, anthropic);
+
+    expect(run.error).toBeUndefined();
+    expect(run.acciones.map((a) => a.tool)).toEqual([
+      'actualizarCompromiso',
+      'enviarWhatsApp',
+    ]);
+  });
+});
+
+describe('runCase — pedidos de recontacto', () => {
+  it('el agente recibe la regla de agendar lo que la persona pide para después', async () => {
+    const { anthropic } = scripted([
+      toolUse('enviarWhatsApp', { mensaje: 'hola' }),
+    ]);
+
+    const run = await runCase(CASO_BASE, anthropic);
+
+    expect(run.system).toContain(
+      'Cuando la persona pide que la contactes después',
+    );
+    expect(run.system).toContain('programarRecontacto');
+  });
+});

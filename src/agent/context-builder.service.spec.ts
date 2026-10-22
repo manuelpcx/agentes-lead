@@ -9,7 +9,11 @@ import {
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PromptService } from '../prompts/prompt.service';
 import { ExampleLibraryService } from '../improvement/example-library.service';
-import { SCHEDULED_CALL_TYPE, PROMISE_PAY_TYPE } from './agent.constants';
+import {
+  SCHEDULED_CALL_TYPE,
+  PROMISE_PAY_TYPE,
+  RECONTACT_TYPE,
+} from './agent.constants';
 import { HistoryRow } from './conversation-history';
 import { LeadMemoryService } from '../memory/lead-memory.service';
 import { ConversationRecallService } from '../memory/conversation-recall.service';
@@ -107,6 +111,18 @@ describe('formatNextAction', () => {
       now,
     );
     expect(out).toContain('promesa de pago');
+  });
+
+  it('avisa que hay un recontacto pactado y que no se adelante', () => {
+    const out = formatNextAction(
+      {
+        nextActionAt: new Date('2026-09-14T13:00:00.000Z'),
+        nextActionType: RECONTACT_TYPE,
+      },
+      now,
+    );
+    expect(out).toContain('Recontacto pactado');
+    expect(out).toContain('No le escribas antes');
   });
 
   it('para otros tipos, describe el seguimiento genérico', () => {

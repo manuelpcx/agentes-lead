@@ -3,15 +3,18 @@ import { Channel, Direction } from '@prisma/client';
 import { InteractionsService } from '../../interactions/interactions.service';
 import { LeadsService } from '../../leads/leads.service';
 import { CrmEventsService } from '../../crm/crm-events.service';
-import { PROMISE_PAY_TYPE } from '../agent.constants';
+import { LeadMemoryService } from '../../memory/lead-memory.service';
+import { calcularVencimiento } from '../../memory/commitments';
 import { AgentTool, ToolContext, ToolResult } from './tool.interface';
 import { TOOL_REGISTRAR_PROMESA_PAGO } from './tool-names';
+import { programarProximoCompromiso } from './commitment-schedule';
 
 /**
- * Registra una promesa de pago del deudor (cobranza): deja constancia y
- * programa una verificación de seguimiento para la fecha pactada. Ese día el
+ * Registra una promesa de pago del deudor (cobranza): deja constancia, la
+ * guarda como compromiso en la memoria del lead y programa la verificación
+ * para la fecha pactada (a las 10:00 en la zona del lead). Ese día el
  * seguimiento retoma el contacto (saltándose el guard de "cliente habló
- * último") para confirmar el pago.
+ * último") para confirmar el pago. Una promesa nueva reemplaza a la anterior.
  */
 @Injectable()
 export class RegistrarPromesaPagoTool implements AgentTool {
@@ -48,6 +51,7 @@ export class RegistrarPromesaPagoTool implements AgentTool {
     private readonly leads: LeadsService,
     private readonly interactions: InteractionsService,
     private readonly crmEvents: CrmEventsService,
+    private readonly memory: LeadMemoryService,
   ) {}
 
   async execute(
@@ -55,12 +59,12 @@ export class RegistrarPromesaPagoTool implements AgentTool {
     ctx: ToolContext,
   ): Promise<ToolResult> {
     const fecha = String(input.fecha ?? '').trim();
-    const cuando = new Date(fecha);
-    if (!fecha || Number.isNaN(cuando.getTime())) {
-      return {
-        content: `Fecha inválida "${fecha}". Usa formato "YYYY-MM-DD".`,
-        isError: true,
-      };
+    const vence = calcularVencimiento(
+      fecha,
+      ctx.timezone ?? 'America/Santiago',
+    );
+    if ('error' in vence) {
+      return { content: vence.error, isError: true };
     }
     const monto =
       input.monto != null && String(input.monto).trim()
@@ -71,7 +75,16 @@ export class RegistrarPromesaPagoTool implements AgentTool {
         ? String(input.nota).trim()
         : '';
 
-    await this.leads.scheduleNextAction(ctx.lead.id, cuando, PROMISE_PAY_TYPE);
+    const { compromiso, reemplazados } = await this.memory.addCommitment(
+      ctx.lead.id,
+      {
+        tipo: 'pago',
+        texto: `Pagar${monto ? ` ${monto}` : ''}${nota ? ` (${nota})` : ''}`,
+        fecha,
+        venceEn: vence.venceEn,
+      },
+    );
+    await programarProximoCompromiso(this.memory, this.leads, ctx.lead.id);
     await this.interactions.register({
       leadId: ctx.lead.id,
       channel: Channel.system,
@@ -87,8 +100,14 @@ export class RegistrarPromesaPagoTool implements AgentTool {
       event: 'lead.promise_to_pay',
       data: { fecha, monto: monto || undefined, nota: nota || undefined },
     });
+    const anterior = reemplazados[0]
+      ? ` Reemplaza a la promesa anterior del ${reemplazados[0].fecha}, ` +
+        `que quedó como ${reemplazados[0].estado}.`
+      : '';
     return {
-      content: `Promesa de pago registrada para ${fecha}. El sistema hará el seguimiento ese día. Confírmale a la persona.`,
+      content:
+        `Promesa de pago registrada para ${fecha} [${compromiso.id}]. El ` +
+        `sistema hará el seguimiento ese día.${anterior} Confírmale a la persona.`,
     };
   }
 }

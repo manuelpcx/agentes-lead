@@ -667,6 +667,9 @@ model LeadMemory {
   /// Conclusiones (reflexiones) como lista de `{ texto, evidencia, creadaEn }`;
   /// `evidencia` son ids de las interacciones que respaldan cada una.
   insights       Json      @default("[]")
+  /// Compromisos con fecha (`{ id, tipo, texto, fecha, venceEn, estado, … }`):
+  /// promesas de pago y pedidos de recontacto. Ver src/memory/commitments.ts.
+  commitments    Json      @default("[]")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

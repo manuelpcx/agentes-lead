@@ -20,6 +20,8 @@ import { AgendarCitaTool } from './tools/agendar-cita.tool';
 import { IniciarLlamadaTool } from './tools/iniciar-llamada.tool';
 import { DerivarAAgenteTool } from './tools/derivar-a-agente.tool';
 import { RegistrarPromesaPagoTool } from './tools/registrar-promesa-pago.tool';
+import { ProgramarRecontactoTool } from './tools/programar-recontacto.tool';
+import { ActualizarCompromisoTool } from './tools/actualizar-compromiso.tool';
 import { ConsultarCrmTool } from './tools/consultar-crm.tool';
 import { CancelarSeguimientoTool } from './tools/cancelar-seguimiento.tool';
 import { CalificarLeadTool } from './tools/calificar-lead.tool';
@@ -63,6 +65,8 @@ import { TurnLockService } from './turn-lock.service';
     CancelarSeguimientoTool,
     CalificarLeadTool,
     GuardarEnMemoriaTool,
+    ProgramarRecontactoTool,
+    ActualizarCompromisoTool,
     {
       provide: AGENT_TOOLS,
       inject: [
@@ -80,6 +84,8 @@ import { TurnLockService } from './turn-lock.service';
         CancelarSeguimientoTool,
         CalificarLeadTool,
         GuardarEnMemoriaTool,
+        ProgramarRecontactoTool,
+        ActualizarCompromisoTool,
       ],
       useFactory: (...tools: AgentTool[]): AgentTool[] => tools,
     },

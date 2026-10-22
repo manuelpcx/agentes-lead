@@ -694,3 +694,43 @@ buscan por sentido.
 - **Evals:** el banco usa el mismo embedder que configuren las variables, así
   que `memoria-larga-dato-antiguo` mide la recuperación con Voyage si está
   activo.
+
+## Compromisos con fecha (2026-10-20)
+
+"Te pago el viernes" o "escríbeme después del 15" ahora son compromisos con
+fecha y estado, no un hecho más de la memoria. Lógica en
+`src/memory/commitments.ts`.
+
+- **Migración nueva: `lead_memory_commitments`.** Agrega
+  `LeadMemory.commitments` y suma `programarRecontacto` y
+  `actualizarCompromiso` a los agentes con lista explícita de herramientas
+  (el panel no tiene cómo editarlas). Se aplica sola al arrancar.
+- **Herramientas:**
+  - `registrarPromesaPago` ahora también guarda el compromiso. Una promesa
+    nueva reemplaza a la anterior: queda `cancelado` si se reprogramó antes de
+    la fecha, `incumplido` si ya había vencido.
+  - `programarRecontacto(fecha, motivo)`, nueva: cuando la persona pide que
+    le escriban en una fecha.
+  - `actualizarCompromiso(id, estado)`, nueva: cumplido, incumplido o
+    cancelado ("ya pagué", "ya no hace falta").
+- **Seguimiento:** mientras haya un compromiso futuro pendiente, la cadencia
+  no contacta; se corre a esa fecha. Ese día el agente retoma con el detalle
+  de lo acordado (horario hábil y piso legal de cobranza incluidos). Una
+  llamada agendada antes se respeta. El recontacto se da por cumplido cuando
+  se le logra escribir.
+- **Hora:** se retoma a las 10:00 del día acordado en la zona del lead.
+  Antes la promesa quedaba a medianoche UTC. "Te pago hoy" se verifica al día
+  siguiente.
+- **Lo que ve el agente:** lo pendiente como pendiente; lo vencido sin
+  confirmar, como algo a verificar con tacto (ni cumplido ni incumplido); lo
+  resuelto, 30 días como historial.
+- **Memoria:** ni la extracción automática de hechos ni `guardarEnMemoria`
+  anotan compromisos con fecha: como hecho quedarían vigentes para siempre.
+- **Recontactos pedidos por el cliente (2026-10-22):** `programarRecontacto`
+  acepta una hora ("escríbeme mañana a las 10" → ese día a las 10:00). Como
+  lo pidió la persona, en cobranza **no cuenta para el tope de 48 h** entre
+  gestiones (igual que la llamada que agenda el lead); el horario legal sí se
+  respeta. Si pasaron más de 24 h desde su último WhatsApp, sale por correo
+  o, sin correo, con la plantilla de seguimiento. El agente tiene una regla
+  fija: lo que la persona pide para después se agenda en el mismo turno.
+- **Evals:** `npm run eval -- compromiso` (4 casos).

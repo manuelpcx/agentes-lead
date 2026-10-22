@@ -18,8 +18,16 @@ import { AgentRunner } from '../agent/agent-runner.service';
 import { VoiceService } from '../voice/voice.service';
 import {
   PROMISE_PAY_TYPE,
+  RECONTACT_TYPE,
   SCHEDULED_CALL_TYPE,
 } from '../agent/agent.constants';
+import { TIPO_DE_ACCION } from '../agent/tools/commitment-schedule';
+import { LeadMemoryService } from '../memory/lead-memory.service';
+import {
+  Compromiso,
+  TipoCompromiso,
+  vencidoPendiente,
+} from '../memory/commitments';
 import {
   earliestAllowedTime,
   isLegalCollectionTime,
@@ -85,6 +93,7 @@ export class FollowUpService {
     private readonly interactions: InteractionsService,
     private readonly whatsapp: WhatsappService,
     private readonly agent: AgentRunner,
+    private readonly memory: LeadMemoryService,
     @Optional() private readonly voice?: VoiceService,
   ) {
     this.defaults = {
@@ -137,11 +146,32 @@ export class FollowUpService {
       lead.nextActionType === SCHEDULED_CALL_TYPE && !!lead.phone;
     // Verificación de una promesa de pago (cobranza): acción proactiva pactada.
     const promisePay = lead.nextActionType === PROMISE_PAY_TYPE;
+    // La persona pidió que le escribieran en esta fecha (programarRecontacto).
+    const recontacto = lead.nextActionType === RECONTACT_TYPE;
+
+    // Compromiso pendiente que aún no llega: no se contacta antes de lo que la
+    // persona pidió o prometió (insistir molesta, y en cobranza suma gestiones
+    // contra el tope legal). Se corre el seguimiento a esa fecha.
+    if (!scheduledCall && !promisePay && !recontacto) {
+      const proximo = await this.memory.nextPendingCommitment(leadId);
+      if (proximo) {
+        await this.leads.scheduleNextAction(
+          leadId,
+          new Date(proximo.venceEn),
+          TIPO_DE_ACCION[proximo.tipo],
+        );
+        this.logger.log(
+          `Seguimiento en pausa hasta el compromiso ${proximo.id} ` +
+            `(leadId=${leadId} → ${proximo.venceEn})`,
+        );
+        return;
+      }
+    }
 
     // Si el cliente fue el último en hablar, el flujo de respuesta (Fase 3) se
     // encarga; no perseguimos. Reprogramamos por si queda en silencio. (No aplica
     // a acciones proactivas pactadas: llamada agendada o verificar promesa.)
-    if (!scheduledCall && !promisePay) {
+    if (!scheduledCall && !promisePay && !recontacto) {
       const lastConv = await this.prisma.db.interaction.findFirst({
         where: { leadId, channel: { in: CONVERSATION_CHANNELS } },
         orderBy: { occurredAt: 'desc' },
@@ -187,7 +217,9 @@ export class FollowUpService {
           ? SCHEDULED_CALL_TYPE
           : promisePay
             ? PROMISE_PAY_TYPE
-            : 'fuera_de_horario',
+            : recontacto
+              ? RECONTACT_TYPE
+              : 'fuera_de_horario',
       );
       this.logger.log(
         `Seguimiento pospuesto por horario (leadId=${leadId} → ${next.toISOString()})`,
@@ -212,9 +244,15 @@ export class FollowUpService {
         return;
       }
       const attempt = lead.contactAttempts + 1;
+      const promesa = await this.compromisoVencido(leadId, 'pago');
       const instruction =
         '[VERIFICAR PROMESA DE PAGO] La persona se comprometió a pagar para esta ' +
-        'fecha. Retoma con respeto y sin presionar para confirmar si pudo pagar. ' +
+        'fecha' +
+        (promesa
+          ? ` (lo acordado: "${promesa.texto}" para el ${promesa.fecha} [${promesa.id}])`
+          : '') +
+        '. Retoma con respeto y sin presionar para confirmar si pudo pagar. ' +
+        'Si confirma que pagó, márcalo con actualizarCompromiso como cumplido. ' +
         'Si aún no, ofrece ayuda para regularizar y registra una nueva promesa ' +
         'con registrarPromesaPago si corresponde. Respalda cualquier cifra con el ' +
         'contexto de la deuda.';
@@ -228,6 +266,68 @@ export class FollowUpService {
         'seguimiento',
       );
       this.logger.log(`Verificación de promesa de pago (leadId=${leadId})`);
+      return;
+    }
+
+    // Recontacto pactado: la persona pidió que le escribieran a esta hora.
+    // Como lo pidió ella, no es una gestión proactiva: no cuenta para el tope
+    // de 48 h de cobranza (igual que la llamada que agenda el lead). El
+    // horario legal sí se exigió arriba.
+    if (recontacto) {
+      const attempt = lead.contactAttempts + 1;
+      const pedido = await this.compromisoVencido(leadId, 'recontacto');
+
+      // Si pasaron más de 24 h desde que escribió, WhatsApp no admite texto
+      // libre: por correo si lo tiene; si no, con la plantilla de seguimiento.
+      const ventanaAbierta = await this.isWhatsAppWindowOpen(leadId);
+      if (!ventanaAbierta && !lead.email && lead.phone) {
+        const template = pickTemplate(eff, 'followup');
+        if (
+          template &&
+          (await this.sendWhatsAppTemplate(lead, template, company?.name))
+        ) {
+          if (pedido) {
+            await this.memory.resolveCommitment(leadId, pedido.id, 'cumplido');
+          }
+          await this.leads.recordFollowUpAttempt(
+            leadId,
+            this.nextActionTime(now, attempt, eff, cobranza),
+            'plantilla_wa',
+          );
+          this.logger.log(
+            `Recontacto pactado por plantilla WhatsApp (leadId=${leadId})`,
+          );
+          return;
+        }
+      }
+      const canal =
+        !ventanaAbierta && lead.email
+          ? ' Pasaron más de 24 h desde su último WhatsApp, así que no se le ' +
+            'puede escribir texto libre por ahí: escríbele por correo con ' +
+            'enviarCorreo.'
+          : '';
+      const instruction =
+        '[RECONTACTO PACTADO] La persona pidió que le escribieras ahora' +
+        (pedido ? ` para: "${pedido.texto}"` : '') +
+        '. Escríbele: retoma desde ahí, como continuación de lo que ' +
+        'conversaron (no como un primer contacto), y sin insistir si ya no ' +
+        `le interesa.${canal} Respalda cualquier dato con tus herramientas.`;
+      const outcome = await this.agent.runFollowUp(leadId, instruction, {
+        requestedByLead: true,
+      });
+      if (outcome.escalated || outcome.derived) {
+        return;
+      }
+      // Se cumplió lo pedido: escribirle ese día. Lo que siga es conversación.
+      if (pedido && outcome.messageSent) {
+        await this.memory.resolveCommitment(leadId, pedido.id, 'cumplido');
+      }
+      await this.leads.recordFollowUpAttempt(
+        leadId,
+        this.nextActionTime(now, attempt, eff, cobranza),
+        'seguimiento',
+      );
+      this.logger.log(`Recontacto pactado ejecutado (leadId=${leadId})`);
       return;
     }
 
@@ -460,6 +560,15 @@ export class FollowUpService {
   }
 
   // ─────────────────────── privados ───────────────────────
+
+  /** El compromiso de ese tipo que venció y sigue pendiente (el que se retoma). */
+  private async compromisoVencido(
+    leadId: string,
+    tipo: TipoCompromiso,
+  ): Promise<Compromiso | null> {
+    const { commitments } = await this.memory.get(leadId);
+    return vencidoPendiente(commitments.filter((c) => c.tipo === tipo));
+  }
 
   /**
    * Reprograma según el espaciado explícito de la config efectiva para este

@@ -22,8 +22,10 @@ export class GuardarEnMemoriaTool implements AgentTool {
       'de la persona: qué producto le interesa, una objeción, quién decide, ' +
       'cómo y cuándo prefiere que la contacten, su situación. Úsala cuando ' +
       'aparezca información que servirá dentro de semanas, NO para cosas del ' +
-      'momento ni para repetir lo que ya está en tu contexto. Si la clave ya ' +
-      'existe, se reemplaza con el valor nuevo.',
+      'momento ni para repetir lo que ya está en tu contexto. Tampoco para ' +
+      'compromisos con fecha ("te pago el viernes", "escríbeme el lunes"): ' +
+      'esos van con registrarPromesaPago o programarRecontacto, que los ' +
+      'retoman ese día. Si la clave ya existe, se reemplaza con el valor nuevo.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -44,8 +46,8 @@ export class GuardarEnMemoriaTool implements AgentTool {
           minimum: 1,
           maximum: 10,
           description:
-            'Qué tan grave sería olvidarlo, de 1 a 10. 9-10: compromisos y ' +
-            'restricciones (una promesa de pago, que no lo contacten por un ' +
+            'Qué tan grave sería olvidarlo, de 1 a 10. 9-10: ' +
+            'restricciones (que no lo contacten por un ' +
             'canal, que no es el titular, quién decide). 6-8: datos del ' +
             'negocio (presupuesto, objeción, plazo, producto). 1-5: detalles ' +
             'útiles pero prescindibles. Cuando la memoria se llena, se olvida ' +

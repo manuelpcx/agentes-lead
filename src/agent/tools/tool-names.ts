@@ -19,6 +19,10 @@ export const TOOL_CANCELAR_SEGUIMIENTO = 'cancelarSeguimiento';
 export const TOOL_CALIFICAR_LEAD = 'calificarLead';
 /** Guarda un dato duradero en la memoria del lead. */
 export const TOOL_GUARDAR_EN_MEMORIA = 'guardarEnMemoria';
+/** Agenda volver a contactar en la fecha que pidió la persona. */
+export const TOOL_PROGRAMAR_RECONTACTO = 'programarRecontacto';
+/** Marca un compromiso con fecha como cumplido, incumplido o cancelado. */
+export const TOOL_ACTUALIZAR_COMPROMISO = 'actualizarCompromiso';
 
 /** Conjunto de herramientas iniciales habilitadas por defecto. */
 export const DEFAULT_ENABLED_TOOLS: string[] = [
@@ -36,4 +40,6 @@ export const DEFAULT_ENABLED_TOOLS: string[] = [
   TOOL_CANCELAR_SEGUIMIENTO,
   TOOL_CALIFICAR_LEAD,
   TOOL_GUARDAR_EN_MEMORIA,
+  TOOL_PROGRAMAR_RECONTACTO,
+  TOOL_ACTUALIZAR_COMPROMISO,
 ];

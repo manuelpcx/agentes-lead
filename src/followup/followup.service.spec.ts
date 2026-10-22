@@ -8,6 +8,7 @@ import { AgentRunner } from '../agent/agent-runner.service';
 import { VoiceService } from '../voice/voice.service';
 import { TenantContext } from '../common/tenant/tenant-context';
 import type { EnvVars } from '../common/config/env.validation';
+import { LeadMemoryService } from '../memory/lead-memory.service';
 
 const ALWAYS_OPEN = {
   days: {
@@ -115,6 +116,13 @@ function buildHarness(
     sendTemplate: jest.fn().mockResolvedValue(undefined),
   } as unknown as WhatsappService;
 
+  // Memoria del lead: por defecto sin compromisos.
+  const memory = {
+    get: jest.fn().mockResolvedValue({ commitments: [] }),
+    nextPendingCommitment: jest.fn().mockResolvedValue(null),
+    resolveCommitment: jest.fn().mockResolvedValue(null),
+  };
+
   const service = new FollowUpService(
     config,
     prisma,
@@ -122,9 +130,10 @@ function buildHarness(
     interactions,
     whatsapp,
     agent,
+    memory as unknown as LeadMemoryService,
     voice,
   );
-  return { service, prisma, leads, interactions, whatsapp, agent };
+  return { service, prisma, leads, interactions, whatsapp, agent, memory };
 }
 
 /** Marca la ventana de WhatsApp como abierta (WA entrante reciente). */
@@ -546,6 +555,42 @@ describe('FollowUpService — piso legal de cobranza', () => {
     expectPostponed(h, '2026-09-24T16:00:00Z', 'promesa_pago');
   });
 
+  it('un recontacto que pidió el deudor sale aunque no hayan pasado 48 h', async () => {
+    // Hubo una gestión ayer; el deudor pidió "escríbeme mañana a las 10".
+    at('2026-09-23T15:00:00Z');
+    const h = cobranza(
+      { contactAttempts: 1, nextActionType: 'recontacto_pactado' },
+      {
+        contacts: [
+          { channel: 'whatsapp', occurredAt: new Date('2026-09-22T16:00:00Z') },
+        ],
+      },
+    );
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.agent.runFollowUp).toHaveBeenCalledWith(
+      'lead-1',
+      expect.stringContaining('[RECONTACTO PACTADO]'),
+      { requestedByLead: true },
+    );
+  });
+
+  it('pero fuera del horario legal de cobranza, se pospone sin perder el tipo', async () => {
+    // Domingo: no hay gestión de cobranza, la pida quien la pida.
+    at('2026-09-27T15:00:00Z');
+    const h = cobranza({ nextActionType: 'recontacto_pactado' });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.scheduleNextAction).toHaveBeenCalledWith(
+      'lead-1',
+      expect.any(Date),
+      'recontacto_pactado',
+    );
+  });
+
   it('la config del agente no baja el espaciado de 48 h entre seguimientos', async () => {
     at('2026-09-23T15:00:00Z');
     const h = cobranza(
@@ -768,5 +813,197 @@ describe('FollowUpService.deferAfterFailure', () => {
     await run(() => h.service.deferAfterFailure('lead-1', motivo, now));
 
     expect(h.interactions.register).not.toHaveBeenCalled();
+  });
+});
+
+describe('FollowUpService — compromisos con fecha', () => {
+  const futuro = {
+    id: 'c1',
+    tipo: 'recontacto',
+    texto: 'ver si su socio aprobó el plan',
+    fecha: '2099-03-02',
+    venceEn: '2099-03-02T13:00:00.000Z',
+    estado: 'pendiente',
+    creadoEn: '2026-10-01T00:00:00.000Z',
+  };
+  const vencido = {
+    ...futuro,
+    fecha: '2026-01-05',
+    venceEn: '2026-01-05T13:00:00.000Z',
+  };
+
+  it('con un compromiso futuro pendiente no contacta: corre el seguimiento a esa fecha', async () => {
+    const h = buildHarness({
+      contactAttempts: 1,
+      nextActionType: 'seguimiento',
+    });
+    h.memory.nextPendingCommitment.mockResolvedValue(futuro);
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.scheduleNextAction).toHaveBeenCalledWith(
+      'lead-1',
+      new Date(futuro.venceEn),
+      'recontacto_pactado',
+    );
+  });
+
+  it('una promesa de pago futura también pausa la cadencia, con su tipo', async () => {
+    const h = buildHarness({
+      contactAttempts: 1,
+      nextActionType: 'seguimiento',
+    });
+    h.memory.nextPendingCommitment.mockResolvedValue({
+      ...futuro,
+      tipo: 'pago',
+    });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.leads.scheduleNextAction).toHaveBeenCalledWith(
+      'lead-1',
+      new Date(futuro.venceEn),
+      'promesa_pago',
+    );
+  });
+
+  it('una llamada agendada se hace igual: la pidió la persona', async () => {
+    const h = buildHarness({
+      nextActionType: 'llamada_programada',
+      phone: '+56911111111',
+    });
+    h.memory.nextPendingCommitment.mockResolvedValue(futuro);
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.agent.runFollowUp).toHaveBeenCalledTimes(1);
+  });
+
+  it('el día del recontacto retoma con el motivo y lo da por cumplido', async () => {
+    const h = buildHarness({
+      contactAttempts: 1,
+      nextActionType: 'recontacto_pactado',
+    });
+    h.memory.get.mockResolvedValue({ commitments: [vencido] });
+    // El cliente habló último: igual se retoma, lo pidió él.
+    (h.prisma.db.interaction.findFirst as jest.Mock).mockResolvedValue({
+      direction: 'inbound',
+      occurredAt: new Date(),
+    });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    const [, instruccion] = (h.agent.runFollowUp as jest.Mock).mock.calls[0];
+    expect(instruccion).toContain('[RECONTACTO PACTADO]');
+    expect(instruccion).toContain('ver si su socio aprobó el plan');
+    expect(h.memory.resolveCommitment).toHaveBeenCalledWith(
+      'lead-1',
+      'c1',
+      'cumplido',
+    );
+    expect(h.leads.recordFollowUpAttempt).toHaveBeenCalled();
+  });
+
+  it('lo pidió el cliente: el turno va marcado como pedido, no como insistencia', async () => {
+    const h = buildHarness({ nextActionType: 'recontacto_pactado' });
+    h.memory.get.mockResolvedValue({ commitments: [vencido] });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.agent.runFollowUp).toHaveBeenCalledWith(
+      'lead-1',
+      expect.any(String),
+      { requestedByLead: true },
+    );
+  });
+
+  it('con la ventana de WhatsApp cerrada y correo, le pide escribir por correo', async () => {
+    const h = buildHarness({
+      nextActionType: 'recontacto_pactado',
+      email: 'ana@ejemplo.cl',
+    });
+    h.memory.get.mockResolvedValue({ commitments: [vencido] });
+    // Último WhatsApp hace 3 días.
+    (h.prisma.db.interaction.findFirst as jest.Mock).mockResolvedValue({
+      direction: 'inbound',
+      occurredAt: new Date(Date.now() - 3 * 24 * 3_600_000),
+    });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    const [, instruccion] = (h.agent.runFollowUp as jest.Mock).mock.calls[0];
+    expect(instruccion).toContain('enviarCorreo');
+  });
+
+  it('con la ventana cerrada y sin correo, usa la plantilla de seguimiento', async () => {
+    const h = buildHarness(
+      {
+        nextActionType: 'recontacto_pactado',
+        email: null,
+        phone: '+56911111111',
+      },
+      ALWAYS_OPEN,
+      'seguimiento_v1',
+    );
+    h.memory.get.mockResolvedValue({ commitments: [vencido] });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.whatsapp.sendTemplate).toHaveBeenCalled();
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.memory.resolveCommitment).toHaveBeenCalledWith(
+      'lead-1',
+      'c1',
+      'cumplido',
+    );
+  });
+
+  it('si no logró escribirle, el recontacto sigue pendiente', async () => {
+    const h = buildHarness({ nextActionType: 'recontacto_pactado' });
+    h.memory.get.mockResolvedValue({ commitments: [vencido] });
+    (h.agent.runFollowUp as jest.Mock).mockResolvedValue({
+      messageSent: false,
+      escalated: false,
+    });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.memory.resolveCommitment).not.toHaveBeenCalled();
+  });
+
+  it('fuera de horario el recontacto se pospone sin perder su tipo', async () => {
+    const h = buildHarness(
+      { nextActionType: 'recontacto_pactado' },
+      {
+        days: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+      },
+    );
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    expect(h.agent.runFollowUp).not.toHaveBeenCalled();
+    expect(h.leads.scheduleNextAction).toHaveBeenCalledWith(
+      'lead-1',
+      expect.any(Date),
+      'recontacto_pactado',
+    );
+  });
+
+  it('la verificación de pago le dice al agente qué se prometió', async () => {
+    const h = buildHarness({ nextActionType: 'promesa_pago' });
+    h.memory.get.mockResolvedValue({
+      commitments: [
+        { ...vencido, tipo: 'pago', texto: 'Pagar la cuota de enero' },
+      ],
+    });
+
+    await run(() => h.service.processFollowUp('lead-1'));
+
+    const [, instruccion] = (h.agent.runFollowUp as jest.Mock).mock.calls[0];
+    expect(instruccion).toContain(
+      '"Pagar la cuota de enero" para el 2026-01-05 [c1]',
+    );
+    expect(instruccion).toContain('actualizarCompromiso');
   });
 });

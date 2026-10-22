@@ -50,6 +50,16 @@ export interface EvalCase {
     facts?: Array<{ clave: string; valor: string; importancia?: number }>;
     /** Conclusiones (reflexiones) ya deducidas; en el mundo, con 2 mensajes de evidencia. */
     conclusiones?: string[];
+    /**
+     * Compromisos con fecha. `enDias` es relativo a hoy: negativo = ya venció
+     * (p. ej. -3 = era para hace tres días).
+     */
+    compromisos?: Array<{
+      tipo: 'pago' | 'recontacto';
+      texto: string;
+      enDias: number;
+      estado?: 'pendiente' | 'cumplido' | 'incumplido' | 'cancelado';
+    }>;
   };
   /**
    * Corre antes del turno la extracción de hechos REAL (el trabajo de fondo,

@@ -29,3 +29,11 @@ export const SCHEDULED_CALL_TYPE = 'llamada_programada';
  * "cliente habló último". Compartida entre el tool y el FollowUpService.
  */
 export const PROMISE_PAY_TYPE = 'promesa_pago';
+
+/**
+ * `Lead.nextActionType` de un recontacto pactado: la persona pidió que le
+ * escribieran en una fecha ("escríbeme el lunes"). Igual que la promesa de
+ * pago, el seguimiento lo ejecuta ese día saltándose el guard de "cliente
+ * habló último". Lo agenda `programarRecontacto`.
+ */
+export const RECONTACT_TYPE = 'recontacto_pactado';

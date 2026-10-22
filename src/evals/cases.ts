@@ -679,6 +679,134 @@ export const CASOS: EvalCase[] = [
     },
   },
 
+  // ─────────────── Compromisos con fecha ───────────────
+  // Un compromiso vence: pasado el día sin confirmación no se puede tratar ni
+  // como cumplido ni como incumplido. Y lo que la persona pidió para una
+  // fecha se agenda para esa fecha, no se persigue antes.
+  {
+    id: 'compromiso-vencido-sin-confirmar',
+    descripcion:
+      'La promesa de pago venció hace 3 días sin confirmación; escribe por otra cosa',
+    agentType: AgentType.COBRANZA,
+    lead: {
+      metadata: {
+        monto: 150000,
+        folio: 'F-4821',
+        link_pago: 'https://pagar.ejemplo.cl/F-4821',
+      },
+    },
+    memoria: {
+      summary:
+        'Titular de la cuenta; reconoce la deuda y se comprometió a pagar.',
+      compromisos: [
+        { tipo: 'pago', texto: 'Pagar el total de la deuda', enDias: -3 },
+      ],
+    },
+    historial: [
+      {
+        de: 'cliente',
+        texto: 'hola, ¿me confirmas a qué correo llegan los comprobantes?',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      criterios: [
+        'pregunta con tacto si pudo hacer el pago que había quedado para hace unos días',
+        'no afirma que el pago se hizo ni acusa a la persona de no haber cumplido',
+      ],
+    },
+  },
+  {
+    id: 'compromiso-confirma-pago',
+    descripcion: 'Dice que ya pagó lo prometido: hay que darlo por cumplido',
+    agentType: AgentType.COBRANZA,
+    lead: {
+      metadata: {
+        monto: 150000,
+        folio: 'F-4821',
+        link_pago: 'https://pagar.ejemplo.cl/F-4821',
+      },
+    },
+    memoria: {
+      summary: 'Titular de la cuenta; se comprometió a pagar la deuda.',
+      compromisos: [
+        { tipo: 'pago', texto: 'Pagar el total de la deuda', enDias: -1 },
+      ],
+    },
+    historial: [
+      {
+        de: 'cliente',
+        texto: 'ya hice la transferencia ayer, como te dije',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      usa: ['actualizarCompromiso'],
+      noUsa: ['registrarPromesaPago'],
+      criterios: ['le agradece y no le vuelve a pedir que pague'],
+    },
+  },
+  {
+    id: 'compromiso-pide-recontacto',
+    descripcion: 'Pide que le escriban después de una fecha',
+    historial: [
+      {
+        de: 'agente',
+        texto:
+          '¡Hola! Te escribo por tu consulta sobre el plan pro. ¿Lo vemos?',
+        haceMinutos: 30,
+      },
+      {
+        de: 'cliente',
+        texto:
+          'ahora estoy a full con el cierre de mes, escríbeme después del 15 de noviembre y lo vemos',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      usa: ['programarRecontacto'],
+      noUsa: ['iniciarLlamada'],
+      criterios: [
+        'le confirma que le escribirá después del 15 de noviembre',
+        'no insiste en avanzar ahora ni le pide otro momento antes de esa fecha',
+      ],
+    },
+  },
+
+  {
+    id: 'compromiso-pide-hora',
+    descripcion:
+      'En cobranza, pide que le escriban mañana a una hora: hay que agendarlo',
+    agentType: AgentType.COBRANZA,
+    lead: {
+      metadata: {
+        monto: 150000,
+        folio: 'F-4821',
+        link_pago: 'https://pagar.ejemplo.cl/F-4821',
+      },
+    },
+    historial: [
+      {
+        de: 'agente',
+        texto: 'Te escribo por tu cuenta pendiente, folio F-4821.',
+        haceMinutos: 20,
+      },
+      {
+        de: 'cliente',
+        texto: 'ahora estoy manejando, escríbeme mañana a las 10 y lo vemos',
+        haceMinutos: 1,
+      },
+    ],
+    espera: {
+      usa: ['programarRecontacto'],
+      noUsa: ['iniciarLlamada'],
+      criterios: [
+        'le confirma que le escribirá mañana a las 10',
+        'no le exige pagar ni insiste en resolverlo ahora',
+      ],
+    },
+  },
+
   // ─────────────── Hechos automáticos ───────────────
   // El dato clave se dijo hace semanas, el agente nunca lo guardó y quedó
   // fuera de la ventana de historial. Lo único que puede traerlo es la
