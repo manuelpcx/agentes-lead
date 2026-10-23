@@ -171,3 +171,28 @@ export function mapeoAutomatico(
   }
   return out;
 }
+
+/**
+ * La URL que hay que llamar. Quien configura suele pegar la dirección que ve
+ * en el navegador; en Airtable esa es la página web
+ * (`airtable.com/app…/tbl…/viw…`), que devuelve HTML. Se traduce a su API
+ * (`api.airtable.com/v0/app…/tbl…?view=viw…`). Cualquier otra queda igual.
+ */
+export function urlDeApi(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return raw;
+  }
+  const host = url.hostname.toLowerCase();
+  if (host !== 'airtable.com' && host !== 'www.airtable.com') {
+    return raw;
+  }
+  const [base, tabla, vista] = url.pathname.split('/').filter(Boolean);
+  if (!/^app\w+$/.test(base ?? '') || !/^tbl\w+$/.test(tabla ?? '')) {
+    return raw;
+  }
+  const api = `https://api.airtable.com/v0/${base}/${tabla}`;
+  return /^viw\w+$/.test(vista ?? '') ? `${api}?view=${vista}` : api;
+}

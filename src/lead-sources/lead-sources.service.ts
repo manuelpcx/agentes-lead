@@ -14,7 +14,12 @@ import { CredentialsService } from '../integrations/credentials.service';
 import { ImportResult, LeadImportService } from '../import/lead-import.service';
 import { prefixFromTimezone } from '../import/lead-mapping';
 import { assertSafeOutboundUrl, UnsafeUrlError } from '../common/safe-url';
-import { aTabla, extraerRegistros, mapeoAutomatico } from './lead-source-parse';
+import {
+  aTabla,
+  extraerRegistros,
+  mapeoAutomatico,
+  urlDeApi,
+} from './lead-source-parse';
 
 /** Canal de integración donde se guardan las fuentes y su token. */
 const CANAL = 'leads' as const;
@@ -131,7 +136,8 @@ export class LeadSourcesService {
     const limpias: FuenteDeLeads[] = [];
     for (const f of fuentes) {
       const nombre = String(f?.nombre ?? '').trim();
-      const url = String(f?.url ?? '').trim();
+      // La del navegador de Airtable se guarda como la de su API.
+      const url = urlDeApi(String(f?.url ?? '').trim());
       if (!nombre || nombre.length > 60) {
         throw new BadRequestException(
           'Cada fuente necesita un nombre de hasta 60 caracteres.',
@@ -224,7 +230,8 @@ export class LeadSourcesService {
   ): Promise<ResultadoFuente> {
     const inicio = new Date();
     try {
-      const url = await this.validarUrl(fuente.url, fuente.nombre);
+      // También al cargar: cubre fuentes guardadas antes de la conversión.
+      const url = await this.validarUrl(urlDeApi(fuente.url), fuente.nombre);
       if (parametro && fuente.ultimaCarga) {
         url.searchParams.set(parametro, fuente.ultimaCarga);
       }
@@ -339,7 +346,20 @@ export class LeadSourcesService {
     try {
       return JSON.parse(texto) as unknown;
     } catch {
-      throw new FuenteError('La respuesta de la API no es JSON válido.');
+      // Lo típico: la URL es la de una página web, no la de la API.
+      const tipo = res.headers.get('content-type') ?? '';
+      if (tipo.includes('html') || /^\s*</.test(texto)) {
+        throw new FuenteError(
+          'La URL devolvió una página web (HTML), no datos: usa la dirección ' +
+            'de la API, no la que ves en el navegador (en Airtable: ' +
+            'https://api.airtable.com/v0/app…/tbl…).',
+        );
+      }
+      throw new FuenteError(
+        `La respuesta de la API no es JSON válido (empieza con "${texto
+          .slice(0, 40)
+          .replace(/\s+/g, ' ')}").`,
+      );
     }
   }
 

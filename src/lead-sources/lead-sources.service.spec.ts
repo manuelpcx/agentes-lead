@@ -178,6 +178,32 @@ describe('LeadSourcesService.guardar', () => {
     ]);
   });
 
+  it('guarda la URL de la API aunque peguen la del navegador de Airtable', async () => {
+    const h = buildHarness();
+
+    await enTenant(() =>
+      h.service.guardar(
+        {
+          fuentes: [
+            {
+              nombre: 'Airtable',
+              url: 'https://airtable.com/appA1/tblB2/viwC3',
+            },
+          ],
+          token: 'pat',
+        },
+        'u',
+      ),
+    );
+
+    expect(h.guardada()?.config.fuentes).toEqual([
+      {
+        nombre: 'Airtable',
+        url: 'https://api.airtable.com/v0/appA1/tblB2?view=viwC3',
+      },
+    ]);
+  });
+
   it('rechaza URLs internas o sin https', async () => {
     const h = buildHarness();
 
@@ -329,6 +355,12 @@ describe('LeadSourcesService.cargar', () => {
   it('explica cada problema de la respuesta', async () => {
     const casos: Array<[Response, string]> = [
       [respuesta('no es json'), 'JSON'],
+      [
+        respuesta('<!DOCTYPE html><html><body>Airtable</body></html>', 200, {
+          'content-type': 'text/html; charset=utf-8',
+        }),
+        'página web',
+      ],
       [respuesta({ ok: true }), 'lista de leads'],
       [respuesta([{ folio: 'F1', monto: 1 }]), 'teléfono ni correo'],
       [respuesta('', 302, { location: 'https://otro.cl' }), 'redirige'],
@@ -348,6 +380,24 @@ describe('LeadSourcesService.cargar', () => {
       expect(r.fuentes[0].error).toContain(esperado);
       expect(h.importTable).not.toHaveBeenCalled();
     }
+  });
+
+  it('una fuente ya guardada con la URL del navegador de Airtable igual llama a la API', async () => {
+    const h = buildHarness({
+      config: {
+        fuentes: [
+          { nombre: 'Airtable', url: 'https://airtable.com/appA1/tblB2/viwC3' },
+        ],
+      },
+      secret: 'pat',
+    });
+    h.fetchMock.mockResolvedValue(respuesta({ records: [] }));
+
+    await enTenant(() => h.service.cargar('u'));
+
+    expect(String(h.fetchMock.mock.calls[0][0])).toBe(
+      'https://api.airtable.com/v0/appA1/tblB2?view=viwC3',
+    );
   });
 
   it('una respuesta vacía es "nada nuevo", no un error', async () => {

@@ -3,6 +3,7 @@ import {
   aTabla,
   extraerRegistros,
   mapeoAutomatico,
+  urlDeApi,
 } from './lead-source-parse';
 
 describe('extraerRegistros', () => {
@@ -118,5 +119,30 @@ describe('mapeoAutomatico', () => {
 
   it('lo que no reconoce no entra al mapeo (va a la metadata)', () => {
     expect(mapeoAutomatico(['folio', 'monto'])).toEqual({});
+  });
+});
+
+describe('urlDeApi', () => {
+  it('convierte la URL del navegador de Airtable en la de su API, con la vista', () => {
+    expect(
+      urlDeApi(
+        'https://airtable.com/appAbC123/tblXyZ456/viwQwE789?blocks=hide',
+      ),
+    ).toBe('https://api.airtable.com/v0/appAbC123/tblXyZ456?view=viwQwE789');
+  });
+
+  it('sin vista, solo la tabla', () => {
+    expect(urlDeApi('https://airtable.com/appAbC123/tblXyZ456')).toBe(
+      'https://api.airtable.com/v0/appAbC123/tblXyZ456',
+    );
+  });
+
+  it('deja tal cual una URL de API o de otro sistema', () => {
+    for (const url of [
+      'https://api.airtable.com/v0/appAbC123/tblXyZ456?view=viwQwE789',
+      'https://api.cliente.cl/leads',
+    ]) {
+      expect(urlDeApi(url)).toBe(url);
+    }
   });
 });
